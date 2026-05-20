@@ -2,40 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { getAllProviders, saveProviderConfig, setActiveProvider, PROVIDER_PRESETS, type AiCategory, type ProviderConfig, getExistingProviderConfig } from '@/lib/ai-config'
+import { getAllProviders, saveProviderConfig, setActiveProvider, PROVIDER_PRESETS, type AiCategory, type ProviderConfig, getExistingProviderConfig, hasGlobalDefaultProvider } from '@/lib/ai-config'
 
 /**
- * Mask an API key — show only the last 4 characters.
- * Returns empty string if key is empty/falsy.
+ * Build a safe view of providers for non-admin users.
+ * Non-admin users should NOT see admin's API key values at all,
+ * but should know which categories have a platform default available.
+ * Returns empty provider lists (no admin key info leaked).
  */
-function maskApiKey(apiKey: string): string {
-  if (!apiKey) return ''
-  if (apiKey.length <= 4) return '****'
-  return `****${apiKey.slice(-4)}`
-}
-
-/**
- * Apply masking to provider configs based on user role.
- * Admins see full keys, non-admins see masked keys.
- */
-function maskProvidersForRole(
-  providers: Record<string, ProviderConfig[]>,
-  isAdmin: boolean
+function providersForNonAdmin(
+  providers: Record<string, ProviderConfig[]>
 ): Record<string, ProviderConfig[]> {
-  if (isAdmin) return providers
-
-  const masked: Record<string, ProviderConfig[]> = {}
-  for (const [category, list] of Object.entries(providers)) {
-    masked[category] = list.map((p) => ({
-      ...p,
-      apiKey: maskApiKey(p.apiKey),
-    }))
+  // Return empty arrays — non-admin users don't need to see admin provider details
+  // They use the separate /api/settings/user-provider endpoint for their own keys
+  const result: Record<string, ProviderConfig[]> = {}
+  for (const category of Object.keys(providers)) {
+    result[category] = []
   }
-  return masked
+  return result
 }
 
 // GET /api/settings - Return current settings with provider configs
-// Non-admin users receive masked API keys (only last 4 chars visible)
+// Non-admin users: no admin key info exposed, only hasDefault flag
 export async function GET() {
   try {
     // Check authentication and role
@@ -49,17 +37,21 @@ export async function GET() {
 
     // Get all provider configs from DB
     const providers: Record<string, ProviderConfig[]> = {}
+    const hasDefault: Record<string, boolean> = {}
     for (const cat of ['llm', 'image', 'video', 'tts'] as AiCategory[]) {
       providers[cat] = await getAllProviders(cat)
+      hasDefault[cat] = await hasGlobalDefaultProvider(cat)
     }
 
-    // Mask API keys for non-admin users
-    const maskedProviders = maskProvidersForRole(providers, isAdmin)
+    // For non-admin users: hide admin provider details completely
+    // They only need to know if a platform default exists (via hasDefault)
+    const viewProviders = isAdmin ? providers : providersForNonAdmin(providers)
 
     return NextResponse.json({
-      providers: maskedProviders,
+      providers: viewProviders,
       presets: PROVIDER_PRESETS,
       isAdmin, // Let frontend know if user is admin
+      hasDefault, // Let non-admin frontend know if platform default is available
     })
   } catch (error) {
     console.error('Failed to read settings:', error)

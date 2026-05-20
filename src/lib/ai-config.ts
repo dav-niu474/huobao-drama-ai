@@ -91,6 +91,15 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
 }
 
 /**
+ * Check if a global (admin) default provider is active for a category.
+ * Used to inform non-admin users that they can use the platform default.
+ */
+export async function hasGlobalDefaultProvider(category: AiCategory): Promise<boolean> {
+  const provider = await getActiveProvider(category)
+  return provider !== null
+}
+
+/**
  * Load the active provider config for a given category, with per-user override.
  * If userId is provided, checks for a user-level active provider first.
  * Falls back to global getActiveProvider() if no user-level config exists.

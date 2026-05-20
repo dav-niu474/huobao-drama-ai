@@ -1000,6 +1000,7 @@ function CategoryPanel({
   onDeleteUserProvider,
   onSetActiveUserProvider,
   savingUserProvider,
+  hasPlatformDefault = false,
 }: {
   category: AiCategory
   providers: ProviderConfig[]
@@ -1016,6 +1017,7 @@ function CategoryPanel({
   onDeleteUserProvider: (data: { category: string; provider: string }) => Promise<void>
   onSetActiveUserProvider: (category: string, provider: string) => void
   savingUserProvider: string | null
+  hasPlatformDefault?: boolean
 }) {
   const meta = CATEGORY_META[category]
 
@@ -1095,28 +1097,30 @@ function CategoryPanel({
         )}
       </AnimatePresence>
 
-      {/* Platform shared key section (global config from admin) */}
-      <RadioGroup
-        value={providers.find((p) => p.isActive)?.provider ?? ''}
-        onValueChange={(val) => onSetActive(category, val)}
-        className="space-y-3"
-      >
-        {providers.map((provider) => {
-          const preset = presets.find((p) => p.provider === provider.provider)
-          return (
-            <ProviderCard
-              key={`${provider.category}-${provider.provider}`}
-              provider={provider}
-              preset={preset}
-              isActive={provider.isActive}
-              onSetActive={() => onSetActive(category, provider.provider)}
-              onSave={onSaveProvider}
-              saving={savingProvider === `${provider.category}-${provider.provider}`}
-              isAdmin={isAdmin}
-            />
-          )
-        })}
-      </RadioGroup>
+      {/* Platform shared key section (global config from admin) — admin only */}
+      {isAdmin && providers.length > 0 && (
+        <RadioGroup
+          value={providers.find((p) => p.isActive)?.provider ?? ''}
+          onValueChange={(val) => onSetActive(category, val)}
+          className="space-y-3"
+        >
+          {providers.map((provider) => {
+            const preset = presets.find((p) => p.provider === provider.provider)
+            return (
+              <ProviderCard
+                key={`${provider.category}-${provider.provider}`}
+                provider={provider}
+                preset={preset}
+                isActive={provider.isActive}
+                onSetActive={() => onSetActive(category, provider.provider)}
+                onSave={onSaveProvider}
+                saving={savingProvider === `${provider.category}-${provider.provider}`}
+                isAdmin={isAdmin}
+              />
+            )
+          })}
+        </RadioGroup>
+      )}
 
       {/* User's own key section — visible for all users (admin included) */}
       <div className="space-y-3">
@@ -1127,9 +1131,25 @@ function CategoryPanel({
             优先使用
           </Badge>
         </div>
-        <p className="text-[11px] text-muted-foreground -mt-1">
-          配置你自己的 API Key，将优先于平台共享 Key 使用。未配置时自动使用平台共享 Key。
-        </p>
+        {!isAdmin && hasPlatformDefault ? (
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            配置你自己的 API Key，将优先于平台共享 Key 使用。不配置时自动使用平台共享 Key。
+          </p>
+        ) : !isAdmin ? (
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            配置你自己的 API Key 以使用该服务，或联系管理员配置平台共享 Key。
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            配置你自己的 API Key，将优先于平台共享 Key 使用。未配置时自动使用平台共享 Key。
+          </p>
+        )}
+        {!isAdmin && hasPlatformDefault && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-sky-500/10 border border-sky-500/20">
+            <Wifi className="size-3 text-sky-500" />
+            <span className="text-[10px] text-sky-600 font-medium">平台共享 Key 可用</span>
+          </div>
+        )}
 
           <RadioGroup
             value={userActiveProvider?.provider ?? ''}
@@ -1461,6 +1481,14 @@ export function SettingsView() {
     tts: [],
   })
 
+  // Whether a platform default provider exists for each category
+  const [hasDefaultData, setHasDefaultData] = useState<Record<string, boolean>>({
+    llm: false,
+    image: false,
+    video: false,
+    tts: false,
+  })
+
   // Loading / saving / testing states
   const [loading, setLoading] = useState(true)
   const [savingProvider, setSavingProvider] = useState<string | null>(null)
@@ -1487,6 +1515,10 @@ export function SettingsView() {
         setPresetsData(data.presets as Record<AiCategory, ProviderPreset[]>)
         // Track admin status from API response
         setIsAdmin((data as any).isAdmin === true)
+        // Track whether platform default exists for each category
+        if ((data as any).hasDefault) {
+          setHasDefaultData((data as any).hasDefault as Record<string, boolean>)
+        }
         // Load agent configs
         const agents = await api.agents.list()
         setAgentsList(agents)
@@ -1845,6 +1877,7 @@ export function SettingsView() {
                     onDeleteUserProvider={handleDeleteUserProvider}
                     onSetActiveUserProvider={handleSetActiveUserProvider}
                     savingUserProvider={savingUserProvider}
+                    hasPlatformDefault={hasDefaultData[category] ?? false}
                   />
                 </TabsContent>
               ))}
