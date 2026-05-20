@@ -10,7 +10,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { characterId, style, referenceImages } = await request.json() as {
       characterId: string
       style?: string
@@ -61,7 +60,7 @@ export async function POST(request: NextRequest) {
       width: 1344,
       height: 768,
       referenceImages,
-    })
+    }, auth.userId)
 
     const sheetImageUrl = `data:image/png;base64,${sheetBase64}`
 
@@ -88,7 +87,7 @@ export async function POST(request: NextRequest) {
       width: 1024,
       height: 1024,
       referenceImages: referenceImages ? [...referenceImages, sheetImageUrl] : [sheetImageUrl],
-    })
+    }, auth.userId)
 
     const portraitImageUrl = `data:image/png;base64,${portraitBase64}`
 

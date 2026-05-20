@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
-import { aiClient, getActiveProvider } from '@/lib/ai-config'
+import { aiClient, getActiveProviderForUser } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import {
   calculateGridResolution,
@@ -22,7 +22,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
 
     const body = await request.json()
     const {
@@ -100,7 +99,7 @@ export async function POST(request: NextRequest) {
 
     // Generate the grid image using the image adapter system
     try {
-      const provider = await getActiveProvider('image')
+      const provider = await getActiveProviderForUser('image', auth.userId)
       if (!provider) {
         await db.imageGeneration.update({
           where: { id: imageGeneration.id },

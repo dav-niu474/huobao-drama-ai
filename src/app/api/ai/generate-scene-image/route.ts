@@ -10,7 +10,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { sceneId, style, referenceImages } = await request.json() as {
       sceneId: string
       style?: string
@@ -59,7 +58,7 @@ export async function POST(request: NextRequest) {
         width: 1344,
         height: 768,
         referenceImages,
-      })
+      }, auth.userId)
     } catch (error: unknown) {
       // Handle async task — return taskId for client-side polling
       if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {

@@ -8,7 +8,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { episodeId } = await request.json()
 
     if (!episodeId) {
@@ -42,7 +41,8 @@ export async function POST(request: NextRequest) {
       const scriptContent = await aiClient.chat(
         episode.rawContent,
         AI_SYSTEM_PROMPTS.SCRIPT_REWRITE,
-        { temperature: 0.7, max_tokens: 8192 }
+        { temperature: 0.7, max_tokens: 8192 },
+        auth.userId
       )
 
       const updated = await db.episode.update({

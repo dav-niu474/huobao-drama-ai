@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveProvider } from '@/lib/ai-config'
+import { getActiveProviderForUser } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 import { PROVIDER_PRESETS } from '@/lib/provider-presets'
 
 // Voice definitions per TTS provider
@@ -63,12 +64,15 @@ const VOICE_CATALOG: Record<string, VoiceEntry[]> = {
 // GET /api/ai/voices - List available voices from TTS providers
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
+
     const { searchParams } = new URL(request.url)
     const providerFilter = searchParams.get('provider')
     const languageFilter = searchParams.get('language')
 
-    // Get active TTS provider
-    const activeProvider = await getActiveProvider('tts')
+    // Get active TTS provider (user's own key first, then fallback to global)
+    const activeProvider = await getActiveProviderForUser('tts', auth.userId)
 
     // Collect voices from all providers or the specified one
     const allVoices: VoiceEntry[] = []

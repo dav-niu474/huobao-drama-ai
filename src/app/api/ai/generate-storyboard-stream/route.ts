@@ -22,7 +22,6 @@ interface StoryboardShot {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth()
   if (auth.error) return auth.error
-  aiClient._userId = auth.userId
   const { episodeId } = await request.json()
 
   if (!episodeId) {
@@ -127,7 +126,7 @@ export async function POST(request: NextRequest) {
 
         const shots = await aiClient.chatJson<StoryboardShot[]>(messages, {
           temperature: 0.5,
-        })
+        }, auth.userId)
 
         // Step 5: Delete existing storyboards
         controller.enqueue(encoder.encode(sendEvent({

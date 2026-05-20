@@ -349,3 +349,56 @@ Stage Summary:
 - 11 files changed, +977/-50 lines
 - All P2 items completed: config lock, grid UI, FFmpeg compose UI, reference images
 - Deployment live at huobao-drama-ai.vercel.app
+
+---
+Task ID: git-workflow-setup
+Agent: Main Agent
+Task: 设计并实施 Git 版本迭代管理工作流
+
+Work Log:
+- 分析项目当前状态：只有 main 分支，无 CI/CD，无分支保护
+- 设计完整的 10 模块工作流文档（分支策略/开发流程/部署/版本管理/分支保护/迁移/自动化）
+- 创建 4 个 GitHub Actions 工作流（ci/release/cleanup）
+- 创建 CHANGELOG.md 记录 v0.1.0-v0.6.0 变更
+- 在 feat/git-iteration-workflow 分支上完成开发
+- 修复 token 泄露问题（GitHub Push Protection 检测）
+- 通过 PR #3 完成合并（Squash Merge）
+- 配置 GitHub 分支保护规则（enforce_admins + required_status_checks）
+- 配置 Vercel 项目关联（Preview + Production 双环境）
+- 打 v0.6.0 Git Tag
+- 部署到 Vercel 生产环境
+
+Stage Summary:
+- 完整的 Git 迭代管理工作流已建立并验证通过
+- 新增文件: docs/git-iteration-workflow.md, .github/workflows/{ci,release,cleanup}.yml, CHANGELOG.md
+- GitHub 分支保护: main 分支禁止直接推送，必须走 PR + CI 通过
+- Vercel 部署: Production (main) + Preview (功能分支)
+- 版本标签: v0.6.0
+- PR #3 已合并，功能分支已清理
+
+---
+Task ID: fix-model-selector-and-storyboard
+Agent: Main Agent
+Task: 修复模型选择器滚轮滑动 + 分镜生成错误处理
+
+Work Log:
+- 创建 fix/model-selector-scroll-and-storyboard 分支
+- 分析 Bug 根因：Radix ScrollArea 拦截 wheel 事件 + Agent 错误未检查
+- 重写 model-selector.tsx：替换 ScrollArea 为原生 div + overflow-y:auto
+- 增加模型选择器高度从 360px 到 min(480px, 70vh)
+- 增加弹出宽度从 w-80 到 w-[360px]/w-[420px]
+- 新增快捷标签筛选（推荐/最新/快速/推理/免费）
+- 新增筛选计数和清除搜索按钮
+- 新增打开时自动滚动到已选模型
+- 修复 5 个 Agent 调用缺少错误检查（script_rewriter, extractor, voice_assigner, storyboard_breaker, enhance_shot_prompt）
+- 构建通过，Preview 验证通过
+- PR #4 Squash Merge 到 main
+- 部署到 Vercel 生产环境
+- 打 v0.6.1 版本标签
+
+Stage Summary:
+- 2个文件修改，+162/-24行
+- 模型选择器滚轮滑动正常，筛选功能增强
+- 分镜生成等 Agent 操作现在正确报告错误
+- 版本标签: v0.6.1
+- 生产地址: https://huobao-drama-ai.vercel.app

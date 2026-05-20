@@ -24,7 +24,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { episodeId, dramaId } = await request.json()
 
     if (!episodeId || !dramaId) {
@@ -62,7 +61,7 @@ export async function POST(request: NextRequest) {
 
       const extracted = await aiClient.chatJson<ExtractedData>(messages, {
         temperature: 0.3,
-      })
+      }, auth.userId)
 
       const { characters = [], scenes = [] } = extracted
 

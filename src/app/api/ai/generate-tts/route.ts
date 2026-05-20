@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { storyboardId, text, voiceId, voiceStyle } = await request.json()
 
     if (!storyboardId) {
@@ -76,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use multi-provider aiClient with voice instructions
-    await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle)
+    await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle, auth.userId)
 
     // Fetch updated storyboard
     const updatedStoryboard = await db.storyboard.findUnique({

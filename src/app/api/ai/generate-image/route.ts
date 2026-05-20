@@ -14,7 +14,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const {
       prompt,
       size,
@@ -81,7 +80,8 @@ export async function POST(request: NextRequest) {
           shotType,
           cameraAngle,
           style,
-          referenceImages.length > 0 ? referenceImages : undefined
+          referenceImages.length > 0 ? referenceImages : undefined,
+          auth.userId
         )
       } else if (characterId) {
         base64Image = await aiClient.generateCharacterPortrait(
@@ -89,7 +89,8 @@ export async function POST(request: NextRequest) {
           style,
           undefined, // characterName
           undefined, // personality
-          referenceImages.length > 0 ? referenceImages : undefined
+          referenceImages.length > 0 ? referenceImages : undefined,
+          auth.userId
         )
       } else if (sceneId) {
         base64Image = await aiClient.generateSceneImage(
@@ -97,7 +98,8 @@ export async function POST(request: NextRequest) {
           undefined, // timeOfDay
           style,
           undefined, // weather
-          referenceImages.length > 0 ? referenceImages : undefined
+          referenceImages.length > 0 ? referenceImages : undefined,
+          auth.userId
         )
       } else {
         const negativePrompt =
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
         base64Image = await aiClient.generateImage(prompt, negativePrompt, {
           size: size || '1024x1024',
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-        })
+        }, auth.userId)
       }
     } catch (error: unknown) {
       // Handle async task — return taskId for client-side polling

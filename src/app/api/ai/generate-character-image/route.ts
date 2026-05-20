@@ -10,7 +10,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { characterId, style, referenceImages } = await request.json() as {
       characterId: string
       style?: string
@@ -73,7 +72,7 @@ export async function POST(request: NextRequest) {
           width: 1024,
           height: 1024,
           referenceImages,
-        })
+        }, auth.userId)
       } else {
         // Use the convenience method
         imagePrompt = [
@@ -94,7 +93,9 @@ export async function POST(request: NextRequest) {
           description,
           style || character.role,
           character.name,
-          character.personality
+          character.personality,
+          undefined, // referenceImages
+          auth.userId
         )
       }
     } catch (error: unknown) {
@@ -121,7 +122,8 @@ export async function POST(request: NextRequest) {
       visionDescription = await aiClient.chat(
         '请描述这个角色形象的外貌特征，包括发型、发色、肤色、五官、服装、配饰等细节。用简洁的中文描述，不超过200字。',
         '你是一个专业的角色设计描述专家，擅长从图片中提取角色的外观特征描述。',
-        { max_tokens: 500, temperature: 0.3 }
+        { max_tokens: 500, temperature: 0.3 },
+        auth.userId
       )
     } catch (visionError) {
       console.error('AI Vision description extraction failed (non-fatal):', visionError)

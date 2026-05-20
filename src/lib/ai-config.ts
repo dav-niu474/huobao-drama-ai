@@ -328,7 +328,7 @@ export async function autoInitProviders(): Promise<string[]> {
 // ============================================================
 
 export const aiClient = {
-  // Optional userId override — set before calling methods to use user-level keys
+  /** @deprecated Use userId parameter in method calls instead. Mutating this on a shared singleton causes race conditions under concurrent requests. */
   _userId: undefined as string | undefined,
 
   // ---- Chat / LLM ----
@@ -339,9 +339,11 @@ export const aiClient = {
       temperature?: number
       max_tokens?: number
       model?: string
-    }
+    },
+    userId?: string
   ) {
-    const provider = await getActiveProviderForUser('llm', this._userId)
+    const effectiveUserId = userId ?? this._userId
+    const provider = await getActiveProviderForUser('llm', effectiveUserId)
     if (!provider) {
       throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
     }
@@ -384,7 +386,8 @@ export const aiClient = {
   async chat(
     prompt: string,
     systemPrompt?: string,
-    options?: { temperature?: number; max_tokens?: number; model?: string }
+    options?: { temperature?: number; max_tokens?: number; model?: string },
+    userId?: string
   ): Promise<string> {
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
     if (systemPrompt) {
@@ -392,13 +395,14 @@ export const aiClient = {
     }
     messages.push({ role: 'user', content: prompt })
 
-    const response = await this.chatCompletion(messages, options)
+    const response = await this.chatCompletion(messages, options, userId)
     return response.choices?.[0]?.message?.content ?? ''
   },
 
   async chatJson<T = unknown>(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-    options?: { temperature?: number; max_tokens?: number; model?: string }
+    options?: { temperature?: number; max_tokens?: number; model?: string },
+    userId?: string
   ): Promise<T> {
     const hasJsonInstruction = messages.some(
       (m) =>
@@ -423,7 +427,7 @@ export const aiClient = {
     const response = await this.chatCompletion(finalMessages, {
       ...options,
       temperature: options?.temperature ?? 0.3,
-    })
+    }, userId)
 
     const content = response.choices?.[0]?.message?.content ?? ''
     return parseJsonFromLlmResponse<T>(content)
@@ -434,9 +438,11 @@ export const aiClient = {
   async generateImage(
     prompt: string,
     negativePrompt?: string,
-    options?: { width?: number; height?: number; size?: string; referenceImages?: string[] }
+    options?: { width?: number; height?: number; size?: string; referenceImages?: string[] },
+    userId?: string
   ): Promise<string> {
-    const provider = await getActiveProviderForUser('image', this._userId)
+    const effectiveUserId = userId ?? this._userId
+    const provider = await getActiveProviderForUser('image', effectiveUserId)
     if (!provider) {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
     }
@@ -521,7 +527,8 @@ export const aiClient = {
     style?: string,
     characterName?: string,
     personality?: string,
-    referenceImages?: string[]
+    referenceImages?: string[],
+    userId?: string
   ): Promise<string> {
     // Production-quality character portrait prompt with 6+ dimensions
     // Based on grid_prompt_generator SKILL methodology
@@ -551,7 +558,7 @@ export const aiClient = {
       width: 1024,
       height: 1024,
       referenceImages,
-    })
+    }, userId)
   },
 
   async generateStoryboardFrame(
@@ -560,7 +567,8 @@ export const aiClient = {
     shotType?: string,
     cameraAngle?: string,
     style?: string,
-    referenceImages?: string[]
+    referenceImages?: string[],
+    userId?: string
   ): Promise<string> {
     // Production-quality storyboard frame prompt with 6+ dimensions
     const styleTag = style || 'cinematic'
@@ -588,7 +596,7 @@ export const aiClient = {
       width: 1344,
       height: 768,
       referenceImages,
-    })
+    }, userId)
   },
 
   async generateSceneImage(
@@ -596,7 +604,8 @@ export const aiClient = {
     timeOfDay?: string,
     style?: string,
     weather?: string,
-    referenceImages?: string[]
+    referenceImages?: string[],
+    userId?: string
   ): Promise<string> {
     // Production-quality scene/establishing shot prompt with 6+ dimensions
     const styleTag = style || 'cinematic'
@@ -635,7 +644,7 @@ export const aiClient = {
       width: 1344,
       height: 768,
       referenceImages,
-    })
+    }, userId)
   },
 
   // ---- Video Generation ----
@@ -643,9 +652,11 @@ export const aiClient = {
   async generateVideo(
     storyboardId: string,
     prompt: string,
-    firstFrameUrl?: string
+    firstFrameUrl?: string,
+    userId?: string
   ): Promise<void> {
-    const provider = await getActiveProviderForUser('video', this._userId)
+    const effectiveUserId = userId ?? this._userId
+    const provider = await getActiveProviderForUser('video', effectiveUserId)
     if (!provider) {
       throw new Error('未配置视频生成供应商。请在设置中配置 API Key。')
     }
@@ -737,9 +748,11 @@ export const aiClient = {
     storyboardId: string,
     text: string,
     voiceId?: string,
-    voiceStyle?: string
+    voiceStyle?: string,
+    userId?: string
   ): Promise<void> {
-    const provider = await getActiveProviderForUser('tts', this._userId)
+    const effectiveUserId = userId ?? this._userId
+    const provider = await getActiveProviderForUser('tts', effectiveUserId)
     if (!provider) {
       throw new Error('未配置语音合成供应商。请在设置中配置 API Key。')
     }
@@ -800,7 +813,7 @@ export const aiClient = {
 
   // ---- Connection Test ----
 
-  async testConnection(category: AiCategory): Promise<{
+  async testConnection(category: AiCategory, userId?: string): Promise<{
     success: boolean
     provider?: string
     model?: string
@@ -808,7 +821,8 @@ export const aiClient = {
     responsePreview?: string
   }> {
     try {
-      const provider = await getActiveProviderForUser(category, this._userId)
+      const effectiveUserId = userId ?? this._userId
+      const provider = await getActiveProviderForUser(category, effectiveUserId)
       if (!provider) {
         return {
           success: false,
@@ -820,7 +834,7 @@ export const aiClient = {
         const response = await this.chat('Say "OK" and nothing else.', undefined, {
           max_tokens: 10,
           temperature: 0,
-        })
+        }, effectiveUserId)
         return {
           success: true,
           provider: provider.name,
@@ -831,7 +845,7 @@ export const aiClient = {
 
       if (category === 'image') {
         // Test image generation with a minimal request
-        const base64 = await this.generateImage('a single red dot on white background')
+        const base64 = await this.generateImage('a single red dot on white background', undefined, undefined, effectiveUserId)
         const preview = base64 ? `图片生成成功，数据大小: ${(base64.length / 1024).toFixed(1)}KB` : '图片生成返回空'
         return {
           success: true,

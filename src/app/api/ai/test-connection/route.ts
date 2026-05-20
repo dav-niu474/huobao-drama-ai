@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { aiClient, getActiveProvider, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
+import { aiClient, getActiveProviderForUser, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 
@@ -12,7 +12,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const body = await request.json().catch(() => ({}))
     const category = (body.category || 'llm') as AiCategory
     const testProvider = body.provider as string | undefined
@@ -28,29 +27,45 @@ export async function POST(request: NextRequest) {
       let baseUrl = testBaseUrl || preset?.defaultBaseUrl || ''
       let model = testModel || preset?.defaultModel || ''
 
-      // If no apiKey provided, fall back to DB → active provider → env vars
+      // If no apiKey provided, try to resolve one
       if (!apiKey) {
-        // 1. Try DB first (handles masked key scenario)
-        const dbProvider = await db.aiProvider.findUnique({
-          where: { category_provider: { category, provider: testProvider } },
+        // 1. Check user's own provider config first (always allowed)
+        const userProvider = await db.userProvider.findUnique({
+          where: { userId_category_provider: { userId: auth.userId, category, provider: testProvider } },
         })
-        if (dbProvider?.apiKey) {
-          apiKey = dbProvider.apiKey
-          if (!baseUrl) baseUrl = dbProvider.baseUrl || ''
-          if (!model) model = dbProvider.model || ''
+        if (userProvider?.apiKey) {
+          apiKey = userProvider.apiKey
+          if (!baseUrl) baseUrl = userProvider.baseUrl || ''
+          if (!model) model = userProvider.model || ''
         } else {
-          // 2. Try active provider (if same provider)
-          const activeProvider = await getActiveProvider(category)
-          if (activeProvider?.provider === testProvider) {
-            apiKey = activeProvider.apiKey
-            if (!baseUrl) baseUrl = activeProvider.baseUrl
-            if (!model) model = activeProvider.model
-          } else if (preset?.envKey) {
-            // 3. Try env vars
-            apiKey = process.env[preset.envKey]
-              || (testProvider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
-              || ''
+          // 2. Check if user is admin — admins can fall back to global config
+          const user = await db.user.findUnique({ where: { id: auth.userId } })
+          const isAdmin = user?.role === 'admin'
+
+          if (isAdmin) {
+            // Admin: fall back to global DB config → active provider → env vars
+            const dbProvider = await db.aiProvider.findUnique({
+              where: { category_provider: { category, provider: testProvider } },
+            })
+            if (dbProvider?.apiKey) {
+              apiKey = dbProvider.apiKey
+              if (!baseUrl) baseUrl = dbProvider.baseUrl || ''
+              if (!model) model = dbProvider.model || ''
+            } else {
+              const activeProvider = await getActiveProviderForUser(category, auth.userId)
+              if (activeProvider?.provider === testProvider) {
+                apiKey = activeProvider.apiKey
+                if (!baseUrl) baseUrl = activeProvider.baseUrl
+                if (!model) model = activeProvider.model
+              } else if (preset?.envKey) {
+                apiKey = process.env[preset.envKey]
+                  || (testProvider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+                  || ''
+              }
+            }
           }
+          // Non-admin users without their own key: do NOT fall back to global keys
+          // This prevents information disclosure about admin's key configuration
         }
       }
 
@@ -217,7 +232,7 @@ export async function POST(request: NextRequest) {
           max_tokens: 10,
           temperature: 0,
           model: testModel,
-        })
+        }, auth.userId)
         return NextResponse.json({
           success: true,
           model: testModel,
@@ -232,7 +247,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await aiClient.testConnection(category)
+    const result = await aiClient.testConnection(category, auth.userId)
     return NextResponse.json(result)
   } catch (error) {
     const message =

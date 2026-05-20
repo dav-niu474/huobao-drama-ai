@@ -23,7 +23,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { episodeId } = await request.json()
 
     if (!episodeId) {
@@ -88,7 +87,7 @@ ${charactersInfo ? `角色列表：\n${charactersInfo}\n` : ''}${scenesInfo ? `�
 
       const shots = await aiClient.chatJson<StoryboardShot[]>(messages, {
         temperature: 0.5,
-      })
+      }, auth.userId)
 
       await db.storyboard.deleteMany({
         where: { episodeId },

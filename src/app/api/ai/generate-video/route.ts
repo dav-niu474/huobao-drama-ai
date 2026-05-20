@@ -37,7 +37,6 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
     const { storyboardId, prompt, firstFrameUrl } = await request.json()
 
     if (!storyboardId) {
@@ -78,7 +77,7 @@ export async function POST(request: NextRequest) {
     // Use multi-provider aiClient
     // The aiClient.generateVideo handles both text-to-video and image-to-video
     try {
-      await aiClient.generateVideo(storyboardId, videoPrompt, frameUrl)
+      await aiClient.generateVideo(storyboardId, videoPrompt, frameUrl, auth.userId)
     } catch (error: unknown) {
       // Handle async task — return taskId for client-side polling
       if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
