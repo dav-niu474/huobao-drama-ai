@@ -398,6 +398,12 @@ export function EpisodeWorkspace() {
         '请将原始内容改写为标准剧本格式，使用read_episode_script工具读取内容，改写后用save_script工具保存。',
         { model: workspaceModels.llm || undefined }
       )
+      // Check if agent reported an error
+      const rewriteError = agentExec.errors['script_rewriter']
+      if (rewriteError) {
+        toast({ title: '剧本改写失败', description: rewriteError, variant: 'destructive' })
+        return
+      }
       toast({ title: '剧本改写完成' })
       await fetchEpisode()
       setActiveStep('rewrite')
@@ -438,6 +444,12 @@ export function EpisodeWorkspace() {
         '请从剧本中提取所有角色和场景信息。先使用read_script_for_extraction读取剧本，再使用read_existing_characters和read_existing_scenes查看已有数据，最后用save_characters和save_scenes保存提取结果（注意去重）.',
         { model: workspaceModels.llm || undefined }
       )
+      // Check if agent reported an error
+      const extractError = agentExec.errors['extractor']
+      if (extractError) {
+        toast({ title: '提取失败', description: extractError, variant: 'destructive' })
+        return
+      }
       toast({ title: '角色与场景提取完成' })
       await fetchEpisode()
     } catch (err) {
@@ -460,6 +472,12 @@ export function EpisodeWorkspace() {
         '请为所有角色分配合适的TTS音色。先使用get_characters获取角色列表，使用list_available_voices获取可用音色，然后根据角色性别、年龄、性格特征为每个角色分配最合适的音色。',
         { model: workspaceModels.llm || undefined }
       )
+      // Check if agent reported an error
+      const voiceError = agentExec.errors['voice_assigner']
+      if (voiceError) {
+        toast({ title: '音色分配失败', description: voiceError, variant: 'destructive' })
+        return
+      }
       toast({ title: '音色分配完成' })
       await fetchEpisode()
     } catch (err) {
@@ -540,6 +558,12 @@ export function EpisodeWorkspace() {
         '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后为每个镜头生成完整的分镜数据。⚠️重要：每个分镜的imagePrompt必须是6维度专业英文提示词（风格+构图+角色+场景+光线+画质），videoPrompt必须使用3秒分段XML格式。一步到位，无需二次增强。最后用save_storyboards保存所有分镜。',
         { model: workspaceModels.llm || undefined }
       )
+      // Check if agent reported an error
+      const agentError = agentExec.errors['storyboard_breaker']
+      if (agentError) {
+        toast({ title: '分镜生成失败', description: agentError, variant: 'destructive' })
+        return
+      }
       toast({ title: '分镜生成完成' })
       await fetchEpisode()
     } catch (err) {
@@ -562,6 +586,12 @@ export function EpisodeWorkspace() {
         `请为镜头${storyboard.shotNumber}重新生成更专业的imagePrompt和videoPrompt。先使用read_storyboard_context读取上下文，然后使用update_storyboard更新镜头${storyboard.shotNumber}的提示词。imagePrompt必须包含6个维度（风格+构图+角色+场景+光线+画质），videoPrompt必须使用XML格式。`,
         { model: workspaceModels.llm || undefined }
       )
+      // Check if agent reported an error
+      const enhanceError = agentExec.errors['storyboard_breaker']
+      if (enhanceError) {
+        toast({ title: '提示词增强失败', description: enhanceError, variant: 'destructive' })
+        return
+      }
       toast({ title: `镜头 ${storyboard.shotNumber} 提示词已增强` })
       await fetchEpisode()
     } catch (err) {

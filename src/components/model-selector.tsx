@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { api, type AiCategory, type ProviderPreset, type ModelOption } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Sparkles, ImageIcon, Film, ChevronDown, Check, Volume2, Search, Lock } from 'lucide-react'
+import { Sparkles, ImageIcon, Film, ChevronDown, Check, Volume2, Search, Lock, X } from 'lucide-react'
 
 interface ModelSelectorProps {
   category: AiCategory
@@ -33,6 +32,9 @@ const TAG_STYLES: Record<string, string> = {
   '免费': 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
 }
 
+// All unique tags across all models, for quick filter buttons
+const QUICK_FILTER_TAGS = ['推荐', '最新', '快速', '推理', '免费']
+
 interface GroupedModels {
   provider: string
   providerName: string
@@ -43,6 +45,8 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
   const [presets, setPresets] = useState<ProviderPreset[]>([])
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [activeTag, setActiveTag] = useState<string | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const catConfig = CATEGORY_CONFIG[category]
 
@@ -80,21 +84,34 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
     return flat
   }, [grouped])
 
-  // Filter by search
+  // Total count for display
+  const totalCount = allModels.length
+
+  // Filter by search and active tag
   const filtered = useMemo(() => {
-    if (!search.trim()) return grouped
-    const q = search.toLowerCase()
     return grouped
       .map(g => ({
         ...g,
-        models: g.models.filter(m =>
-          m.name.toLowerCase().includes(q) ||
-          m.id.toLowerCase().includes(q) ||
-          m.tags?.some(t => t.toLowerCase().includes(q))
-        ),
+        models: g.models.filter(m => {
+          // Search filter
+          if (search.trim()) {
+            const q = search.toLowerCase()
+            const matchesSearch =
+              m.name.toLowerCase().includes(q) ||
+              m.id.toLowerCase().includes(q) ||
+              m.tags?.some(t => t.toLowerCase().includes(q))
+            if (!matchesSearch) return false
+          }
+          // Tag filter
+          if (activeTag && !m.tags?.includes(activeTag)) return false
+          return true
+        }),
       }))
       .filter(g => g.models.length > 0)
-  }, [grouped, search])
+  }, [grouped, search, activeTag])
+
+  // Filtered count
+  const filteredCount = filtered.reduce((acc, g) => acc + g.models.length, 0)
 
   // Find the display name for current model
   const currentModel = allModels.find(m => m.id === value)
@@ -103,8 +120,27 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
   // Find which provider the current model belongs to
   const currentProvider = currentModel?.providerName || ''
 
+  // Clear tag filter when search changes significantly
+  useEffect(() => {
+    if (search.trim()) {
+      setActiveTag(null)
+    }
+  }, [search])
+
+  // Scroll to selected model when opening
+  useEffect(() => {
+    if (open && listRef.current) {
+      requestAnimationFrame(() => {
+        const selectedEl = listRef.current?.querySelector('[data-selected="true"]')
+        if (selectedEl) {
+          selectedEl.scrollIntoView({ block: 'nearest' })
+        }
+      })
+    }
+  }, [open])
+
   return (
-    <Popover open={disabled ? false : open} onOpenChange={(v) => { if (disabled) return; setOpen(v); if (!v) setSearch('') }}>
+    <Popover open={disabled ? false : open} onOpenChange={(v) => { if (disabled) return; setOpen(v); if (!v) { setSearch(''); setActiveTag(null) } }}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -123,42 +159,114 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
           {disabled && <Lock className="size-3 text-amber-500 ml-0.5" />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end" sideOffset={4}>
+      <PopoverContent
+        className="w-[360px] sm:w-[420px] p-0"
+        align="end"
+        sideOffset={4}
+        // Use "bottom" side to avoid going off-screen upward
+        side="bottom"
+        // Allow the popover to use more vertical space
+        onOpenAutoFocus={(e) => {
+          // Prevent auto-focus from stealing focus from search input
+          e.preventDefault()
+        }}
+      >
         {/* Search bar */}
         <div className="p-2 border-b border-border/50">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60" />
             <Input
-              className="h-8 pl-8 text-xs bg-muted/40 border-border/50 focus-visible:ring-primary/20"
-              placeholder="搜索模型名称、ID或标签..."
+              className="h-8 pl-8 pr-8 text-xs bg-muted/40 border-border/50 focus-visible:ring-primary/20"
+              placeholder={`搜索 ${totalCount} 个模型...`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               autoFocus
             />
+            {search && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted/80"
+                onClick={() => setSearch('')}
+              >
+                <X className="size-3 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+          {/* Quick filter tags */}
+          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+            {QUICK_FILTER_TAGS.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                className={`text-[10px] px-1.5 py-0.5 rounded-full border transition-colors ${
+                  activeTag === tag
+                    ? 'border-primary/50 bg-primary/10 text-primary'
+                    : 'border-border/40 text-muted-foreground hover:bg-muted/50'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+            {filteredCount < totalCount && (
+              <span className="text-[10px] text-muted-foreground ml-1">
+                {filteredCount}/{totalCount}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Model list grouped by provider */}
-        <ScrollArea className="max-h-[360px]">
+        {/* Model list — using native div with overflow-y-auto for reliable wheel scrolling */}
+        <div
+          ref={listRef}
+          className="overflow-y-auto max-h-[min(480px,70vh)]"
+          style={{
+            scrollbarGutter: 'stable',
+            // Custom thin scrollbar for webkit
+            WebkitOverflowScrolling: 'touch',
+          }}
+          onWheel={(e) => {
+            // Ensure wheel events work correctly even when hovering over buttons
+            e.stopPropagation()
+          }}
+        >
+          <style jsx>{`
+            div::-webkit-scrollbar {
+              width: 6px;
+            }
+            div::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            div::-webkit-scrollbar-thumb {
+              background: hsl(var(--border));
+              border-radius: 3px;
+            }
+            div::-webkit-scrollbar-thumb:hover {
+              background: hsl(var(--muted-foreground) / 0.5);
+            }
+          `}</style>
+
           {filtered.length === 0 && (
             <p className="text-xs text-muted-foreground p-4 text-center">
-              {search ? '没有匹配的模型' : '暂无可用模型，请先在设置中配置'}
+              {search ? `没有匹配 "${search}" 的模型` : activeTag ? `没有带 "${activeTag}" 标签的模型` : '暂无可用模型，请先在设置中配置'}
             </p>
           )}
           {filtered.map((group) => (
             <div key={group.provider}>
               {/* Provider header */}
-              <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground/80 uppercase tracking-wider bg-muted/30 border-b border-border/30">
+              <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground/80 uppercase tracking-wider bg-muted/30 border-b border-border/30 sticky top-0 z-10">
                 {group.providerName}
+                <span className="ml-1 font-normal text-muted-foreground/50">({group.models.length})</span>
               </div>
               {/* Model items */}
               {group.models.map((m) => {
                 const isSelected = value === m.id
                 return (
-                  <button
+                  <div
                     key={m.id}
+                    data-selected={isSelected ? 'true' : undefined}
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => { onChange(m.id); setOpen(false) }}
-                    className={`w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-muted/60 transition-colors ${
+                    className={`w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-muted/60 transition-colors cursor-pointer ${
                       isSelected ? 'bg-primary/5' : ''
                     }`}
                   >
@@ -186,12 +294,12 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
                         {m.id}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 )
               })}
             </div>
           ))}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   )
