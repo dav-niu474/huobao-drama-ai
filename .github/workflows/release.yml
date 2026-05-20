@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git tag --sort=-creatordate | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          
+          # Generate changelog from commits
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          git log ${PREV_TAG}..${{ steps.version.outputs.VERSION }} --pretty=format:"- %s (%h)" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          release_name: Release ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## 🎬 AI短剧创作平台 ${{ steps.version.outputs.VERSION }}
+            
+            ### 变更内容
+            ${{ steps.changelog.outputs.CHANGELOG }}
+            
+            ---
+            **部署地址**: https://huobao-drama-ai.vercel.app
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}

@@ -1,0 +1,25 @@
+name: Cleanup Branch
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Delete merged branch
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          # Don't delete main, release, or hotfix branches
+          if [[ "$BRANCH_NAME" == main ]] || [[ "$BRANCH_NAME" == release/* ]] || [[ "$BRANCH_NAME" == hotfix/* ]]; then
+            echo "Skipping deletion of protected branch: $BRANCH_NAME"
+            exit 0
+          fi
+          
+          echo "Deleting remote branch: $BRANCH_NAME"
+          curl -X DELETE \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/git/refs/heads/${BRANCH_NAME}"
