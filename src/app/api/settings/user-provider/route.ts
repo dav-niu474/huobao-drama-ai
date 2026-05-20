@@ -22,7 +22,9 @@ function userProviderToConfig(up: {
     category: up.category as AiCategory,
     provider: up.provider,
     name: preset?.name ?? up.provider,
-    apiKey: up.apiKey || (preset?.envKey ? (process.env[preset.envKey] || '') : ''),
+    // SECURITY: Only use the user's own apiKey, NEVER fall back to env vars
+    // which would expose the platform's API key to free users.
+    apiKey: up.apiKey || '',
     baseUrl: up.baseUrl || preset?.defaultBaseUrl || '',
     model: up.model || preset?.defaultModel || '',
     isActive: up.isActive,
