@@ -1,10 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
-import { PROVIDER_PRESETS, type AiCategory, type ProviderConfig } from '@/lib/ai-config'
+import { PROVIDER_PRESETS, getActiveProvider, type AiCategory, type ProviderConfig } from '@/lib/ai-config'
+
+// ============================================================
+// Helper — check if an apiKey matches a platform (admin) key
+// ============================================================
+
+async function isPlatformApiKey(category: string, provider: string, apiKey: string): Promise<boolean> {
+  if (!apiKey || apiKey.startsWith('****')) return false
+
+  // Check against DB admin key
+  const adminProvider = await db.aiProvider.findUnique({
+    where: { category_provider: { category, provider } },
+  })
+  if (adminProvider?.apiKey && adminProvider.apiKey === apiKey) return true
+
+  // Check against env var key
+  const preset = PROVIDER_PRESETS[category as AiCategory]?.find((p) => p.provider === provider)
+  if (preset?.envKey) {
+    const envKey = process.env[preset.envKey]
+      || (provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+      || ''
+    if (envKey && envKey === apiKey) return true
+  }
+
+  return false
+}
 
 // ============================================================
 // Helper — build ProviderConfig from a UserProvider DB row
+// SECURITY: Filters out records whose apiKey matches the platform key
 // ============================================================
 
 function userProviderToConfig(up: {
@@ -33,6 +59,9 @@ function userProviderToConfig(up: {
 
 /**
  * Build the providers map for all categories for the current user.
+ * SECURITY: Filters out any UserProvider records whose apiKey matches
+ * a platform (admin/env) key — these are "dirty data" from a previous
+ * bug that leaked platform keys into the UserProvider table.
  */
 async function buildUserProvidersMap(userId: string): Promise<Record<string, ProviderConfig[]>> {
   const userProviders = await db.userProvider.findMany({
@@ -50,6 +79,17 @@ async function buildUserProvidersMap(userId: string): Promise<Record<string, Pro
   for (const up of userProviders) {
     const cat = up.category
     if (!result[cat]) result[cat] = []
+
+    // SECURITY CHECK: If this userProvider's apiKey matches a platform key,
+    // delete the dirty record and skip it — this was leaked data from a previous bug
+    if (up.apiKey && await isPlatformApiKey(up.category, up.provider, up.apiKey)) {
+      console.warn(`[SECURITY] Cleaning dirty UserProvider record: user=${userId}, category=${up.category}, provider=${up.provider} — apiKey matches platform key, deleting`)
+      await db.userProvider.deleteMany({
+        where: { userId, category: up.category, provider: up.provider },
+      })
+      continue
+    }
+
     result[cat].push(userProviderToConfig(up))
   }
 
@@ -84,6 +124,7 @@ export async function GET() {
 // Upserts the UserProvider record for (userId, category, provider).
 // If isActive: true, deactivates other UserProviders in the same
 // category for this user.
+// SECURITY: Rejects apiKey that matches a platform (admin/env) key.
 // ============================================================
 export async function POST(request: NextRequest) {
   try {
@@ -98,6 +139,17 @@ export async function POST(request: NextRequest) {
         { error: 'category and provider are required' },
         { status: 400 }
       )
+    }
+
+    // SECURITY: Block saving if the provided apiKey matches a platform key
+    if (apiKey && await isPlatformApiKey(category, provider, apiKey)) {
+      console.warn(`[SECURITY] Blocked save of platform key to UserProvider: user=${auth.userId}, category=${category}, provider=${provider}`)
+      // Also clean any existing dirty record
+      await db.userProvider.deleteMany({
+        where: { userId: auth.userId, category, provider },
+      })
+      const providers = await buildUserProvidersMap(auth.userId)
+      return NextResponse.json({ providers })
     }
 
     // If setting this as active, deactivate other user providers in same category

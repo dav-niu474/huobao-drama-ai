@@ -829,17 +829,19 @@ function UserProviderCard({
                       placeholder="sk-..."
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      className="bg-muted/30 border-border/50 pr-10"
+                      className={`bg-muted/30 border-border/50 ${apiKey.trim() ? 'pr-10' : ''}`}
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                    >
-                      {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                    </Button>
+                    {apiKey.trim() && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      >
+                        {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </Button>
+                    )}
                   </div>
                   {!apiKey.trim() && (
                     <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
