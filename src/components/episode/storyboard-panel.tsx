@@ -28,6 +28,8 @@ import {
   Plus,
   Trash2,
   Bookmark,
+  RotateCcw,
+  AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -41,9 +43,10 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/components/ui/collapsible'
-import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-execution-panel'
 import { statusBadge, shotTypeLabel, cameraAngleLabel, cameraMovementLabel } from './helpers'
-import type { StoryboardPanelProps, Storyboard, GridConfig, GridMode, PipelineStepKey } from './types'
+import type { StoryboardPanelProps, GridConfig, GridMode, PipelineStepKey } from './types'
+import type { Storyboard } from '@/lib/store'
 import {
   Dialog,
   DialogContent,
@@ -277,8 +280,12 @@ export function StoryboardPanel({
   const [gridMode, setGridMode] = useState<GridMode>('first_frame')
   const [gridSize, setGridSize] = useState('2x2')
 
+  // Check for storyboard agent error state
+  const storyboardError = agentExec.errors['storyboard_breaker']
+  const isAgentRunning = agentExec.isRunning('storyboard_breaker')
+
   // Empty state
-  if (storyboards.length === 0 && !isStoryboarding && !aiLoading) {
+  if (storyboards.length === 0 && !isStoryboarding && !isAgentRunning && !aiLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <motion.div
@@ -314,19 +321,73 @@ export function StoryboardPanel({
     )
   }
 
-  // Loading state
-  if (isStoryboarding || aiLoading) {
+  // Loading/running state — show agent execution panel
+  if (isStoryboarding || isAgentRunning) {
     return (
       <div className="flex-1 p-6 overflow-y-auto">
         <AgentExecutionPanel
           agentType="storyboard_breaker"
           agentName="分镜拆解专家"
-          isRunning={agentExec.isRunning('storyboard_breaker')}
-          logs={agentExec.logs['storyboard_breaker'] || []}
+          isRunning={isAgentRunning}
+          logs={(agentExec.logs['storyboard_breaker'] || []) as AgentLogEntry[]}
           resultText={agentExec.resultTexts['storyboard_breaker']}
           duration={agentExec.durations['storyboard_breaker']}
-          error={agentExec.errors['storyboard_breaker']}
+          error={storyboardError}
         />
+      </div>
+    )
+  }
+
+  // Error recovery state — show error with retry button when agent has failed
+  // and no storyboards exist yet (avoids getting stuck after a failed generation)
+  if (storyboards.length === 0 && storyboardError && !isAgentRunning) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center max-w-md"
+        >
+          <div className="mx-auto size-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-5">
+            <AlertCircle className="size-8 text-red-500" />
+          </div>
+          <h2 className="text-lg font-semibold mb-2">分镜生成失败</h2>
+          <p className="text-sm text-muted-foreground mb-2">
+            分镜拆解过程中遇到了问题，请查看错误信息后重试。
+          </p>
+          {storyboardError && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-left">
+              <p className="text-xs text-red-600 dark:text-red-400 break-words">
+                {storyboardError.length > 300 ? storyboardError.slice(0, 300) + '...' : storyboardError}
+              </p>
+            </div>
+          )}
+          <div className="flex items-center justify-center gap-3">
+            <Button
+              onClick={handleGenerateStoryboard}
+              disabled={aiLoading}
+              className="amber-glow"
+            >
+              <RotateCcw className="size-4" />
+              重新生成分镜
+            </Button>
+          </div>
+          {/* Also show the agent execution log for debugging */}
+          {agentExec.logs['storyboard_breaker'] && agentExec.logs['storyboard_breaker'].length > 0 && (
+            <div className="mt-6 text-left">
+              <AgentExecutionPanel
+                agentType="storyboard_breaker"
+                agentName="分镜拆解专家"
+                isRunning={false}
+                logs={agentExec.logs['storyboard_breaker'] as AgentLogEntry[]}
+                resultText={agentExec.resultTexts['storyboard_breaker']}
+                duration={agentExec.durations['storyboard_breaker']}
+                error={storyboardError}
+                defaultExpanded={false}
+              />
+            </div>
+          )}
+        </motion.div>
       </div>
     )
   }

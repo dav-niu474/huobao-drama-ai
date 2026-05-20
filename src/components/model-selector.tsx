@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { api, type AiCategory, type ProviderPreset, type ModelOption } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -87,6 +87,9 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
   // Total count for display
   const totalCount = allModels.length
 
+  // When searching, ignore tag filter to avoid confusion
+  const effectiveTag = search.trim() ? null : activeTag
+
   // Filter by search and active tag
   const filtered = useMemo(() => {
     return grouped
@@ -102,13 +105,13 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
               m.tags?.some(t => t.toLowerCase().includes(q))
             if (!matchesSearch) return false
           }
-          // Tag filter
-          if (activeTag && !m.tags?.includes(activeTag)) return false
+          // Tag filter (ignored when searching)
+          if (effectiveTag && !m.tags?.includes(effectiveTag)) return false
           return true
         }),
       }))
       .filter(g => g.models.length > 0)
-  }, [grouped, search, activeTag])
+  }, [grouped, search, effectiveTag])
 
   // Filtered count
   const filteredCount = filtered.reduce((acc, g) => acc + g.models.length, 0)
@@ -119,13 +122,6 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
 
   // Find which provider the current model belongs to
   const currentProvider = currentModel?.providerName || ''
-
-  // Clear tag filter when search changes significantly
-  useEffect(() => {
-    if (search.trim()) {
-      setActiveTag(null)
-    }
-  }, [search])
 
   // Scroll to selected model when opening
   useEffect(() => {
@@ -138,6 +134,16 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
       })
     }
   }, [open])
+
+  // ── Fix: Prevent Radix Popover from closing on wheel scroll ──
+  // Handle wheel events on the entire popover content to prevent
+  // Radix UI from interpreting wheel events as "outside interactions"
+  // that would close the popover. We must use stopPropagation at the
+  // content level, not just the scroll container, because child elements
+  // (buttons, badges) may not propagate wheel events to the parent div.
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.stopPropagation()
+  }, [])
 
   return (
     <Popover open={disabled ? false : open} onOpenChange={(v) => { if (disabled) return; setOpen(v); if (!v) { setSearch(''); setActiveTag(null) } }}>
@@ -163,13 +169,19 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
         className="w-[360px] sm:w-[420px] p-0"
         align="end"
         sideOffset={4}
-        // Use "bottom" side to avoid going off-screen upward
         side="bottom"
-        // Allow the popover to use more vertical space
+        // Fix Bug 3: Keep popover within viewport bounds, with padding
+        collisionPadding={16}
+        // Fix Bug 3: Allow Radix to auto-flip if no room at bottom
+        avoidCollisions={true}
         onOpenAutoFocus={(e) => {
           // Prevent auto-focus from stealing focus from search input
           e.preventDefault()
         }}
+        // Fix Bug 2: Prevent wheel events from bubbling through the Portal
+        // to the document level, where Radix might interpret them as
+        // "interact outside" events and close the popover
+        onWheel={handleWheel}
       >
         {/* Search bar */}
         <div className="p-2 border-b border-border/50">
@@ -217,33 +229,17 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
         {/* Model list — using native div with overflow-y-auto for reliable wheel scrolling */}
         <div
           ref={listRef}
-          className="overflow-y-auto max-h-[min(480px,70vh)]"
+          // Fix Bug 3: Use calc(100vh - 120px) to ensure the list fits within
+          // the viewport with room for the trigger button and search bar.
+          // This replaces the old min(480px,70vh) which could overflow on
+          // shorter screens or waste space on taller ones.
+          className="overflow-y-auto max-h-[min(480px,calc(100vh-120px))]"
           style={{
             scrollbarGutter: 'stable',
-            // Custom thin scrollbar for webkit
             WebkitOverflowScrolling: 'touch',
           }}
-          onWheel={(e) => {
-            // Ensure wheel events work correctly even when hovering over buttons
-            e.stopPropagation()
-          }}
+          onWheel={handleWheel}
         >
-          <style jsx>{`
-            div::-webkit-scrollbar {
-              width: 6px;
-            }
-            div::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            div::-webkit-scrollbar-thumb {
-              background: hsl(var(--border));
-              border-radius: 3px;
-            }
-            div::-webkit-scrollbar-thumb:hover {
-              background: hsl(var(--muted-foreground) / 0.5);
-            }
-          `}</style>
-
           {filtered.length === 0 && (
             <p className="text-xs text-muted-foreground p-4 text-center">
               {search ? `没有匹配 "${search}" 的模型` : activeTag ? `没有带 "${activeTag}" 标签的模型` : '暂无可用模型，请先在设置中配置'}
