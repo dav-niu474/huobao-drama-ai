@@ -327,6 +327,9 @@ function ProviderCard({
         apiKey: apiKeyEdited ? apiKey : (isMaskedKey ? provider.apiKey : apiKey),
         baseUrl,
         model,
+        // Non-admin: when saving a key, automatically make it the active provider
+        // so the user's own key takes effect immediately
+        isActive: !isAdmin && Boolean(apiKeyEdited ? apiKey.trim() : (isMaskedKey || apiKey.trim())) ? true : provider.isActive,
       })
     } finally {
       setLocalSaving(false)
@@ -351,14 +354,16 @@ function ProviderCard({
             <RadioGroup
               value={isActive ? provider.provider : ''}
               onValueChange={() => {
+                // Admin can always switch, non-admin can switch if they have their own key
                 if (isAdmin && !isActive) onSetActive()
+                if (!isAdmin && hasOwnKey && !isActive) onSetActive()
               }}
               className="flex"
             >
               <RadioGroupItem
                 value={provider.provider}
                 id={`${provider.category}-${provider.provider}`}
-                disabled={!isAdmin}
+                disabled={!isAdmin && !hasOwnKey}
                 className={isActive ? 'text-primary border-primary' : ''}
               />
             </RadioGroup>
@@ -478,10 +483,16 @@ function ProviderCard({
                       {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                     </Button>
                   </div>
+                  {!hasOwnKey && hasPlatformDefault && (
+                    <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
+                      <Info className="size-3 mt-0.5 flex-shrink-0" />
+                      输入您自己的 API Key 即可使用该服务，不填则自动使用平台默认Key
+                    </p>
+                  )}
                   {!hasOwnKey && !hasPlatformDefault && (
                     <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
                       <Info className="size-3 mt-0.5 flex-shrink-0" />
-                      没有API Key？可以复制提示词到其他平台使用，或联系管理员配置平台默认Key
+                      请输入您的 API Key 以使用该服务，或联系管理员配置平台默认Key
                     </p>
                   )}
                 </div>

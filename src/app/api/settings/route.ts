@@ -135,6 +135,29 @@ export async function POST(request: NextRequest) {
     } else {
       // Non-admin: save to UserProvider table
       const effectiveApiKey = apiKey || ''
+
+      // Check if user already has a record for this provider
+      const existingUserProvider = await db.userProvider.findUnique({
+        where: {
+          userId_category_provider: { userId, category, provider },
+        },
+      })
+
+      // If switching active provider (no apiKey/baseUrl/model provided), 
+      // only allow if the user already has a key for this provider
+      const isJustActivating = isActive && apiKey === undefined && baseUrl === undefined && model === undefined
+      if (isJustActivating && !existingUserProvider?.apiKey) {
+        // Cannot activate a provider the user hasn't configured their own key for
+        // They should use the platform default instead
+        const providers: Record<string, ProviderConfig[]> = {}
+        const hasDefault: Record<string, boolean> = {}
+        for (const cat of ['llm', 'image', 'video', 'tts'] as AiCategory[]) {
+          providers[cat] = await getAllProvidersForUser(cat, userId, false)
+          hasDefault[cat] = await hasGlobalDefaultProvider(cat)
+        }
+        return NextResponse.json({ providers, isAdmin: false, hasDefault })
+      }
+
       if (isActive) {
         // Deactivate other user providers in same category
         await db.userProvider.updateMany({
@@ -146,30 +169,34 @@ export async function POST(request: NextRequest) {
       // Get preset defaults
       const preset = PROVIDER_PRESETS[category as AiCategory]?.find((p) => p.provider === provider)
 
-      await db.userProvider.upsert({
-        where: {
-          userId_category_provider: {
+      // Only create/update UserProvider if user has a non-empty API key or already has a record
+      const shouldSave = effectiveApiKey || existingUserProvider
+      if (shouldSave) {
+        await db.userProvider.upsert({
+          where: {
+            userId_category_provider: {
+              userId,
+              category,
+              provider,
+            },
+          },
+          create: {
             userId,
             category,
             provider,
+            apiKey: effectiveApiKey,
+            baseUrl: baseUrl || preset?.defaultBaseUrl || '',
+            model: model || preset?.defaultModel || '',
+            isActive: isActive ?? false,
           },
-        },
-        create: {
-          userId,
-          category,
-          provider,
-          apiKey: effectiveApiKey,
-          baseUrl: baseUrl || preset?.defaultBaseUrl || '',
-          model: model || preset?.defaultModel || '',
-          isActive: isActive ?? false,
-        },
-        update: {
-          ...(effectiveApiKey ? { apiKey: effectiveApiKey } : {}),
-          ...(baseUrl !== undefined ? { baseUrl } : {}),
-          ...(model !== undefined ? { model } : {}),
-          isActive: isActive ?? undefined,
-        },
-      })
+          update: {
+            ...(effectiveApiKey ? { apiKey: effectiveApiKey } : {}),
+            ...(baseUrl !== undefined ? { baseUrl } : {}),
+            ...(model !== undefined ? { model } : {}),
+            isActive: isActive ?? undefined,
+          },
+        })
+      }
 
       // Return updated providers for non-admin
       const providers: Record<string, ProviderConfig[]> = {}
