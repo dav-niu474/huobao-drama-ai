@@ -1,10 +1,12 @@
 'use client'
 
+import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Loader2, Sparkles, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { ExecutionProgress, SCRIPT_REWRITE_STEPS, deriveScriptStep } from './execution-progress'
 import { statusBadge } from './helpers'
 import type { ScriptPanelProps } from './types'
 
@@ -24,6 +26,16 @@ export function ScriptPanel({
   handleRewrite,
   handleSkipRewrite,
 }: ScriptPanelProps) {
+  // ── Derive execution step from agent logs (always called) ──
+  const scriptLogs = (agentExec.logs['script_rewriter'] || []) as Array<{
+    type: string
+    message?: string
+    toolCall?: { name: string }
+  }>
+  const currentExecStep = useMemo(() => deriveScriptStep(scriptLogs), [scriptLogs])
+  const latestScriptLog = scriptLogs.length > 0 ? scriptLogs[scriptLogs.length - 1] : null
+  const stepMessage = latestScriptLog?.message || undefined
+
   // ── Raw content panel ──────────────────────────────────────
 
   if (activeStep === 'raw') {
@@ -99,10 +111,20 @@ export function ScriptPanel({
     )
   }
 
-  // Loading state — show Agent Execution Panel
+  // Loading state — show step-by-step execution indicator + agent panel
   if (isRewriting || (aiLoading && activeStep === 'rewrite')) {
     return (
       <div className="flex-1 p-6 overflow-y-auto">
+        {/* Step-by-step execution progress */}
+        <div className="mb-4">
+          <ExecutionProgress
+            steps={SCRIPT_REWRITE_STEPS}
+            currentStep={currentExecStep}
+            message={stepMessage}
+          />
+        </div>
+
+        {/* Agent execution log */}
         <AgentExecutionPanel
           agentType="script_rewriter"
           agentName="剧本改写专家"

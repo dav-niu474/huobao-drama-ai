@@ -1700,15 +1700,22 @@ export function EpisodeWorkspace() {
           </div>
 
           <div className="ml-auto flex items-center gap-1">
-            {/* Mobile sidebar toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden size-8"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-            </Button>
+            {/* Sidebar toggle — always visible, more discoverable */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={sidebarOpen ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className={`size-8 transition-colors ${!sidebarOpen ? 'text-primary' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                >
+                  {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={6}>
+                {sidebarOpen ? '收起管线面板' : '展开管线面板'}
+              </TooltipContent>
+            </Tooltip>
             <UserMenu />
           </div>
         </div>
@@ -1766,38 +1773,108 @@ export function EpisodeWorkspace() {
 
       {/* ── Body: Sidebar + Main + Bottom Nav ──────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 11-Step Pipeline Sidebar */}
+        {/* 11-Step Pipeline Sidebar — expanded */}
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 240, opacity: 1 }}
+              animate={{ width: 260, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="flex-shrink-0 border-r border-border/50 bg-card/50 overflow-hidden"
             >
-              <div className="w-[240px] h-full flex flex-col">
+              <div className="w-[260px] h-full flex flex-col">
+                {/* Progress summary at top */}
+                <div className="px-3 pt-3 pb-2 border-b border-border/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      制作管线
+                    </h3>
+                    <span className="text-xs font-semibold text-primary tabular-nums">
+                      进度 {pipelineCompletedCount}/{pipelineTotalCount}
+                    </span>
+                  </div>
+                  <div className="h-1 bg-muted rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-emerald-500 rounded-full progress-bar-animate"
+                      style={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
+                      transition={{ duration: 0.5 }}
+                    />
+                  </div>
+                  {/* Active step status text */}
+                  {(() => {
+                    const activeStep = PIPELINE_STEPS.find(
+                      (s) => getPipelineStepStatus(s.key) === 'active'
+                    )
+                    if (activeStep) {
+                      return (
+                        <p className="text-[10px] text-primary mt-1.5 flex items-center gap-1">
+                          <span className="size-1.5 rounded-full bg-primary exec-pulse-dot" />
+                          {activeStep.label}中...
+                        </p>
+                      )
+                    }
+                    if (pipelineCompletedCount === pipelineTotalCount) {
+                      return (
+                        <p className="text-[10px] text-emerald-500 mt-1.5">
+                          ✓ 全部完成
+                        </p>
+                      )
+                    }
+                    return null
+                  })()}
+                </div>
+
                 {/* Pipeline steps */}
                 <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-0.5">
-                    <div className="px-2 py-1.5 mb-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        制作管线
-                      </h3>
-                    </div>
+                  <div className="p-2 space-y-0.5">
                     {PIPELINE_STEPS.map((step) => {
                       const stepStatus = getPipelineStepStatus(step.key)
                       const isActive = activePipelineStep === step.key
+
+                      // Summary text for completed steps
+                      let summaryText: string | null = null
+                      if (stepStatus === 'completed') {
+                        const ps = pipelineStatus?.pipeline?.[step.key]
+                        if (step.key === 'character_extract') {
+                          summaryText = `${characters.length} 角色 · ${scenes.length} 场景`
+                        } else if (step.key === 'storyboard') {
+                          summaryText = `${storyboards.length} 镜头`
+                        } else if (step.key === 'character_images') {
+                          const withImg = characters.filter(c => c.imageUrl).length
+                          summaryText = `${withImg}/${characters.length} 头像`
+                        } else if (step.key === 'scene_images') {
+                          const withImg = scenes.filter(s => s.imageUrl).length
+                          summaryText = `${withImg}/${scenes.length} 场景图`
+                        } else if (step.key === 'voice_assign') {
+                          const withVoice = characters.filter(c => c.voiceId).length
+                          summaryText = `${withVoice}/${characters.length} 已分配`
+                        } else if (step.key === 'shot_frames') {
+                          const withImg = storyboards.filter(s => s.firstFrameUrl).length
+                          summaryText = `${withImg}/${storyboards.length} 帧图`
+                        } else if (step.key === 'dubbing') {
+                          const withTts = storyboards.filter(s => s.ttsAudioUrl).length
+                          summaryText = `${withTts}/${storyboards.length} 配音`
+                        } else if (step.key === 'video_generation') {
+                          const withVid = storyboards.filter(s => s.videoUrl).length
+                          summaryText = `${withVid}/${storyboards.length} 视频`
+                        } else if (ps && step.key !== 'raw_content' && step.key !== 'script_rewrite') {
+                          summaryText = `${ps.completed}/${ps.total}`
+                        }
+                      }
+
                       return (
                         <button
                           key={step.key}
                           onClick={() => handlePipelineStepClick(step.key)}
                           className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all duration-150 group ${
                             isActive
-                              ? 'bg-primary/10 text-primary'
+                              ? 'bg-primary/10 text-primary border-l-[3px] border-l-primary sidebar-accent-border'
                               : stepStatus === 'completed'
-                                ? 'text-emerald-600 hover:bg-emerald-500/5'
-                                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/5 border-l-[3px] border-l-transparent'
+                                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border-l-[3px] border-l-transparent'
                           }`}
                         >
                           {/* Status indicator */}
@@ -1808,7 +1885,7 @@ export function EpisodeWorkspace() {
                               </div>
                             ) : stepStatus === 'active' ? (
                               <div className="size-6 rounded-full bg-primary/20 flex items-center justify-center">
-                                <Loader2 className="size-3 text-primary animate-spin" />
+                                <div className="size-2.5 rounded-full bg-primary exec-pulse-dot" />
                               </div>
                             ) : (
                               <div className="size-6 rounded-full bg-muted flex items-center justify-center">
@@ -1823,8 +1900,15 @@ export function EpisodeWorkspace() {
                             <span className={`text-xs font-medium ${isActive ? 'text-primary' : ''}`}>
                               {step.label}
                             </span>
-                            {pipelineStatus?.pipeline?.[step.key] && step.key !== 'raw_content' && step.key !== 'script_rewrite' && step.key !== 'storyboard' && (
-                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {/* Summary text for completed steps */}
+                            {stepStatus === 'completed' && summaryText && (
+                              <div className="text-[10px] text-emerald-500/70 mt-0.5">
+                                {summaryText}
+                              </div>
+                            )}
+                            {/* Progress counter for active steps with sub-items */}
+                            {stepStatus === 'active' && pipelineStatus?.pipeline?.[step.key] && step.key !== 'raw_content' && step.key !== 'script_rewrite' && step.key !== 'storyboard' && (
+                              <div className="text-[10px] text-primary/70 mt-0.5">
                                 {pipelineStatus.pipeline[step.key].completed}/{pipelineStatus.pipeline[step.key].total}
                               </div>
                             )}
@@ -1839,21 +1923,77 @@ export function EpisodeWorkspace() {
                   </div>
                 </ScrollArea>
 
-                {/* Progress */}
+                {/* Progress footer */}
                 <div className="p-3 border-t border-border/50">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                    <span>管线进度</span>
-                    <span className="font-medium">{pipelineCompletedCount}/{pipelineTotalCount} 步完成</span>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{pipelineCompletedCount}/{pipelineTotalCount} 步完成</span>
+                    <span className="font-medium tabular-nums">{pipelineStatus?.progressPercent ?? 0}%</span>
                   </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                    <motion.div
+                </div>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+
+        {/* Collapsed sidebar — icon strip */}
+        <AnimatePresence>
+          {!sidebarOpen && (
+            <motion.aside
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 48, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-shrink-0 border-r border-border/50 bg-card/50 overflow-hidden"
+            >
+              <div className="w-12 h-full flex flex-col items-center py-2 gap-0.5">
+                {/* Mini progress indicator */}
+                <div className="mb-1 flex flex-col items-center gap-0.5">
+                  <span className="text-[8px] font-bold text-primary tabular-nums">
+                    {pipelineCompletedCount}/{pipelineTotalCount}
+                  </span>
+                  <div className="w-6 h-0.5 bg-muted rounded-full overflow-hidden">
+                    <div
                       className="h-full bg-emerald-500 rounded-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
-                      transition={{ duration: 0.5 }}
+                      style={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
                     />
                   </div>
                 </div>
+
+                {PIPELINE_STEPS.map((step) => {
+                  const stepStatus = getPipelineStepStatus(step.key)
+                  const isActive = activePipelineStep === step.key
+
+                  const statusLabel = stepStatus === 'completed' ? '✓ 已完成' : stepStatus === 'active' ? '● 进行中' : '○ 待处理'
+
+                  return (
+                    <Tooltip key={step.key}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => handlePipelineStepClick(step.key)}
+                          className={`size-8 rounded-md flex items-center justify-center transition-all duration-150 ${
+                            isActive
+                              ? 'bg-primary/15 text-primary'
+                              : stepStatus === 'completed'
+                                ? 'text-emerald-500 hover:bg-emerald-500/10'
+                                : 'text-muted-foreground/60 hover:bg-muted/50 hover:text-muted-foreground'
+                          }`}
+                        >
+                          {stepStatus === 'completed' ? (
+                            <Check className="size-3.5" />
+                          ) : stepStatus === 'active' ? (
+                            <div className="size-2 rounded-full bg-primary exec-pulse-dot" />
+                          ) : (
+                            <span className="text-[9px] font-bold">{step.stepNumber}</span>
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={8} className="text-xs">
+                        <span className="font-medium">{step.label}</span>
+                        <span className="ml-1.5 text-muted-foreground">{statusLabel}</span>
+                      </TooltipContent>
+                    </Tooltip>
+                  )
+                })}
               </div>
             </motion.aside>
           )}

@@ -401,3 +401,126 @@
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
+
+/* ============================================================
+   Pipeline UI Enhancement Animations
+   ============================================================ */
+
+/* Subtle pulse for active step indicator dot */
+@keyframes exec-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.3);
+  }
+}
+
+.exec-pulse-dot {
+  animation: exec-pulse 1.8s ease-in-out infinite;
+}
+
+/* Typing indicator — three bouncing dots */
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Fade-in with slight upward motion for progressive reveal */
+@keyframes exec-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.exec-fade-in {
+  animation: exec-fade-in 0.35s ease-out both;
+}
+
+/* Brief highlight glow for newly appeared items */
+@keyframes exec-glow {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.72 0.15 75 / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px oklch(0.72 0.15 75 / 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.72 0.15 75 / 0);
+  }
+}
+
+.exec-glow {
+  animation: exec-glow 0.8s ease-out;
+}
+
+/* Staggered fade-in for shot cards */
+@keyframes exec-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.exec-stagger-in {
+  animation: exec-stagger-in 0.4s ease-out both;
+}
+
+/* Sidebar active step left border accent pulse */
+@keyframes sidebar-accent-pulse {
+  0%, 100% {
+    border-left-color: oklch(0.72 0.15 75 / 0.6);
+  }
+  50% {
+    border-left-color: oklch(0.72 0.15 75 / 1);
+  }
+}
+
+.sidebar-accent-border {
+  animation: sidebar-accent-pulse 2s ease-in-out infinite;
+}
+
+/* Progress bar smooth fill */
+@keyframes progress-fill {
+  from {
+    width: 0%;
+  }
+}
+
+.progress-bar-animate {
+  animation: progress-fill 0.6s ease-out;
+}

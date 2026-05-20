@@ -349,3 +349,45 @@ Stage Summary:
 - 11 files changed, +977/-50 lines
 - All P2 items completed: config lock, grid UI, FFmpeg compose UI, reference images
 - Deployment live at huobao-drama-ai.vercel.app
+
+---
+Task ID: 1
+Agent: Main
+Task: 修复免费用户API Key隐私保护 + 配置入口保障
+
+Work Log:
+- 分析了当前main上的代码架构：设置按钮已对所有用户开放，UserProviderCard和/api/settings/user-provider已存在
+- 发现之前被拒绝的fix/api-key-privacy分支把设置按钮改成了仅admin可见，这是用户愤怒的根本原因
+- 删除了旧的fix/api-key-privacy分支，基于最新main创建新的fix/free-user-api-key-access分支
+- 修改后端/api/settings GET：非admin用户不再获取管理员Provider信息，改为返回空列表+hasDefault标记
+- 新增hasGlobalDefaultProvider()函数到ai-config.ts
+- 修改前端settings-view.tsx：管理员ProviderCard区域仅admin可见，免费用户配置区域始终开放
+- 非admin用户可见"平台共享Key可用"提示(当管理员已配置默认Key时)
+- 构建验证通过
+- 创建PR #9
+
+Stage Summary:
+- PR: https://github.com/dav-niu474/huobao-drama-ai/pull/9
+- 核心原则：隐藏管理员配置 ≠ 禁用免费用户配置
+- 3个文件修改：settings/route.ts, ai-config.ts, settings-view.tsx
+
+---
+Task ID: 2
+Agent: Main
+Task: 修复免费用户点击眼睛图标可看到平台API Key的安全漏洞
+
+Work Log:
+- 用户报告：免费用户点击眼睛图标时，可以看到平台的API Key明文
+- 定位到安全漏洞：userProviderToConfig函数（/api/settings/user-provider/route.ts第25行）
+- 根因：当用户apiKey为空时，函数回退读取process.env[preset.envKey]，即平台环境变量中的API Key
+- 该环境变量Key通过API返回给前端，免费用户在UserProviderCard中点眼睛即可看到明文
+- 修复：将apiKey: up.apiKey || (preset?.envKey ? (process.env[preset.envKey] || '') : '') 改为 apiKey: up.apiKey || ''
+- 确认getActiveProviderForUser(ai-config.ts:119)中的环境变量回退保留（仅服务端使用，不返回前端）
+- 确认test-connection端点不返回API Key
+- 确认active-models端点不返回API Key
+- 提交并推送到fix/free-user-api-key-access分支，PR #9自动更新
+
+Stage Summary:
+- 安全漏洞修复：移除userProviderToConfig中环境变量API Key回退
+- 1个文件修改：user-provider/route.ts（1行核心变更）
+- PR #9已更新：https://github.com/dav-niu474/huobao-drama-ai/pull/9

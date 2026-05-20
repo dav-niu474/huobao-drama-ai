@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Loader2,
@@ -44,6 +44,7 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-execution-panel'
+import { ExecutionProgress, STORYBOARD_STEPS, deriveStoryboardStep } from './execution-progress'
 import { statusBadge, shotTypeLabel, cameraAngleLabel, cameraMovementLabel } from './helpers'
 import type { StoryboardPanelProps, GridConfig, GridMode, PipelineStepKey } from './types'
 import type { Storyboard } from '@/lib/store'
@@ -284,6 +285,29 @@ export function StoryboardPanel({
   const storyboardError = agentExec.errors['storyboard_breaker']
   const isAgentRunning = agentExec.isRunning('storyboard_breaker')
 
+  // ── Derive execution state from agent logs (always called) ──
+  const storyboardLogs = (agentExec.logs['storyboard_breaker'] || []) as Array<{
+    type: string
+    message?: string
+    toolCall?: { name: string; arguments?: Record<string, unknown> }
+  }>
+  const currentExecStep = useMemo(() => deriveStoryboardStep(storyboardLogs), [storyboardLogs])
+  const latestStoryboardLog = storyboardLogs.length > 0 ? storyboardLogs[storyboardLogs.length - 1] : null
+  const storyboardStepMessage = latestStoryboardLog?.message || undefined
+
+  // Parse shot count from agent logs for progressive counter
+  const discoveredShotCount = useMemo(() => {
+    let count = 0
+    for (const log of storyboardLogs) {
+      if (log.type === 'tool_call' && log.toolCall?.name === 'save_storyboards') {
+        if (log.toolCall.arguments?.storyboards && Array.isArray(log.toolCall.arguments.storyboards)) {
+          count = log.toolCall.arguments.storyboards.length
+        }
+      }
+    }
+    return count || storyboards.length
+  }, [storyboardLogs, storyboards.length])
+
   // Empty state
   if (storyboards.length === 0 && !isStoryboarding && !isAgentRunning && !aiLoading) {
     return (
@@ -321,10 +345,53 @@ export function StoryboardPanel({
     )
   }
 
-  // Loading/running state — show agent execution panel
+  // Loading/running state — show step-by-step execution progress + progressive shot reveal
   if (isStoryboarding || isAgentRunning) {
     return (
       <div className="flex-1 p-6 overflow-y-auto">
+        {/* Step-by-step execution progress */}
+        <div className="mb-4">
+          <ExecutionProgress
+            steps={STORYBOARD_STEPS}
+            currentStep={currentExecStep}
+            message={storyboardStepMessage}
+          />
+        </div>
+
+        {/* Progressive shot counter */}
+        {discoveredShotCount > 0 && (
+          <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/10">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="size-1.5 rounded-full bg-primary exec-pulse-dot" />
+              <span className="text-xs font-medium text-primary">
+                镜头生成中
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Film className="size-3.5 text-primary" />
+              <span className="text-xs font-medium text-primary tabular-nums">
+                已生成 {discoveredShotCount} 个镜头
+              </span>
+            </div>
+
+            {/* Show shot number pills as they arrive */}
+            {storyboards.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {storyboards.map((sb, idx) => (
+                  <span
+                    key={sb.id}
+                    className="exec-fade-in inline-flex items-center justify-center size-6 rounded bg-primary/10 text-[9px] font-bold text-primary"
+                    style={{ animationDelay: `${idx * 0.04}s` }}
+                  >
+                    {sb.shotNumber}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Agent execution log */}
         <AgentExecutionPanel
           agentType="storyboard_breaker"
           agentName="分镜拆解专家"
@@ -544,15 +611,16 @@ export function StoryboardPanel({
         <div className="w-full md:w-2/5 lg:w-1/3 border-r border-border/50 flex flex-col">
           <ScrollArea className="flex-1">
             <div className="p-3 space-y-1.5">
-              {storyboards.map((sb) => (
+              {storyboards.map((sb, idx) => (
                 <button
                   key={sb.id}
                   onClick={() => setSelectedShotId(sb.id)}
-                  className={`w-full text-left rounded-lg border transition-all duration-150 p-2.5 ${
+                  className={`w-full text-left rounded-lg border transition-all duration-150 p-2.5 exec-stagger-in ${
                     selectedShotId === sb.id
                       ? 'border-primary/50 bg-primary/5'
                       : 'border-border/30 hover:border-border/60 hover:bg-muted/30'
                   }`}
+                  style={{ animationDelay: `${idx * 0.03}s` }}
                 >
                   <div className="flex items-start gap-2">
                     {/* Shot number */}

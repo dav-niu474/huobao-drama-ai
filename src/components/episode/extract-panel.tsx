@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Loader2,
@@ -18,6 +19,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { ExecutionProgress, EXTRACT_STEPS, deriveExtractStep } from './execution-progress'
 import { statusBadge } from './helpers'
 import type { ExtractPanelProps, PipelineStepKey } from './types'
 
@@ -90,6 +92,43 @@ export function ExtractPanel({
 }: ExtractPanelProps) {
   const config = getStepConfig(activePipelineStep)
 
+  // ── Derive execution state from agent logs (always called) ──
+  const extractLogs = (agentExec.logs['extractor'] || []) as Array<{
+    type: string
+    message?: string
+    toolCall?: { name: string; arguments?: Record<string, unknown> }
+  }>
+  const currentExecStep = useMemo(() => deriveExtractStep(extractLogs), [extractLogs])
+  const latestExtractLog = extractLogs.length > 0 ? extractLogs[extractLogs.length - 1] : null
+  const extractStepMessage = latestExtractLog?.message || undefined
+
+  // Parse discovered characters from agent logs
+  const discoveredCharCount = useMemo(() => {
+    let count = 0
+    for (const log of extractLogs) {
+      if (log.type === 'tool_call' && log.toolCall?.name === 'save_characters') {
+        if (log.toolCall.arguments?.characters && Array.isArray(log.toolCall.arguments.characters)) {
+          count = log.toolCall.arguments.characters.length
+        }
+      }
+    }
+    return count || characters.length
+  }, [extractLogs, characters.length])
+
+  const discoveredSceneCount = useMemo(() => {
+    let count = 0
+    for (const log of extractLogs) {
+      if (log.type === 'tool_call' && log.toolCall?.name === 'save_scenes') {
+        if (log.toolCall.arguments?.scenes && Array.isArray(log.toolCall.arguments.scenes)) {
+          count = log.toolCall.arguments.scenes.length
+        }
+      }
+    }
+    return count || scenes.length
+  }, [extractLogs, scenes.length])
+
+  const hasDiscovered = discoveredCharCount > 0 || discoveredSceneCount > 0
+
   // Empty state
   if (characters.length === 0 && scenes.length === 0 && !isExtracting && !aiLoading) {
     return (
@@ -123,10 +162,88 @@ export function ExtractPanel({
     )
   }
 
-  // Loading state — show Agent Execution Panel
+  // Loading state — show step-by-step execution progress + progressive reveal
   if (isExtracting || aiLoading) {
     return (
       <div className="flex-1 p-6 overflow-y-auto">
+        {/* Step-by-step execution progress */}
+        <div className="mb-4">
+          <ExecutionProgress
+            steps={EXTRACT_STEPS}
+            currentStep={currentExecStep}
+            message={extractStepMessage}
+          />
+        </div>
+
+        {/* Progressive content reveal — show discovered characters/scenes as they arrive */}
+        {hasDiscovered && (
+          <div className="mb-4 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="size-1.5 rounded-full bg-emerald-500 exec-pulse-dot" />
+              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                已发现内容
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {discoveredCharCount > 0 && (
+                <div className="exec-fade-in flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-emerald-500/10">
+                  <UserCircle className="size-3.5 text-emerald-500" />
+                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    {discoveredCharCount} 角色
+                  </span>
+                </div>
+              )}
+              {discoveredSceneCount > 0 && (
+                <div className="exec-fade-in flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-emerald-500/10" style={{ animationDelay: '0.1s' }}>
+                  <MapPin className="size-3.5 text-emerald-500" />
+                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    {discoveredSceneCount} 场景
+                  </span>
+                </div>
+              )}
+              {(discoveredCharCount > 0 || discoveredSceneCount > 0) && (
+                <span className="text-[10px] text-muted-foreground">
+                  数据持续更新中...
+                </span>
+              )}
+            </div>
+
+            {/* Show discovered character name pills */}
+            {characters.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {characters.map((char, idx) => (
+                  <Badge
+                    key={char.id}
+                    variant="secondary"
+                    className="exec-fade-in text-[10px] px-2 py-0.5 exec-glow"
+                    style={{ animationDelay: `${idx * 0.06}s` }}
+                  >
+                    {char.name}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {/* Show discovered scene name pills */}
+            {scenes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {scenes.map((scene, idx) => (
+                  <Badge
+                    key={scene.id}
+                    variant="outline"
+                    className="exec-fade-in text-[10px] px-2 py-0.5"
+                    style={{ animationDelay: `${(characters.length + idx) * 0.06}s` }}
+                  >
+                    <MapPin className="size-2.5 mr-0.5" />
+                    {scene.location}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Agent execution log */}
         <AgentExecutionPanel
           agentType="extractor"
           agentName="角色场景提取器"
@@ -221,8 +338,8 @@ export function ExtractPanel({
               <div className={`grid gap-3 ${
                 config.fullWidth ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
               }`}>
-                {characters.map((char) => (
-                  <Card key={char.id} className="border-border/50 py-0 gap-0">
+                {characters.map((char, idx) => (
+                  <Card key={char.id} className="border-border/50 py-0 gap-0 exec-stagger-in" style={{ animationDelay: `${idx * 0.05}s` }}>
                     <CardContent className="p-4">
                       <div className={`flex items-start gap-3 ${config.largeImages ? 'flex-col sm:flex-row' : ''}`}>
                         {/* Avatar */}
@@ -336,8 +453,8 @@ export function ExtractPanel({
               <div className={`grid gap-3 ${
                 config.fullWidth ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'
               }`}>
-                {scenes.map((scene) => (
-                  <Card key={scene.id} className="border-border/50 py-0 gap-0">
+                {scenes.map((scene, idx) => (
+                  <Card key={scene.id} className="border-border/50 py-0 gap-0 exec-stagger-in" style={{ animationDelay: `${idx * 0.05}s` }}>
                     <CardContent className="p-4">
                       <div className={`flex items-start gap-3 ${config.largeImages ? 'flex-col' : ''}`}>
                         {scene.imageUrl ? (
