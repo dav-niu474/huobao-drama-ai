@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveProvider } from '@/lib/ai-config'
+import { getActiveProviderForUser } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/poll-status - Check the status of an async AI generation task
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing category or taskId' }, { status: 400 })
     }
 
-    const provider = await getActiveProvider(category)
+    const provider = await getActiveProviderForUser(category, auth.userId)
     if (!provider) {
       return NextResponse.json({ error: 'No active provider' }, { status: 400 })
     }

@@ -101,8 +101,15 @@ export async function hasGlobalDefaultProvider(category: AiCategory): Promise<bo
 
 /**
  * Load the active provider config for a given category, with per-user override.
- * If userId is provided, checks for a user-level active provider first.
- * Falls back to global getActiveProvider() if no user-level config exists.
+ * Resolution order:
+ *   1. UserProvider (isActive=true) with non-empty apiKey → use user's own key
+ *   2. If UserProvider exists but apiKey is empty → skip, fall through
+ *   3. getActiveProvider() → AiProvider DB + env var fallback (platform default)
+ *
+ * This ensures:
+ *   - Users with their own key always use it (priority)
+ *   - Users without their own key automatically use the platform default
+ *   - Platform API keys are NEVER leaked through the UserProvider path
  */
 export async function getActiveProviderForUser(category: AiCategory, userId?: string): Promise<ProviderConfig | null> {
   // 1. If userId provided, check for user-level active provider first
@@ -110,20 +117,23 @@ export async function getActiveProviderForUser(category: AiCategory, userId?: st
     const userProvider = await db.userProvider.findFirst({
       where: { userId, category, isActive: true },
     })
-    if (userProvider) {
+    // Only use UserProvider if it has a non-empty apiKey
+    // If apiKey is empty, skip it and fall through to global getActiveProvider()
+    // This ensures platform keys are never leaked through the user path
+    if (userProvider && userProvider.apiKey) {
       const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === userProvider.provider)
       return {
         category,
         provider: userProvider.provider,
         name: preset?.name ?? userProvider.provider,
-        apiKey: userProvider.apiKey || (preset?.envKey ? (process.env[preset.envKey] || '') : ''),
+        apiKey: userProvider.apiKey,
         baseUrl: userProvider.baseUrl || preset?.defaultBaseUrl || '',
         model: userProvider.model || preset?.defaultModel || '',
         isActive: true,
       }
     }
   }
-  // 2. Fallback to global getActiveProvider
+  // 2. Fallback to global getActiveProvider (AiProvider DB + env vars)
   return getActiveProvider(category)
 }
 

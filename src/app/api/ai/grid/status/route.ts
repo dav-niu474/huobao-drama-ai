@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
-import { getActiveProvider } from '@/lib/ai-config'
+import { getActiveProviderForUser } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import { getImageAdapter } from '@/lib/adapters/image'
 
@@ -76,8 +76,8 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Get the provider for polling
-    const provider = await getActiveProvider('image')
+    // Get the provider for polling (respect user-level keys)
+    const provider = await getActiveProviderForUser('image', auth.userId)
     if (!provider) {
       return NextResponse.json(
         { status: 'failed', error: '未配置图片生成供应商' },

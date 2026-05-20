@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveProvider } from '@/lib/ai-config'
+import { getActiveProviderForUser } from '@/lib/ai-config'
 import { getTTSAdapter } from '@/lib/adapters/tts'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/voice-sample - Generate a voice sample for a character
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
+
     const body = await request.json()
     const { characterId, voiceId, text } = body as {
       characterId?: string
@@ -36,8 +40,8 @@ export async function POST(request: NextRequest) {
       ? `你好，我是${characterName}，很高兴认识你。`
       : '你好，这是一个语音样例，用于试听音色效果。')
 
-    // Get active TTS provider
-    const provider = await getActiveProvider('tts')
+    // Get active TTS provider (respect user-level keys)
+    const provider = await getActiveProviderForUser('tts', auth.userId)
     if (!provider) {
       return NextResponse.json(
         { error: '未配置TTS供应商，请在设置中配置API Key' },

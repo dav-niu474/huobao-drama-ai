@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { aiClient, getActiveProvider, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
+import { aiClient, getActiveProviderForUser, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
-import { db } from '@/lib/db'
 
 // POST /api/ai/test-connection - Test AI provider connectivity
 // Body: { category: AiCategory, provider?: string, apiKey?: string, baseUrl?: string, model?: string }
@@ -28,29 +27,13 @@ export async function POST(request: NextRequest) {
       let baseUrl = testBaseUrl || preset?.defaultBaseUrl || ''
       let model = testModel || preset?.defaultModel || ''
 
-      // If no apiKey provided, fall back to DB → active provider → env vars
+      // If no apiKey provided, resolve via getActiveProviderForUser (respects user-level keys)
       if (!apiKey) {
-        // 1. Try DB first (handles masked key scenario)
-        const dbProvider = await db.aiProvider.findUnique({
-          where: { category_provider: { category, provider: testProvider } },
-        })
-        if (dbProvider?.apiKey) {
-          apiKey = dbProvider.apiKey
-          if (!baseUrl) baseUrl = dbProvider.baseUrl || ''
-          if (!model) model = dbProvider.model || ''
-        } else {
-          // 2. Try active provider (if same provider)
-          const activeProvider = await getActiveProvider(category)
-          if (activeProvider?.provider === testProvider) {
-            apiKey = activeProvider.apiKey
-            if (!baseUrl) baseUrl = activeProvider.baseUrl
-            if (!model) model = activeProvider.model
-          } else if (preset?.envKey) {
-            // 3. Try env vars
-            apiKey = process.env[preset.envKey]
-              || (testProvider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
-              || ''
-          }
+        const resolvedProvider = await getActiveProviderForUser(category, auth.userId)
+        if (resolvedProvider?.provider === testProvider) {
+          apiKey = resolvedProvider.apiKey
+          if (!baseUrl) baseUrl = resolvedProvider.baseUrl
+          if (!model) model = resolvedProvider.model
         }
       }
 
