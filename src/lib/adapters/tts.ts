@@ -222,6 +222,55 @@ export class OpenAITTSAdapter implements TTSProviderAdapter {
 }
 
 // ============================================================================
+// Ali TTS Adapter (DashScope / Qwen TTS)
+// ============================================================================
+
+export class AliTTSAdapter implements TTSProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { text: string; voiceId?: string; speed?: number }
+  ): ProviderRequest {
+    const model = config.model || 'qwen3-tts-vd-2026-01-26'
+    const voice = params.voiceId || 'zhitian_emo'
+
+    return {
+      url: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2audio/generation',
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: {
+        model,
+        input: {
+          text: params.text,
+          voice,
+        },
+      },
+    }
+  }
+
+  parseResponse(result: unknown): {
+    audioBase64?: string
+    audioHex?: string
+    format: string
+    sampleRate?: number
+  } {
+    const resp = result as Record<string, unknown>
+    const output = resp.output as Record<string, unknown> | undefined
+
+    if (!output) {
+      return { format: 'wav' }
+    }
+
+    const audioBase64 = output.audio as string | undefined
+    const audioFormat = (output.audio_format as string) || 'wav'
+
+    return {
+      audioBase64,
+      format: audioFormat,
+    }
+  }
+}
+
+// ============================================================================
 // Adapter Registry
 // ============================================================================
 
@@ -230,6 +279,7 @@ export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   chatfire: new ChatfireTTSAdapter(), // MiniMax-compatible gateway
   openai: new OpenAITTSAdapter(),
   fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
+  ali: new AliTTSAdapter(),
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {

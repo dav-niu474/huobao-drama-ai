@@ -511,6 +511,18 @@ export const api = {
         body: JSON.stringify({ storyboardId, text, voiceId }),
       }),
 
+    pollStatus: (category: 'image' | 'video', taskId: string) =>
+      request<{
+        status: 'pending' | 'processing' | 'completed' | 'failed' | 'unsupported'
+        imageBase64?: string
+        videoUrl?: string
+        error?: string
+      }>('/api/ai/poll-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, taskId }),
+      }),
+
     testConnection: (category?: AiCategory, model?: string) =>
       request<{
         success: boolean

@@ -447,6 +447,119 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
 }
 
 /**
+ * Get the active provider for a specific user.
+ * Priority: User's own key → Admin's global default key → Env var fallback.
+ * This is the correct function to use in all AI generation endpoints.
+ */
+export async function getActiveProviderForUser(
+  category: AiCategory,
+  userId: string
+): Promise<ProviderConfig | null> {
+  // 1. Check if the user has their own active provider for this category
+  const userProvider = await db.userProvider.findFirst({
+    where: { userId, category, isActive: true },
+  })
+
+  if (userProvider && userProvider.apiKey) {
+    const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === userProvider.provider)
+    return {
+      category,
+      provider: userProvider.provider,
+      name: preset?.name || userProvider.provider,
+      apiKey: userProvider.apiKey,
+      baseUrl: userProvider.baseUrl || preset?.defaultBaseUrl || '',
+      model: userProvider.model || preset?.defaultModel || '',
+      isActive: true,
+    }
+  }
+
+  // 2. Fall back to the global/admin active provider
+  return getActiveProvider(category)
+}
+
+/**
+ * Get all provider configs for a user (for settings UI).
+ * Non-admin users only see their own keys + whether a default is available (no actual key values).
+ */
+export async function getAllProvidersForUser(
+  category: AiCategory,
+  userId: string,
+  isAdmin: boolean
+): Promise<ProviderConfig[]> {
+  if (isAdmin) {
+    // Admin sees everything (existing behavior)
+    return getAllProviders(category)
+  }
+
+  // Non-admin: return only user's own providers + preset info (no admin key values)
+  const userProviders = await db.userProvider.findMany({
+    where: { userId, category },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const presets = PROVIDER_PRESETS[category]
+  const globalActive = await db.aiProvider.findFirst({
+    where: { category, isActive: true },
+  })
+
+  const result: ProviderConfig[] = []
+
+  for (const preset of presets) {
+    const userRecord = userProviders.find((p) => p.provider === preset.provider)
+    // If user has their own key, show it
+    if (userRecord) {
+      result.push({
+        category,
+        provider: preset.provider,
+        name: preset.name,
+        apiKey: userRecord.apiKey,
+        baseUrl: userRecord.baseUrl || preset.defaultBaseUrl,
+        model: userRecord.model || preset.defaultModel,
+        isActive: userRecord.isActive,
+      })
+    } else {
+      // No user key — show the preset with empty apiKey
+      // If there's a global active provider for this preset, show it as "has default" but hide the key
+      result.push({
+        category,
+        provider: preset.provider,
+        name: preset.name,
+        apiKey: '',
+        baseUrl: preset.defaultBaseUrl,
+        model: preset.defaultModel,
+        isActive: globalActive?.provider === preset.provider,
+      })
+    }
+  }
+
+  // Add any custom user providers not in presets
+  for (const up of userProviders) {
+    if (!presets.some((p) => p.provider === up.provider)) {
+      result.push({
+        category,
+        provider: up.provider,
+        name: up.provider,
+        apiKey: up.apiKey,
+        baseUrl: up.baseUrl,
+        model: up.model,
+        isActive: up.isActive,
+      })
+    }
+  }
+
+  return result
+}
+
+/**
+ * Check if a global (admin) default provider is active for a category.
+ * Used to inform non-admin users that they can use the platform default.
+ */
+export async function hasGlobalDefaultProvider(category: AiCategory): Promise<boolean> {
+  const provider = await getActiveProvider(category)
+  return provider !== null
+}
+
+/**
  * Get all provider configs for a category (for settings UI).
  */
 export async function getAllProviders(category: AiCategory): Promise<ProviderConfig[]> {
@@ -714,9 +827,13 @@ export const aiClient = {
       return parsed.imageBase64
     }
 
-    // Async response — need to poll
+    // Async response — return taskId for client-side polling
+    // For Vercel compatibility, return immediately with taskId
+    // Client will poll /api/ai/poll-status for results
     if (parsed.isAsync && parsed.taskId) {
-      return this._pollImageTask(adapter, config, parsed.taskId)
+      const err = new Error(`ASYNC_TASK:${parsed.taskId}`)
+      err.name = 'AsyncTaskError'
+      throw err
     }
 
     throw new Error('图片生成返回数据为空')
@@ -726,7 +843,7 @@ export const aiClient = {
     adapter: import('@/lib/adapters/image').ImageProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
-    maxPolls = 120,
+    maxPolls = 24,
     interval = 5000
   ): Promise<string> {
     const pollReq = adapter.buildPollRequest(config, taskId)
@@ -918,7 +1035,15 @@ export const aiClient = {
       if (parsed.videoUrl) {
         videoUrl = parsed.videoUrl
       } else if (parsed.isAsync && parsed.taskId) {
-        videoUrl = await this._pollVideoTask(adapter, config, parsed.taskId)
+        // For Vercel compatibility, return taskId for client-side polling
+        // Save taskId to storyboard so client can poll
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { status: 'processing' },
+        })
+        const err = new Error(`ASYNC_TASK:${parsed.taskId}`)
+        err.name = 'AsyncTaskError'
+        throw err
       }
 
       await db.storyboard.update({
@@ -938,7 +1063,7 @@ export const aiClient = {
     adapter: import('@/lib/adapters/video').VideoProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
-    maxPolls = 300,
+    maxPolls = 36,
     interval = 10000
   ): Promise<string> {
     const pollReq = adapter.buildPollRequest(config, taskId)

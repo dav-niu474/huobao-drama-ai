@@ -76,7 +76,22 @@ export async function POST(request: NextRequest) {
 
     // Use multi-provider aiClient
     // The aiClient.generateVideo handles both text-to-video and image-to-video
-    await aiClient.generateVideo(storyboardId, videoPrompt, frameUrl)
+    try {
+      await aiClient.generateVideo(storyboardId, videoPrompt, frameUrl)
+    } catch (error: unknown) {
+      // Handle async task — return taskId for client-side polling
+      if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
+        const taskId = error.message.replace('ASYNC_TASK:', '')
+        return NextResponse.json({
+          status: 'processing',
+          taskId,
+          category: 'video',
+          storyboardId,
+          message: '视频生成中，请稍后查询',
+        })
+      }
+      throw error
+    }
 
     // Fetch updated storyboard
     const updatedStoryboard = await db.storyboard.findUnique({

@@ -72,38 +72,52 @@ export async function POST(request: NextRequest) {
     // Generate image using multi-provider aiClient
     let base64Image: string
 
-    if (storyboardId || atmosphere || episodeId) {
-      base64Image = await aiClient.generateStoryboardFrame(
-        enhancedPrompt,
-        atmosphere,
-        shotType,
-        cameraAngle,
-        style,
-        referenceImages.length > 0 ? referenceImages : undefined
-      )
-    } else if (characterId) {
-      base64Image = await aiClient.generateCharacterPortrait(
-        enhancedPrompt,
-        style,
-        undefined, // characterName
-        undefined, // personality
-        referenceImages.length > 0 ? referenceImages : undefined
-      )
-    } else if (sceneId) {
-      base64Image = await aiClient.generateSceneImage(
-        enhancedPrompt,
-        undefined, // timeOfDay
-        style,
-        undefined, // weather
-        referenceImages.length > 0 ? referenceImages : undefined
-      )
-    } else {
-      const negativePrompt =
-        'blurry, low quality, distorted, watermark, text overlay'
-      base64Image = await aiClient.generateImage(prompt, negativePrompt, {
-        size: size || '1024x1024',
-        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-      })
+    try {
+      if (storyboardId || atmosphere || episodeId) {
+        base64Image = await aiClient.generateStoryboardFrame(
+          enhancedPrompt,
+          atmosphere,
+          shotType,
+          cameraAngle,
+          style,
+          referenceImages.length > 0 ? referenceImages : undefined
+        )
+      } else if (characterId) {
+        base64Image = await aiClient.generateCharacterPortrait(
+          enhancedPrompt,
+          style,
+          undefined, // characterName
+          undefined, // personality
+          referenceImages.length > 0 ? referenceImages : undefined
+        )
+      } else if (sceneId) {
+        base64Image = await aiClient.generateSceneImage(
+          enhancedPrompt,
+          undefined, // timeOfDay
+          style,
+          undefined, // weather
+          referenceImages.length > 0 ? referenceImages : undefined
+        )
+      } else {
+        const negativePrompt =
+          'blurry, low quality, distorted, watermark, text overlay'
+        base64Image = await aiClient.generateImage(prompt, negativePrompt, {
+          size: size || '1024x1024',
+          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        })
+      }
+    } catch (error: unknown) {
+      // Handle async task — return taskId for client-side polling
+      if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
+        const taskId = error.message.replace('ASYNC_TASK:', '')
+        return NextResponse.json({
+          status: 'processing',
+          taskId,
+          category: 'image',
+          message: '图片生成中，请稍后查询',
+        })
+      }
+      throw error
     }
 
     // Convert base64 to data URL

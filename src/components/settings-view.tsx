@@ -261,21 +261,25 @@ function ProviderCard({
   isActive,
   onSetActive,
   onSave,
+  onDelete,
   saving,
   isAdmin,
+  hasPlatformDefault = false,
 }: {
   provider: ProviderConfig
   preset: ProviderPreset | undefined
   isActive: boolean
   onSetActive: () => void
   onSave: (updated: ProviderConfig) => Promise<void>
+  onDelete?: (provider: ProviderConfig) => Promise<void>
   saving: boolean
   isAdmin: boolean
+  hasPlatformDefault?: boolean // Whether a platform default exists for this category
 }) {
   const [expanded, setExpanded] = useState(isActive)
   const [expandDone, setExpandDone] = useState(false)
-  // Track whether the user has edited the API key since loading
-  // If the key is masked (starts with ****), we need to know it hasn't been changed
+  // For non-admin: provider.apiKey is '' (empty) when user has no own key
+  // For admin: provider.apiKey is the real key or masked (****)
   const isMaskedKey = (provider.apiKey ?? '').startsWith('****')
   const [apiKey, setApiKey] = useState(isMaskedKey ? '' : (provider.apiKey ?? ''))
   const [apiKeyEdited, setApiKeyEdited] = useState(false)
@@ -303,8 +307,10 @@ function ProviderCard({
     if (!expanded) setExpandDone(false)
   }, [expanded])
 
-  // For non-admin: a masked key still counts as "configured"
-  const hasApiKey = Boolean(apiKey.trim()) || isMaskedKey
+  // For admin: masked key means configured by admin
+  // For non-admin: check if they have their own key entered
+  const hasOwnKey = Boolean(apiKey.trim())
+  const hasApiKey = isAdmin ? (Boolean(apiKey.trim()) || isMaskedKey) : hasOwnKey
 
   const handleApiKeyChange = (value: string) => {
     setApiKey(value)
@@ -372,7 +378,23 @@ function ProviderCard({
                   当前使用
                 </Badge>
               ) : null}
-              {hasApiKey ? (
+              {hasOwnKey ? (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20 gap-1"
+                >
+                  <CheckCircle2 className="size-2.5" />
+                  自己的Key
+                </Badge>
+              ) : !isAdmin && isActive && hasPlatformDefault ? (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] bg-sky-500/10 text-sky-500 border-sky-500/20 gap-1"
+                >
+                  <Wifi className="size-2.5" />
+                  使用平台默认
+                </Badge>
+              ) : isAdmin && (Boolean(apiKey.trim()) || isMaskedKey) ? (
                 <Badge
                   variant="secondary"
                   className="text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20 gap-1"
@@ -431,38 +453,35 @@ function ProviderCard({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Key className="size-3" />
-                    API Key
-                    {!isAdmin && isMaskedKey && (
-                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-600 border-amber-500/20">
-                        仅管理员可见
+                    {isAdmin ? 'API Key' : '我的 API Key'}
+                    {!isAdmin && !hasOwnKey && hasPlatformDefault && (
+                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-sky-500/10 text-sky-500 border-sky-500/20">
+                        不填则用平台默认
                       </Badge>
                     )}
                   </Label>
                   <div className="relative">
                     <Input
                       type={showKey ? 'text' : 'password'}
-                      placeholder={isAdmin ? 'sk-...' : (isMaskedKey ? '由管理员配置' : 'sk-...')}
-                      value={isAdmin ? apiKey : (isMaskedKey ? provider.apiKey : apiKey)}
+                      placeholder={isAdmin ? 'sk-...' : '输入你的 API Key...'}
+                      value={apiKey}
                       onChange={(e) => handleApiKeyChange(e.target.value)}
-                      disabled={!isAdmin}
                       className="bg-muted/30 border-border/50 pr-10"
                     />
-                    {isAdmin && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowKey(!showKey)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                      >
-                        {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </Button>
                   </div>
-                  {!hasApiKey && (
+                  {!hasOwnKey && !hasPlatformDefault && (
                     <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
                       <Info className="size-3 mt-0.5 flex-shrink-0" />
-                      没有API Key？可以复制提示词到其他平台使用
+                      没有API Key？可以复制提示词到其他平台使用，或联系管理员配置平台默认Key
                     </p>
                   )}
                 </div>
@@ -478,10 +497,9 @@ function ProviderCard({
                     }
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
-                    disabled={!isAdmin}
                     className="bg-muted/30 border-border/50"
                   />
-                  {isAdmin && preset?.defaultBaseUrl && baseUrl !== preset.defaultBaseUrl && (
+                  {preset?.defaultBaseUrl && baseUrl !== preset.defaultBaseUrl && (
                     <Button
                       type="button"
                       variant="outline"
@@ -507,7 +525,6 @@ function ProviderCard({
                       value={model}
                       onChange={setModel}
                       defaultModel={preset.defaultModel}
-                      disabled={!isAdmin}
                     />
                   ) : (
                     <Input
@@ -518,30 +535,46 @@ function ProviderCard({
                       }
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
-                      disabled={!isAdmin}
                       className="bg-muted/30 border-border/50"
                     />
                   )}
                 </div>
 
-                {/* Save button — admin only */}
-                {isAdmin && (
-                <div className="flex justify-end pt-1">
-                  <Button
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="amber-glow"
-                  >
-                    {isSaving ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Save className="size-3.5" />
-                    )}
-                    保存配置
-                  </Button>
+                {/* Save / Delete buttons */}
+                <div className="flex items-center justify-between pt-1">
+                  {!isAdmin && hasOwnKey && onDelete && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await onDelete(provider)
+                        } catch (err) {
+                          // Error handling is done by parent
+                        }
+                      }}
+                      disabled={isSaving}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      删除我的Key
+                    </Button>
+                  )}
+                  <div className="ml-auto">
+                    <Button
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={isSaving || (!isAdmin && !apiKeyEdited && !hasOwnKey)}
+                      className="amber-glow"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Save className="size-3.5" />
+                      )}
+                      {isAdmin ? '保存配置' : '保存我的Key'}
+                    </Button>
+                  </div>
                 </div>
-                )}
               </div>
             </motion.div>
           )}
@@ -560,23 +593,27 @@ function CategoryPanel({
   providers,
   presets,
   onSaveProvider,
+  onDeleteProvider,
   onSetActive,
   onTestConnection,
   testResult,
   testing,
   savingProvider,
   isAdmin,
+  hasPlatformDefault = false,
 }: {
   category: AiCategory
   providers: ProviderConfig[]
   presets: ProviderPreset[]
   onSaveProvider: (config: ProviderConfig) => Promise<void>
+  onDeleteProvider?: (provider: ProviderConfig) => Promise<void>
   onSetActive: (category: AiCategory, provider: string) => void
   onTestConnection: (category: AiCategory) => void
   testResult: { success: boolean; provider?: string; model?: string; error?: string; responsePreview?: string } | null
   testing: boolean
   savingProvider: string | null
   isAdmin: boolean
+  hasPlatformDefault?: boolean
 }) {
   const meta = CATEGORY_META[category]
 
@@ -591,7 +628,7 @@ function CategoryPanel({
             {meta.badge}
           </Badge>
         </div>
-        {isAdmin && (
+        {isAdmin ? (
           <Button
             variant="outline"
             size="sm"
@@ -606,7 +643,22 @@ function CategoryPanel({
           )}
           测试连接
         </Button>
-        )}
+        ) : hasPlatformDefault ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onTestConnection(category)}
+            disabled={testing}
+            className="gap-1.5"
+          >
+            {testing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Wifi className="size-3.5" />
+            )}
+            测试连接
+          </Button>
+        ) : null}
       </div>
 
       {/* Test result */}
@@ -671,8 +723,10 @@ function CategoryPanel({
               isActive={provider.isActive}
               onSetActive={() => onSetActive(category, provider.provider)}
               onSave={onSaveProvider}
+              onDelete={onDeleteProvider}
               saving={savingProvider === `${provider.category}-${provider.provider}`}
               isAdmin={isAdmin}
+              hasPlatformDefault={hasPlatformDefault}
             />
           )
         })}
@@ -682,8 +736,10 @@ function CategoryPanel({
       <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
         <Copy className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          没有 API Key？没关系！您可以在工作区中复制生成的提示词（Prompt），然后到 ChatGPT、Midjourney
-          等平台手动使用。配置 API Key 后可享受平台内一键生成的便捷体验。
+          {isAdmin
+            ? '管理员的配置对所有用户生效。免费用户可配置自己的 API Key 覆盖默认配置。'
+            : '配置您自己的 API Key 后可享受平台内一键生成的便捷体验。不配置则使用平台默认Key（如已配置）。'
+          }
         </p>
       </div>
     </div>
@@ -988,6 +1044,14 @@ export function SettingsView() {
   const [agentsList, setAgentsList] = useState<AgentInfo[]>([])
   const [agentSaving, setAgentSaving] = useState<string | null>(null)
 
+  // Whether a platform default provider exists for each category
+  const [hasDefaultData, setHasDefaultData] = useState<Record<AiCategory, boolean>>({
+    llm: false,
+    image: false,
+    video: false,
+    tts: false,
+  })
+
   // Active tab
   const [activeTab, setActiveTab] = useState<string>('llm')
 
@@ -999,8 +1063,11 @@ export function SettingsView() {
         const data = await api.settings.get()
         setProvidersData(data.providers as Record<AiCategory, ProviderConfig[]>)
         setPresetsData(data.presets as Record<AiCategory, ProviderPreset[]>)
-        // Track admin status from API response
+        // Track admin status and hasDefault from API response
         setIsAdmin((data as any).isAdmin === true)
+        if ((data as any).hasDefault) {
+          setHasDefaultData((data as any).hasDefault as Record<AiCategory, boolean>)
+        }
         // Load agent configs
         const agents = await api.agents.list()
         setAgentsList(agents)
@@ -1019,8 +1086,11 @@ export function SettingsView() {
 
   // Update local providers data from API response
   const updateProvidersFromResponse = useCallback(
-    (updated: Record<string, ProviderConfig[]>) => {
+    (updated: Record<string, ProviderConfig[]>, hasDefault?: Record<string, boolean>) => {
       setProvidersData(updated as Record<AiCategory, ProviderConfig[]>)
+      if (hasDefault) {
+        setHasDefaultData(hasDefault as Record<AiCategory, boolean>)
+      }
     },
     []
   )
@@ -1034,7 +1104,7 @@ export function SettingsView() {
           provider,
           isActive: true,
         })
-        updateProvidersFromResponse(result.providers)
+        updateProvidersFromResponse(result.providers, (result as any).hasDefault)
         toast({ title: '已切换供应商' })
       } catch (err) {
         toast({
@@ -1062,8 +1132,8 @@ export function SettingsView() {
           model: config.model,
           isActive: config.isActive,
         })
-        updateProvidersFromResponse(result.providers)
-        toast({ title: '配置已保存' })
+        updateProvidersFromResponse(result.providers, (result as any).hasDefault)
+        toast({ title: isAdmin ? '配置已保存' : '我的Key已保存' })
       } catch (err) {
         toast({
           title: '保存失败',
@@ -1072,6 +1142,33 @@ export function SettingsView() {
         })
       } finally {
         setSavingProvider(null)
+      }
+    },
+    [toast, updateProvidersFromResponse, isAdmin]
+  )
+
+  // Handle deleting user's own provider config
+  const handleDeleteProvider = useCallback(
+    async (config: ProviderConfig) => {
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: config.category, provider: config.provider }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: '删除失败' }))
+          throw new Error(data.error || '删除失败')
+        }
+        const result = await res.json()
+        updateProvidersFromResponse(result.providers, result.hasDefault)
+        toast({ title: '已删除我的Key' })
+      } catch (err) {
+        toast({
+          title: '删除失败',
+          description: String(err),
+          variant: 'destructive',
+        })
       }
     },
     [toast, updateProvidersFromResponse]
@@ -1231,12 +1328,14 @@ export function SettingsView() {
                     providers={providersData[category] ?? []}
                     presets={presetsData[category] ?? []}
                     onSaveProvider={handleSaveProvider}
+                    onDeleteProvider={handleDeleteProvider}
                     onSetActive={handleSetActive}
                     onTestConnection={handleTestConnection}
                     testResult={testResults[category]}
                     testing={testingCategory === category}
                     savingProvider={savingProvider}
                     isAdmin={isAdmin}
+                    hasPlatformDefault={hasDefaultData[category] ?? false}
                   />
                 </TabsContent>
               ))}

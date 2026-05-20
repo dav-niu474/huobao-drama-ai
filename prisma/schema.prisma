@@ -20,7 +20,8 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  dramas Drama[]
+  dramas        Drama[]
+  userProviders UserProvider[]
 }
 
 // ============ Drama Project ============
@@ -201,6 +202,24 @@ model AiProvider {
   updatedAt   DateTime @updatedAt
 
   @@unique([category, provider])
+}
+
+// ============ User Provider (Per-user API Keys) ============
+model UserProvider {
+  id        String   @id @default(cuid())
+  userId    String   // Link to User
+  category  String   // "llm" | "image" | "video" | "tts"
+  provider  String   // "nvidia" | "openai" | etc.
+  apiKey    String   @default("")
+  baseUrl   String   @default("")
+  model     String   @default("")
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, provider])
 }
 
 // ============ Agent Configuration ============

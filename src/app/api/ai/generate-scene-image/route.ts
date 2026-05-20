@@ -52,11 +52,27 @@ export async function POST(request: NextRequest) {
     const negativePrompt = 'blurry, low quality, amateur, cartoon, anime, watermark, text overlay, people, characters'
 
     // Generate scene image with optional reference images
-    const base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
-      width: 1344,
-      height: 768,
-      referenceImages,
-    })
+    let base64Image: string
+    try {
+      base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
+        width: 1344,
+        height: 768,
+        referenceImages,
+      })
+    } catch (error: unknown) {
+      // Handle async task — return taskId for client-side polling
+      if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
+        const taskId = error.message.replace('ASYNC_TASK:', '')
+        return NextResponse.json({
+          status: 'processing',
+          taskId,
+          category: 'image',
+          sceneId,
+          message: '场景图生成中，请稍后查询',
+        })
+      }
+      throw error
+    }
 
     // Convert base64 to data URL
     const imageUrl = `data:image/png;base64,${base64Image}`

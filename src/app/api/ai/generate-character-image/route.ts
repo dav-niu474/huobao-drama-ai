@@ -47,53 +47,68 @@ export async function POST(request: NextRequest) {
     let base64Image: string
     let imagePrompt: string
 
-    if (referenceImages && referenceImages.length > 0) {
-      // Build portrait prompt manually to pass referenceImages
-      const styleTag = style || character.role || 'cinematic'
-      imagePrompt = [
-        `Professional cinematic character portrait, ${styleTag} aesthetic,`,
-        character.name ? `${character.name} —` : '',
-        appearanceDesc,
-        character.personality ? `expressing ${character.personality} personality,` : '',
-        'dramatic Rembrandt lighting with rim light accent,',
-        'rule of thirds composition, centered framing,',
-        'shot on ARRI ALEXA 65, f/1.4 aperture, shallow depth of field,',
-        'ultra-high detail skin texture, 8K resolution, film grain texture,',
-        'character concept art, consistent art style',
-      ]
-        .filter(Boolean)
-        .join(' ')
+    try {
+      if (referenceImages && referenceImages.length > 0) {
+        // Build portrait prompt manually to pass referenceImages
+        const styleTag = style || character.role || 'cinematic'
+        imagePrompt = [
+          `Professional cinematic character portrait, ${styleTag} aesthetic,`,
+          character.name ? `${character.name} —` : '',
+          appearanceDesc,
+          character.personality ? `expressing ${character.personality} personality,` : '',
+          'dramatic Rembrandt lighting with rim light accent,',
+          'rule of thirds composition, centered framing,',
+          'shot on ARRI ALEXA 65, f/1.4 aperture, shallow depth of field,',
+          'ultra-high detail skin texture, 8K resolution, film grain texture,',
+          'character concept art, consistent art style',
+        ]
+          .filter(Boolean)
+          .join(' ')
 
-      const negativePrompt =
-        'blurry, low quality, distorted face, extra limbs, deformed, watermark, text, signature, cartoon, anime'
+        const negativePrompt =
+          'blurry, low quality, distorted face, extra limbs, deformed, watermark, text, signature, cartoon, anime'
 
-      base64Image = await aiClient.generateImage(imagePrompt, negativePrompt, {
-        width: 1024,
-        height: 1024,
-        referenceImages,
-      })
-    } else {
-      // Use the convenience method
-      imagePrompt = [
-        `Professional cinematic character portrait, ${style || character.role || 'cinematic'} aesthetic,`,
-        character.name ? `${character.name} —` : '',
-        appearanceDesc,
-        character.personality ? `expressing ${character.personality} personality,` : '',
-        'dramatic Rembrandt lighting with rim light accent,',
-        'rule of thirds composition, centered framing,',
-        'shot on ARRI ALEXA 65, f/1.4 aperture, shallow depth of field,',
-        'ultra-high detail skin texture, 8K resolution, film grain texture,',
-        'character concept art, consistent art style',
-      ]
-        .filter(Boolean)
-        .join(' ')
+        base64Image = await aiClient.generateImage(imagePrompt, negativePrompt, {
+          width: 1024,
+          height: 1024,
+          referenceImages,
+        })
+      } else {
+        // Use the convenience method
+        imagePrompt = [
+          `Professional cinematic character portrait, ${style || character.role || 'cinematic'} aesthetic,`,
+          character.name ? `${character.name} —` : '',
+          appearanceDesc,
+          character.personality ? `expressing ${character.personality} personality,` : '',
+          'dramatic Rembrandt lighting with rim light accent,',
+          'rule of thirds composition, centered framing,',
+          'shot on ARRI ALEXA 65, f/1.4 aperture, shallow depth of field,',
+          'ultra-high detail skin texture, 8K resolution, film grain texture,',
+          'character concept art, consistent art style',
+        ]
+          .filter(Boolean)
+          .join(' ')
 
-      base64Image = await aiClient.generateCharacterPortrait(
-        description,
-        style || character.role,
-        character.name,
-        character.personality
-      )
+        base64Image = await aiClient.generateCharacterPortrait(
+          description,
+          style || character.role,
+          character.name,
+          character.personality
+        )
+      }
+    } catch (error: unknown) {
+      // Handle async task — return taskId for client-side polling
+      if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
+        const taskId = error.message.replace('ASYNC_TASK:', '')
+        return NextResponse.json({
+          status: 'processing',
+          taskId,
+          category: 'image',
+          characterId,
+          message: '角色头像生成中，请稍后查询',
+        })
+      }
+      throw error
     }
 
     // Convert base64 to data URL for Vercel compatibility (no filesystem writes)
