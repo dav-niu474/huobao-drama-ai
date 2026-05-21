@@ -13,9 +13,9 @@ export async function PATCH(
     // Only allow updating specific fields
     const allowedFields = [
       'shotNumber', 'title', 'shotType', 'cameraAngle', 'cameraMovement',
-      'action', 'dialogue', 'dialogueChar', 'duration', 'imagePrompt',
-      'videoPrompt', 'atmosphere', 'firstFrameUrl', 'videoUrl',
-      'ttsAudioUrl', 'composedUrl', 'status',
+      'action', 'description', 'dialogue', 'dialogueChar', 'duration', 'imagePrompt',
+      'videoPrompt', 'atmosphere', 'firstFrameUrl', 'lastFrameUrl', 'videoUrl',
+      'ttsAudioUrl', 'composedUrl', 'bgmPrompt', 'soundEffect', 'referenceImages', 'status',
     ];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {

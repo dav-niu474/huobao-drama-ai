@@ -160,18 +160,60 @@ export const api = {
         if (!r.ok) throw new Error(`Delete episode failed: ${r.status}`)
       }),
 
-    // Pipeline status - detailed progress for each production step
-    pipelineStatus: (episodeId: string) =>
-      request<{
-        scriptRewrite: { status: string; hasContent: boolean }
-        extractCharacters: { status: string; count: number }
-        extractScenes: { status: string; count: number }
-        generateImages: { status: string; completed: number; total: number }
-        generateVideos: { status: string; completed: number; total: number }
-        generateTts: { status: string; completed: number; total: number }
-        composeShots: { status: string; completed: number; total: number }
-        mergeEpisode: { status: string; mergedUrl: string | null }
-      }>(`/api/episodes/${episodeId}/pipeline-status`),
+    // Pipeline status - detailed progress for each production step (11-step format)
+    // Backend returns { steps: { rawContent: {...} }, summary: {...} }
+    // Frontend expects { pipeline: { raw_content: {...} }, completedSteps, progressPercent }
+    pipelineStatus: async (episodeId: string) => {
+      const raw = await request<Record<string, unknown>>(`/api/episodes/${episodeId}/pipeline-status`)
+
+      // Map camelCase step keys to snake_case (matching PIPELINE_STEPS definitions)
+      const camelToSnake: Record<string, string> = {
+        rawContent: 'raw_content',
+        scriptRewrite: 'script_rewrite',
+        characterExtract: 'character_extract',
+        voiceAssign: 'voice_assign',
+        storyboard: 'storyboard',
+        characterImages: 'character_images',
+        sceneImages: 'scene_images',
+        dubbing: 'dubbing',
+        shotFrames: 'shot_frames',
+        video: 'video_generation',
+        composeMerge: 'compose_merge',
+      }
+
+      // Map backend status to frontend status
+      const mapStatus = (s: string): 'pending' | 'active' | 'completed' => {
+        if (s === 'done') return 'completed'
+        if (s === 'partial') return 'active'
+        return 'pending'
+      }
+
+      const rawSteps = (raw.steps ?? {}) as Record<string, { status: string; completed: number; total: number }>
+      const summary = (raw.summary ?? {}) as Record<string, unknown>
+
+      const pipeline: Record<string, { status: 'pending' | 'active' | 'completed'; completed: number; total: number }> = {}
+      const stepKeys: string[] = []
+
+      for (const [camelKey, snakeKey] of Object.entries(camelToSnake)) {
+        const stepData = rawSteps[camelKey]
+        if (stepData) {
+          pipeline[snakeKey] = {
+            status: mapStatus(stepData.status),
+            completed: stepData.completed,
+            total: stepData.total,
+          }
+          stepKeys.push(snakeKey)
+        }
+      }
+
+      return {
+        pipeline,
+        steps: stepKeys,
+        completedSteps: (summary.completedSteps as number) ?? 0,
+        totalSteps: (summary.totalSteps as number) ?? 11,
+        progressPercent: (summary.overallProgress as number) ?? 0,
+      }
+    },
 
     // Get compose data for client-side compositing
     compose: (episodeId: string, storyboardId: string) =>
@@ -511,6 +553,32 @@ export const api = {
         body: JSON.stringify({ storyboardId, text, voiceId }),
       }),
 
+    // List available voices from TTS providers
+    listVoices: (provider?: string, language?: string) => {
+      const params = new URLSearchParams()
+      if (provider) params.set('provider', provider)
+      if (language) params.set('language', language)
+      const qs = params.toString()
+      return request<{
+        voices: Array<{ id: string; name: string; provider: string; language?: string; description?: string; gender?: string }>
+        activeProvider: string | null
+        activeModel: string | null
+      }>(`/api/ai/voices${qs ? `?${qs}` : ''}`)
+    },
+
+    // Generate a voice sample for a character
+    generateVoiceSample: (characterId: string, voiceId: string, text?: string) =>
+      request<{
+        audioUrl: string
+        voiceId: string
+        text: string
+        characterName: string | null
+      }>('/api/ai/voice-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId, voiceId, text }),
+      }),
+
     pollStatus: (category: 'image' | 'video', taskId: string) =>
       request<{
         status: 'pending' | 'processing' | 'completed' | 'failed' | 'unsupported'
@@ -523,17 +591,26 @@ export const api = {
         body: JSON.stringify({ category, taskId }),
       }),
 
-    testConnection: (category?: AiCategory, model?: string) =>
+    testConnection: (category?: AiCategory, model?: string, providerOpts?: {
+      provider?: string
+      apiKey?: string
+      baseUrl?: string
+    }) =>
       request<{
         success: boolean
         provider?: string
         model?: string
         error?: string
         responsePreview?: string
+        latency?: number
       }>('/api/ai/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: category || 'llm', model }),
+        body: JSON.stringify({
+          category: category || 'llm',
+          model,
+          ...(providerOpts || {}),
+        }),
       }),
 
     // Get active models for each AI category
@@ -704,6 +781,103 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+  },
+
+  // ---- User Provider (per-user API key overrides) ----
+  userProvider: {
+    get: () =>
+      request<{ providers: Record<string, ProviderConfig[]> }>('/api/settings/user-provider'),
+
+    save: (data: {
+      category: string
+      provider: string
+      name?: string
+      apiKey: string
+      baseUrl?: string
+      model?: string
+      isActive?: boolean
+    }) =>
+      request<{ providers: Record<string, ProviderConfig[]> }>('/api/settings/user-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (data: { category: string; provider: string }) =>
+      request<{ providers: Record<string, ProviderConfig[]> }>('/api/settings/user-provider', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // ---- Grid Image Generation ----
+  grid: {
+    generate: (params: {
+      episodeId?: string
+      dramaId?: string
+      prompt: string
+      rows: number
+      cols: number
+      cellPrompts?: string[]
+      shotIds?: string[]
+      gridMode?: string
+    }) =>
+      request<{
+        imageUrl?: string
+        imageGenerationId?: string
+        status?: string
+        taskId?: string
+        size: string
+        rows: number
+        cols: number
+        message?: string
+      }>('/api/ai/grid/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      }),
+
+    split: (params: {
+      imageUrl: string
+      rows: number
+      cols: number
+      assignments: Array<{
+        cellIndex: number
+        storyboardId: string
+        frameType: 'first_frame' | 'last_frame'
+      }>
+    }) =>
+      request<{
+        cells: Array<{
+          index: number
+          imageUrl: string
+          assignedTo: string
+        }>
+        totalCells: number
+        assignedCount: number
+        rows: number
+        cols: number
+      }>('/api/ai/grid/split', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      }),
+
+    status: (taskId: string, imageGenerationId?: string) => {
+      const params = new URLSearchParams()
+      params.set('taskId', taskId)
+      if (imageGenerationId) params.set('imageGenerationId', imageGenerationId)
+      return request<{
+        status: 'pending' | 'processing' | 'completed' | 'failed'
+        imageUrl?: string
+        imageGenerationId?: string
+        size?: string
+        taskId?: string
+        error?: string
+        message?: string
+      }>(`/api/ai/grid/status?${params.toString()}`)
+    },
   },
 
   // ---- Upload ----

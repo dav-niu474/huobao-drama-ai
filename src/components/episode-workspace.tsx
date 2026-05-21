@@ -221,7 +221,7 @@ export function EpisodeWorkspace() {
     if (!selectedEpisodeId) return
     try {
       const status = await api.episodes.pipelineStatus(selectedEpisodeId)
-      setPipelineStatus(status as unknown as PipelineStatus)
+      setPipelineStatus(status as PipelineStatus)
     } catch {
       // Silently fail — pipeline status is not critical
     }

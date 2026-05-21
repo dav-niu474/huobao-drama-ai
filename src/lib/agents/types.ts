@@ -11,18 +11,23 @@ export type AgentType =
   | 'voice_assigner'
   | 'grid_prompt_generator' // deprecated: merged into storyboard_breaker
 
+export interface ToolParameter {
+  type: 'string' | 'number' | 'boolean' | 'array' | 'object'
+  description: string
+  required?: boolean
+  enum?: string[]
+  /** For array type: describes the type of each element */
+  items?: ToolParameter
+  /** For object type: describes the properties of the object */
+  properties?: Record<string, ToolParameter>
+  /** For object type: which properties are required */
+  requiredFields?: string[]
+}
+
 export interface ToolDefinition {
   name: string
   description: string
-  parameters: Record<
-    string,
-    {
-      type: 'string' | 'number' | 'boolean' | 'array' | 'object'
-      description: string
-      required?: boolean
-      enum?: string[]
-    }
-  >
+  parameters: Record<string, ToolParameter>
 }
 
 export interface ToolCall {

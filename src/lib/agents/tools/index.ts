@@ -34,6 +34,40 @@ export interface OpenAITool {
 }
 
 /**
+ * Recursively convert a ToolParameter to OpenAI function calling parameter format.
+ * Includes `items` for arrays and `properties`/`required` for objects.
+ */
+function paramToOpenAI(param: import('../types').ToolParameter): OpenAIToolParameter {
+  const result: OpenAIToolParameter = {
+    type: param.type,
+    description: param.description,
+    ...(param.enum ? { enum: param.enum } : {}),
+  }
+
+  // For array type: include items schema so LLMs know the element structure
+  if (param.type === 'array' && param.items) {
+    result.items = paramToOpenAI(param.items)
+  }
+
+  // For object type: include properties and required fields
+  if (param.type === 'object' && param.properties) {
+    result.properties = {}
+    const objRequired: string[] = []
+    for (const [key, prop] of Object.entries(param.properties)) {
+      result.properties[key] = paramToOpenAI(prop)
+      if (prop.required) {
+        objRequired.push(key)
+      }
+    }
+    if (objRequired.length > 0) {
+      result.required = objRequired
+    }
+  }
+
+  return result
+}
+
+/**
  * Convert a ToolDefinition to OpenAI function calling format
  */
 export function toolDefinitionToOpenAI(tool: ToolDefinition): OpenAITool {
@@ -41,11 +75,7 @@ export function toolDefinitionToOpenAI(tool: ToolDefinition): OpenAITool {
   const required: string[] = []
 
   for (const [key, param] of Object.entries(tool.parameters)) {
-    properties[key] = {
-      type: param.type,
-      description: param.description,
-      ...(param.enum ? { enum: param.enum } : {}),
-    }
+    properties[key] = paramToOpenAI(param)
     if (param.required) {
       required.push(key)
     }
@@ -106,25 +136,50 @@ const EXTRACTOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'save_characters',
-    description: '保存提取到的角色信息。会自动与已有角色进行去重合并。参数为角色数组JSON字符串。',
+    description: '保存提取到的角色信息。会自动与已有角色进行去重合并。',
     parameters: {
       characters: {
         type: 'array',
         description:
-          '要保存的角色数组，每个元素包含 name, role, gender, age, appearance, personality, voiceStyle 字段',
+          '要保存的角色数组（直接传入数组对象，不要字符串化）',
         required: true,
+        items: {
+          type: 'object',
+          description: '单个角色的数据',
+          properties: {
+            name: { type: 'string', description: '角色名称', required: true },
+            role: { type: 'string', description: '角色类型：protagonist | antagonist | supporting | minor' },
+            gender: { type: 'string', description: '性别：male | female | unknown' },
+            age: { type: 'string', description: '年龄段描述' },
+            appearance: { type: 'string', description: '外貌描述' },
+            personality: { type: 'string', description: '性格特征' },
+            voiceStyle: { type: 'string', description: '声音特征' },
+          },
+          requiredFields: ['name'],
+        },
       },
     },
   },
   {
     name: 'save_scenes',
-    description: '保存提取到的场景信息。会自动与已有场景进行去重合并。参数为场景数组JSON字符串。',
+    description: '保存提取到的场景信息。会自动与已有场景进行去重合并。',
     parameters: {
       scenes: {
         type: 'array',
         description:
-          '要保存的场景数组，每个元素包含 location, timeOfDay, description, prompt 字段',
+          '要保存的场景数组（直接传入数组对象，不要字符串化）',
         required: true,
+        items: {
+          type: 'object',
+          description: '单个场景的数据',
+          properties: {
+            location: { type: 'string', description: '地点名称', required: true },
+            timeOfDay: { type: 'string', description: '时间段：day | night | dawn | dusk | morning | afternoon | evening' },
+            description: { type: 'string', description: '场景描述' },
+            prompt: { type: 'string', description: 'AI绘图英文提示词' },
+          },
+          requiredFields: ['location'],
+        },
       },
     },
   },
@@ -138,13 +193,75 @@ const STORYBOARD_BREAKER_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'save_storyboards',
-    description: '批量保存生成的分镜镜头序列。会先删除该集已有的分镜。',
+    description: '批量保存生成的分镜镜头序列。会先删除该集已有的分镜。⚠️重要：storyboards参数必须直接传入数组对象，不要传入JSON字符串。',
     parameters: {
       storyboards: {
         type: 'array',
         description:
-          '分镜数组，每个元素包含 shotNumber, title, shotType, cameraAngle, cameraMovement, action, dialogue, dialogueChar, duration, imagePrompt, videoPrompt, atmosphere 字段',
+          '分镜数组，每个元素是一个分镜对象（直接传入对象，不要字符串化）',
         required: true,
+        items: {
+          type: 'object',
+          description: '单个分镜镜头的数据',
+          properties: {
+            shotNumber: {
+              type: 'number',
+              description: '镜头编号（正整数，从1开始）',
+              required: true,
+            },
+            title: {
+              type: 'string',
+              description: '镜头标题（3-5字简短描述）',
+            },
+            shotType: {
+              type: 'string',
+              description: '景别：extreme-wide | wide | medium | close-up | extreme-close-up | over-shoulder | pov | two-shot',
+              enum: ['extreme-wide', 'wide', 'medium', 'close-up', 'extreme-close-up', 'over-shoulder', 'pov', 'two-shot'],
+            },
+            cameraAngle: {
+              type: 'string',
+              description: '摄影角度：eye-level | low-angle | high-angle | dutch-angle | birds-eye | worms-eye',
+              enum: ['eye-level', 'low-angle', 'high-angle', 'dutch-angle', 'birds-eye', 'worms-eye'],
+            },
+            cameraMovement: {
+              type: 'string',
+              description: '运镜方式：static | pan-left | pan-right | tilt-up | tilt-down | zoom-in | zoom-out | dolly-in | dolly-out | tracking | crane-up | crane-down | handheld | steady',
+            },
+            action: {
+              type: 'string',
+              description: '画面中的动作描述（谁+做什么+身体细节+表情）',
+            },
+            description: {
+              type: 'string',
+              description: '镜头的视觉描述（详细的画面构成说明）',
+            },
+            dialogue: {
+              type: 'string',
+              description: '对白内容（无对白则不传或传null）',
+            },
+            dialogueChar: {
+              type: 'string',
+              description: '说话的角色名（无对白则不传或传null）',
+            },
+            duration: {
+              type: 'number',
+              description: '镜头时长（秒），默认3.0',
+            },
+            imagePrompt: {
+              type: 'string',
+              description: '专业级英文图片提示词（6维度：风格+构图+角色+场景+光线+画质）',
+            },
+            videoPrompt: {
+              type: 'string',
+              description: '专业级XML格式视频提示词（3秒分段，用<n>分隔）',
+            },
+            atmosphere: {
+              type: 'string',
+              description: '氛围描述（光线+色彩+声音+整体情绪）',
+            },
+          },
+          requiredFields: ['shotNumber'],
+        },
       },
     },
   },

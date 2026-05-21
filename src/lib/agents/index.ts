@@ -8,6 +8,7 @@ export {
   ALL_AGENT_TYPES,
   AGENT_NAMES,
   AGENT_DESCRIPTIONS,
+  type ToolParameter,
   type ToolDefinition,
   type ToolCall,
   type ToolResult,

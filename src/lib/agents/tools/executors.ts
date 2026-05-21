@@ -301,13 +301,16 @@ const readStoryboardContext: ToolExecutor = async (_params, context) => {
 }
 
 const saveStoryboards: ToolExecutor = async (params, context) => {
-  const storyboards = params.storyboards as Array<{
+  // Defensive parsing: LLMs often pass arrays as JSON strings instead of
+  // actual arrays. This is the #1 cause of "无法存入数据库" errors.
+  let storyboards = params.storyboards as Array<{
     shotNumber: number
     title?: string
     shotType?: string
     cameraAngle?: string
     cameraMovement?: string
     action?: string
+    description?: string
     dialogue?: string
     dialogueChar?: string
     duration?: number
@@ -316,18 +319,66 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
     atmosphere?: string
   }>
 
-  if (!Array.isArray(storyboards)) {
-    throw new Error('storyboards must be an array')
+  if (typeof storyboards === 'string') {
+    try {
+      storyboards = JSON.parse(storyboards)
+    } catch {
+      throw new Error('storyboards 参数格式错误：无法解析为JSON数组。请直接传入数组，而非JSON字符串。')
+    }
   }
+
+  if (!Array.isArray(storyboards)) {
+    throw new Error(
+      `storyboards 必须是数组，但收到的是 ${typeof storyboards} 类型。` +
+      '请确保直接传入数组对象，例如：{"storyboards": [{"shotNumber": 1, ...}]}'
+    )
+  }
+
+  if (storyboards.length === 0) {
+    throw new Error('storyboards 数组不能为空，至少需要包含一个分镜镜头')
+  }
+
+  // Validate and fix each storyboard entry
+  const validatedStoryboards = storyboards.map((sb, index) => {
+    // shotNumber: must be integer — LLMs sometimes pass floats or strings
+    const rawShotNumber = sb.shotNumber
+    let shotNumber: number
+    if (typeof rawShotNumber === 'number') {
+      shotNumber = Math.round(rawShotNumber)
+    } else if (typeof rawShotNumber === 'string') {
+      shotNumber = Math.round(parseFloat(rawShotNumber))
+    } else {
+      throw new Error(`分镜 #${index + 1} 的 shotNumber 缺失或格式错误（收到: ${JSON.stringify(rawShotNumber)}）`)
+    }
+    if (isNaN(shotNumber) || shotNumber < 1) {
+      throw new Error(`分镜 #${index + 1} 的 shotNumber 无效（收到: ${JSON.stringify(rawShotNumber)}），必须是正整数`)
+    }
+
+    // duration: coerce to float — LLMs sometimes pass strings
+    let duration: number = 3.0
+    if (sb.duration !== undefined && sb.duration !== null) {
+      if (typeof sb.duration === 'number') {
+        duration = sb.duration
+      } else if (typeof sb.duration === 'string') {
+        duration = parseFloat(sb.duration) || 3.0
+      }
+    }
+
+    return {
+      ...sb,
+      shotNumber,
+      duration,
+    }
+  })
 
   // Delete existing storyboards for this episode
   await db.storyboard.deleteMany({
     where: { episodeId: context.episodeId },
   })
 
-  // Create all new storyboards
+  // Create all new storyboards with validated data
   const created = await Promise.all(
-    storyboards.map((sb) =>
+    validatedStoryboards.map((sb) =>
       db.storyboard.create({
         data: {
           episodeId: context.episodeId,
@@ -337,9 +388,10 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
           cameraAngle: sb.cameraAngle || 'eye-level',
           cameraMovement: sb.cameraMovement || 'static',
           action: sb.action || '',
+          description: sb.description || '',
           dialogue: sb.dialogue || null,
           dialogueChar: sb.dialogueChar || null,
-          duration: sb.duration ?? 3.0,
+          duration: sb.duration,
           imagePrompt: sb.imagePrompt || null,
           videoPrompt: sb.videoPrompt || null,
           atmosphere: sb.atmosphere || null,
@@ -388,6 +440,7 @@ const updateStoryboard: ToolExecutor = async (params, context) => {
     'cameraAngle',
     'cameraMovement',
     'action',
+    'description',
     'dialogue',
     'dialogueChar',
     'duration',
