@@ -30,6 +30,7 @@ import {
   LockOpen,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
+import { ResultDialog, EMPTY_RESULT_DIALOG, type ResultDialogState } from '@/components/episode/result-dialog'
 
 // Sub-components
 import { ScriptPanel } from '@/components/episode/script-panel'
@@ -74,6 +75,12 @@ export function EpisodeWorkspace() {
   const [generatingTts, setGeneratingTts] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
+  const [resultDialog, setResultDialog] = useState<ResultDialogState>(EMPTY_RESULT_DIALOG)
+
+  // Helper to show result dialog for major AI flow completions
+  const showResultDialog = (status: ResultDialogState['status'], title: string, description: string, details?: string[]) => {
+    setResultDialog({ open: true, status, title, description, details })
+  }
 
   // Pipeline status state
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null)
@@ -214,7 +221,7 @@ export function EpisodeWorkspace() {
     if (!selectedEpisodeId) return
     try {
       const status = await api.episodes.pipelineStatus(selectedEpisodeId)
-      setPipelineStatus(status)
+      setPipelineStatus(status as unknown as PipelineStatus)
     } catch {
       // Silently fail — pipeline status is not critical
     }
@@ -404,9 +411,9 @@ export function EpisodeWorkspace() {
         toast({ title: '剧本改写失败', description: rewriteError, variant: 'destructive' })
         return
       }
-      toast({ title: '剧本改写完成' })
       await fetchEpisode()
       setActiveStep('rewrite')
+      showResultDialog('success', '剧本改写完成', 'AI已将原始内容改写为标准剧本格式，结果已自动保存。')
     } catch (err) {
       toast({ title: '改写失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -450,8 +457,8 @@ export function EpisodeWorkspace() {
         toast({ title: '提取失败', description: extractError, variant: 'destructive' })
         return
       }
-      toast({ title: '角色与场景提取完成' })
       await fetchEpisode()
+      showResultDialog('success', '角色与场景提取完成', 'AI已从剧本中提取角色和场景信息，结果已自动保存。')
     } catch (err) {
       toast({ title: '提取失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -478,8 +485,8 @@ export function EpisodeWorkspace() {
         toast({ title: '音色分配失败', description: voiceError, variant: 'destructive' })
         return
       }
-      toast({ title: '音色分配完成' })
       await fetchEpisode()
+      showResultDialog('success', '音色分配完成', 'AI已为所有角色分配合适的TTS音色，结果已自动保存。')
     } catch (err) {
       toast({ title: '音色分配失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -564,8 +571,19 @@ export function EpisodeWorkspace() {
         toast({ title: '分镜生成失败', description: agentError, variant: 'destructive' })
         return
       }
-      toast({ title: '分镜生成完成' })
       await fetchEpisode()
+      // Verify storyboards were actually saved
+      const detail = await api.episodes.get(selectedEpisodeId)
+      const savedCount = detail.storyboards?.length ?? 0
+      if (savedCount > 0) {
+        showResultDialog('success', '分镜生成完成', `成功生成 ${savedCount} 个分镜镜头，结果已保存。`, [
+          `共 ${savedCount} 个镜头`,
+          '每个镜头包含图片提示词和视频提示词',
+          '可在下方列表中查看和编辑',
+        ])
+      } else {
+        showResultDialog('warning', '分镜生成完成（未保存）', 'AI已完成分镜生成，但数据可能未正确保存到数据库，请重新生成或检查网络。')
+      }
     } catch (err) {
       toast({ title: '分镜生成失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -592,8 +610,8 @@ export function EpisodeWorkspace() {
         toast({ title: '提示词增强失败', description: enhanceError, variant: 'destructive' })
         return
       }
-      toast({ title: `镜头 ${storyboard.shotNumber} 提示词已增强` })
       await fetchEpisode()
+      showResultDialog('success', `镜头 ${storyboard.shotNumber} 提示词已增强`, 'AI已重新生成更专业的图片和视频提示词，结果已自动更新。')
     } catch (err) {
       toast({ title: '提示词增强失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -1934,6 +1952,8 @@ export function EpisodeWorkspace() {
           </div>
         </main>
       </div>
+
+      <ResultDialog state={resultDialog} onClose={() => setResultDialog(EMPTY_RESULT_DIALOG)} />
     </div>
   )
 }
