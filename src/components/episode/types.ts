@@ -5,6 +5,93 @@ import type { UserPermissions } from '@/hooks/use-permissions'
 
 export type StepKey = 'raw' | 'rewrite' | 'extract' | 'voice' | 'storyboard' | 'production'
 
+// ── Pipeline step types (11-step production pipeline) ──────────
+
+export type PipelineStepKey =
+  | 'raw_content'
+  | 'script_rewrite'
+  | 'character_extract'
+  | 'voice_assign'
+  | 'storyboard'
+  | 'character_images'
+  | 'scene_images'
+  | 'dubbing'
+  | 'shot_frames'
+  | 'video'
+  | 'compose_merge'
+
+export interface PipelineStepStatus {
+  status: 'pending' | 'partial' | 'done'
+  label: string
+  completed: number
+  total: number
+  extra?: Record<string, unknown>
+}
+
+export interface PipelineStatus {
+  steps: Record<PipelineStepKey, PipelineStepStatus>
+  summary: {
+    totalSteps: number
+    completedSteps: number
+    partialSteps: number
+    pendingSteps: number
+    overallProgress: number
+    currentStep: string
+  }
+  ffmpegAvailable: boolean
+  // Legacy compatibility fields
+  pipeline?: Record<PipelineStepKey, PipelineStepStatus>
+  completedSteps?: number
+  totalSteps?: number
+  progressPercent?: number
+}
+
+export interface PipelineStepDef {
+  key: PipelineStepKey
+  stepNumber: number
+  label: string
+  description: string
+  stepKey: StepKey  // Maps to legacy step
+}
+
+// ── Voice management ──────────────────────────────────────────
+
+export interface VoiceInfo {
+  id: string
+  name: string
+  gender: string
+  description: string
+}
+
+// ── Merge status ──────────────────────────────────────────────
+
+export interface MergeStatus {
+  canMerge: boolean
+  canMergePartial: boolean
+  totalShots: number
+  composedShots: number
+  ffmpegAvailable: boolean
+  latestMerge: {
+    status: string
+    mergedUrl: string | null
+    duration: number
+  } | null
+}
+
+// ── Grid generation ───────────────────────────────────────────
+
+export interface GridConfig {
+  mode: 'first_frame' | 'first_last' | 'multi_ref'
+  rows: number
+  cols: number
+}
+
+export interface GridGenerationState {
+  isGeneratingGrid: boolean
+  isSplittingGrid: boolean
+  gridConfig: GridConfig
+}
+
 export interface StepDef {
   key: StepKey
   label: string

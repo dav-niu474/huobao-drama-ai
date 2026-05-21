@@ -327,6 +327,15 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
     }
   }
 
+  // Also try to handle nested JSON strings (LLM sometimes double-encodes)
+  if (typeof storyboards === 'string') {
+    try {
+      storyboards = JSON.parse(storyboards)
+    } catch {
+      // Give up
+    }
+  }
+
   if (!Array.isArray(storyboards)) {
     throw new Error(
       `storyboards 必须是数组，但收到的是 ${typeof storyboards} 类型。` +
@@ -376,10 +385,15 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
     where: { episodeId: context.episodeId },
   })
 
-  // Create all new storyboards with validated data
-  const created = await Promise.all(
-    validatedStoryboards.map((sb) =>
-      db.storyboard.create({
+  // Save storyboards ONE BY ONE (not Promise.all) to ensure each one is
+  // properly persisted. This prevents silent failures where one bad entry
+  // causes all saves to fail.
+  const created: Array<{ id: string; shotNumber: number }> = []
+  const errors: Array<{ shotNumber: number; error: string }> = []
+
+  for (const sb of validatedStoryboards) {
+    try {
+      const record = await db.storyboard.create({
         data: {
           episodeId: context.episodeId,
           shotNumber: sb.shotNumber,
@@ -398,14 +412,35 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
           status: 'pending',
         },
       })
-    )
-  )
+      created.push({ id: record.id, shotNumber: record.shotNumber })
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      errors.push({ shotNumber: sb.shotNumber, error: errMsg })
+      console.error(`[save_storyboards] Failed to save shot ${sb.shotNumber}:`, errMsg)
+    }
+  }
 
   // Update episode storyboard status
   await db.episode.update({
     where: { id: context.episodeId },
-    data: { storyboardStatus: 'completed' },
+    data: { storyboardStatus: created.length > 0 ? 'completed' : 'failed' },
   })
+
+  // If some saves failed, report them
+  if (errors.length > 0 && created.length > 0) {
+    return {
+      success: true,
+      count: created.length,
+      totalAttempted: validatedStoryboards.length,
+      failedCount: errors.length,
+      errors,
+      message: `已保存 ${created.length}/${validatedStoryboards.length} 个分镜镜头（${errors.length}个失败）`,
+    }
+  }
+
+  if (created.length === 0) {
+    throw new Error(`所有分镜保存失败: ${errors.map(e => `镜头${e.shotNumber}: ${e.error}`).join('; ')}`)
+  }
 
   return {
     success: true,

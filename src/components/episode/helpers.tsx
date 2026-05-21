@@ -1,6 +1,6 @@
 import { FileText, Users, Mic, Film, Clapperboard } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { StepDef } from './types'
+import type { StepDef, PipelineStepDef, PipelineStepKey, StepKey } from './types'
 
 // ── Step definitions ─────────────────────────────────────────
 
@@ -35,6 +35,38 @@ export const STEPS: StepDef[] = [
     icon: <Clapperboard className="size-4" />,
   },
 ]
+
+// ── 11-Step Production Pipeline ──────────────────────────────
+
+export const PIPELINE_STEPS: PipelineStepDef[] = [
+  { key: 'raw_content', stepNumber: 1, label: '原始内容', description: '输入原始故事或剧本内容', stepKey: 'raw' },
+  { key: 'script_rewrite', stepNumber: 2, label: '剧本改写', description: 'AI将原始内容改写为标准剧本格式', stepKey: 'rewrite' },
+  { key: 'character_extract', stepNumber: 3, label: '角色提取', description: '从剧本中提取角色信息和场景信息', stepKey: 'extract' },
+  { key: 'voice_assign', stepNumber: 4, label: '配音分配', description: '为每个角色分配合适的TTS音色', stepKey: 'voice' },
+  { key: 'storyboard', stepNumber: 5, label: '分镜生成', description: '将剧本拆解为分镜镜头序列', stepKey: 'storyboard' },
+  { key: 'character_images', stepNumber: 6, label: '角色图片', description: '生成角色设定图和头像', stepKey: 'extract' },
+  { key: 'scene_images', stepNumber: 7, label: '场景图片', description: '生成场景背景图', stepKey: 'extract' },
+  { key: 'dubbing', stepNumber: 8, label: '配音生成', description: '生成角色对话的TTS语音', stepKey: 'production' },
+  { key: 'shot_frames', stepNumber: 9, label: '镜头图片', description: '生成分镜首帧图片', stepKey: 'storyboard' },
+  { key: 'video', stepNumber: 10, label: '视频生成', description: '生成每个镜头的视频', stepKey: 'production' },
+  { key: 'compose_merge', stepNumber: 11, label: '合成合并', description: '合成音视频并合并为成片', stepKey: 'production' },
+]
+
+// ── Pipeline-to-Step mapping (pipeline key → legacy step key) ──
+
+export const PIPELINE_TO_STEP_MAP: Record<PipelineStepKey, StepKey> = {
+  raw_content: 'raw',
+  script_rewrite: 'rewrite',
+  character_extract: 'extract',
+  voice_assign: 'voice',
+  storyboard: 'storyboard',
+  character_images: 'extract',
+  scene_images: 'extract',
+  dubbing: 'production',
+  shot_frames: 'storyboard',
+  video: 'production',
+  compose_merge: 'production',
+}
 
 // ── Helper: status badge ─────────────────────────────────────
 

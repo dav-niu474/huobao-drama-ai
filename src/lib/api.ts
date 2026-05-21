@@ -177,7 +177,7 @@ export const api = {
         sceneImages: 'scene_images',
         dubbing: 'dubbing',
         shotFrames: 'shot_frames',
-        video: 'video_generation',
+        video: 'video',
         composeMerge: 'compose_merge',
       }
 

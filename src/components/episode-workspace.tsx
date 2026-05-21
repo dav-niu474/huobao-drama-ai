@@ -220,8 +220,27 @@ export function EpisodeWorkspace() {
   const fetchPipelineStatus = useCallback(async () => {
     if (!selectedEpisodeId) return
     try {
-      const status = await api.episodes.pipelineStatus(selectedEpisodeId)
-      setPipelineStatus(status as PipelineStatus)
+      const raw = await api.episodes.pipelineStatus(selectedEpisodeId)
+      // api.ts already maps camelCase→snake_case keys and status: done→completed, partial→active
+      // raw.pipeline has snake_case keys with { status: 'pending'|'active'|'completed', completed, total }
+      const normalized: PipelineStatus = {
+        steps: raw.pipeline as Record<PipelineStepKey, PipelineStepStatus> ?? {} as Record<PipelineStepKey, PipelineStepStatus>,
+        summary: {
+          totalSteps: raw.totalSteps ?? 11,
+          completedSteps: raw.completedSteps ?? 0,
+          partialSteps: 0,
+          pendingSteps: (raw.totalSteps ?? 11) - (raw.completedSteps ?? 0),
+          overallProgress: raw.progressPercent ?? 0,
+          currentStep: '',
+        },
+        ffmpegAvailable: false,
+        // Alias for code that references pipelineStatus.pipeline
+        pipeline: raw.pipeline as Record<PipelineStepKey, PipelineStepStatus> ?? {} as Record<PipelineStepKey, PipelineStepStatus>,
+        completedSteps: raw.completedSteps ?? 0,
+        totalSteps: raw.totalSteps ?? 11,
+        progressPercent: raw.progressPercent ?? 0,
+      }
+      setPipelineStatus(normalized)
     } catch {
       // Silently fail — pipeline status is not critical
     }
