@@ -536,7 +536,11 @@ export function useAgentExecution() {
     dramaId: string,
     message: string,
     options?: { model?: string }
-  ) => {
+  ): Promise<{ hadErrors: boolean; toolErrors: string[] }> => {
+    // Track tool errors during execution
+    const toolErrors: string[] = []
+    let hadTopLevelError = false
+
     // Reset state for this agent
     setLogs(prev => ({ ...prev, [agentType]: [] }))
     setRunningAgents(prev => new Set(prev).add(agentType))
@@ -626,6 +630,13 @@ export function useAgentExecution() {
               // Handle error
               if (entry.type === 'error') {
                 setErrors(prev => ({ ...prev, [agentType]: event.message }))
+                hadTopLevelError = true
+              }
+
+              // Track tool errors for caller to check
+              if (entry.type === 'tool_error') {
+                const errMsg = event.toolResult?.error || event.message || 'Unknown tool error'
+                toolErrors.push(errMsg)
               }
             } catch {
               // ignore parse errors
@@ -634,6 +645,7 @@ export function useAgentExecution() {
         }
       }
     } catch (err) {
+      hadTopLevelError = true
       setErrors(prev => ({
         ...prev,
         [agentType]: err instanceof Error ? err.message : String(err),
@@ -645,6 +657,8 @@ export function useAgentExecution() {
         return next
       })
     }
+
+    return { hadErrors: hadTopLevelError || toolErrors.length > 0, toolErrors }
   }
 
   const clearAgent = (agentType: string) => {

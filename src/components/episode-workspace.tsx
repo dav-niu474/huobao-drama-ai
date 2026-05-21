@@ -577,31 +577,48 @@ export function EpisodeWorkspace() {
     if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
     try {
-      await agentExec.startAgent(
+      const result = await agentExec.startAgent(
         'storyboard_breaker',
         selectedEpisodeId,
         selectedDramaId,
         '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后为每个镜头生成完整的分镜数据。⚠️重要：每个分镜的imagePrompt必须是6维度专业英文提示词（风格+构图+角色+场景+光线+画质），videoPrompt必须使用3秒分段XML格式。一步到位，无需二次增强。最后用save_storyboards保存所有分镜。',
         { model: workspaceModels.llm || undefined }
       )
-      // Check if agent reported an error
+      // Check both top-level errors and tool errors
       const agentError = agentExec.errors['storyboard_breaker']
       if (agentError) {
         toast({ title: '分镜生成失败', description: agentError, variant: 'destructive' })
         return
+      }
+      if (result.hadErrors && result.toolErrors.length > 0) {
+        // Show tool errors but still check if data was partially saved
+        const errorSummary = result.toolErrors.slice(0, 3).join('; ')
+        toast({ title: '分镜生成部分失败', description: errorSummary, variant: 'destructive' })
       }
       await fetchEpisode()
       // Verify storyboards were actually saved
       const detail = await api.episodes.get(selectedEpisodeId)
       const savedCount = detail.storyboards?.length ?? 0
       if (savedCount > 0) {
-        showResultDialog('success', '分镜生成完成', `成功生成 ${savedCount} 个分镜镜头，结果已保存。`, [
-          `共 ${savedCount} 个镜头`,
-          '每个镜头包含图片提示词和视频提示词',
-          '可在下方列表中查看和编辑',
-        ])
+        if (result.hadErrors) {
+          showResultDialog('warning', '分镜生成部分完成', `成功保存 ${savedCount} 个分镜镜头，但有部分错误。`, [
+            `共 ${savedCount} 个镜头已保存`,
+            '部分镜头可能需要手动调整',
+            '可在下方列表中查看和编辑',
+          ])
+        } else {
+          showResultDialog('success', '分镜生成完成', `成功生成 ${savedCount} 个分镜镜头，结果已保存。`, [
+            `共 ${savedCount} 个镜头`,
+            '每个镜头包含图片提示词和视频提示词',
+            '可在下方列表中查看和编辑',
+          ])
+        }
       } else {
-        showResultDialog('warning', '分镜生成完成（未保存）', 'AI已完成分镜生成，但数据可能未正确保存到数据库，请重新生成或检查网络。')
+        // No storyboards saved — provide actionable diagnostics
+        const diagInfo = result.toolErrors.length > 0
+          ? `错误详情：${result.toolErrors.slice(0, 2).join('；')}`
+          : 'AI可能未能成功调用保存工具，请重新生成或检查网络。'
+        showResultDialog('error', '分镜生成失败', diagInfo)
       }
     } catch (err) {
       toast({ title: '分镜生成失败', description: String(err), variant: 'destructive' })

@@ -123,6 +123,7 @@ async function callLLMWithTools(
     content: string | null
     tool_calls?: ToolCallMessage[]
   }
+  finishReason: string
 }> {
   const provider = await getActiveProviderForUser('llm', options.userId)
   if (!provider) {
@@ -173,11 +174,13 @@ async function callLLMWithTools(
   }
 
   const data = await res.json()
+  const finishReason = data.choices?.[0]?.finish_reason ?? 'stop'
   return {
     message: data.choices?.[0]?.message ?? {
       role: 'assistant',
       content: '',
     },
+    finishReason,
   }
 }
 
@@ -208,7 +211,15 @@ export async function executeAgent(
     dbConfig?.systemPrompt || DEFAULT_SYSTEM_PROMPTS[agentType]
   const model = options?.modelOverride || dbConfig?.model || undefined
   const temperature = dbConfig?.temperature ?? 0.7
-  const maxTokens = dbConfig?.maxTokens ?? 4096
+  // storyboard_breaker needs much larger max_tokens because save_storyboards
+  // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot)
+  // which can easily exceed 4096 tokens for 15-20 shots
+  const defaultMaxTokens: Record<string, number> = {
+    storyboard_breaker: 16384,
+    extractor: 8192,
+    script_rewriter: 8192,
+  }
+  const maxTokens = dbConfig?.maxTokens ?? defaultMaxTokens[agentType] ?? 4096
 
   // 2. Build instructions (base prompt + skill)
   const skillContent = loadAgentSkill(agentType)
@@ -264,6 +275,50 @@ export async function executeAgent(
     })
 
     const assistantMessage = response.message
+    const finishReason = response.finishReason
+
+    // CRITICAL: Detect LLM output truncation (finish_reason === 'length')
+    // This happens when max_tokens is too small for the tool call arguments
+    if (finishReason === 'length') {
+      onProgress?.({
+        type: 'tool_error',
+        message: `步骤 ${steps}: LLM输出被截断（达到max_tokens=${maxTokens}限制），请减少单次数据量或分批保存`,
+        timestamp: Date.now(),
+        stepNumber: steps,
+      })
+
+      // If there were partial tool calls, report truncation to the LLM
+      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+        // Add the truncated assistant message
+        messages.push({
+          role: 'assistant',
+          content: assistantMessage.content || null,
+          tool_calls: assistantMessage.tool_calls,
+        })
+        // Report truncation error for each tool call
+        for (const tc of assistantMessage.tool_calls) {
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify({
+              error: `⚠️ 你的输出被截断了！arguments不完整导致JSON解析失败。请将save_storyboards拆分为多次调用，每次保存3-5个分镜即可。`,
+            }),
+            tool_call_id: tc.id,
+          })
+        }
+        continue // Let the LLM retry with smaller batches
+      }
+
+      // No tool calls, just text was truncated
+      messages.push({
+        role: 'assistant',
+        content: assistantMessage.content || '',
+      })
+      messages.push({
+        role: 'user',
+        content: '⚠️ 你的上一次输出被截断了（达到max_tokens限制）。请继续输出，或者减少输出量。',
+      })
+      continue
+    }
 
     // Add assistant message to conversation
     const assistantChatMsg: ChatMessage = {
@@ -300,12 +355,31 @@ export async function executeAgent(
     for (const toolCall of assistantMessage.tool_calls) {
       const toolName = toolCall.function.name
 
-      // Parse arguments
+      // Parse arguments — detect truncated JSON early
       let args: Record<string, unknown>
       try {
         args = JSON.parse(toolCall.function.arguments)
-      } catch {
-        args = {}
+      } catch (parseErr) {
+        // JSON parse failed — likely due to max_tokens truncation
+        const parseErrorMsg = `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify({ error: parseErrorMsg }),
+          tool_call_id: toolCall.id,
+        })
+        toolCallResults.push({
+          name: toolName,
+          arguments: {},
+          result: { error: parseErrorMsg },
+        })
+        onProgress?.({
+          type: 'tool_error',
+          message: `工具 ${toolName} 参数解析失败: ${parseErrorMsg}`,
+          timestamp: Date.now(),
+          stepNumber: steps,
+          toolResult: { name: toolName, error: parseErrorMsg },
+        })
+        continue // Skip executing the tool with invalid args
       }
 
       // Emit tool_call event
@@ -416,14 +490,18 @@ export async function executeAgent(
     finalText = '达到最大执行步骤数，Agent执行已终止。'
   }
 
-  onProgress?.({
-    type: 'completed',
-    message: `${AGENT_NAMES[agentType]} 执行完成，共 ${steps} 步`,
-    timestamp: Date.now(),
-    stepNumber: steps,
-    agentType,
-    agentName: AGENT_NAMES[agentType],
-  })
+  // Check if storyboard_breaker completed without actually saving
+  if (agentType === 'storyboard_breaker') {
+    const saveResult = toolCallResults.find(
+      (r) => r.name === 'save_storyboards' && !(r.result as Record<string, unknown>)?.error
+    )
+    if (!saveResult) {
+      finalText = '⚠️ 分镜拆解完成但未成功保存到数据库。' + finalText
+    }
+  }
+
+  // NOTE: Do NOT emit 'completed' here — the stream route does that
+  // with full result data. Duplicate events confuse the frontend.
 
   return {
     text: finalText,

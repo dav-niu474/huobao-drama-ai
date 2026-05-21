@@ -380,66 +380,77 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
     }
   })
 
-  // Delete existing storyboards for this episode
-  await db.storyboard.deleteMany({
-    where: { episodeId: context.episodeId },
-  })
-
-  // Save storyboards ONE BY ONE (not Promise.all) to ensure each one is
-  // properly persisted. This prevents silent failures where one bad entry
-  // causes all saves to fail.
+  // Delete existing storyboards and create new ones in a transaction
+  // to prevent data loss if creates fail after deletes
   const created: Array<{ id: string; shotNumber: number }> = []
-  const errors: Array<{ shotNumber: number; error: string }> = []
+  const saveErrors: Array<{ shotNumber: number; error: string }> = []
 
-  for (const sb of validatedStoryboards) {
-    try {
-      const record = await db.storyboard.create({
-        data: {
-          episodeId: context.episodeId,
-          shotNumber: sb.shotNumber,
-          title: sb.title || '',
-          shotType: sb.shotType || 'medium',
-          cameraAngle: sb.cameraAngle || 'eye-level',
-          cameraMovement: sb.cameraMovement || 'static',
-          action: sb.action || '',
-          description: sb.description || '',
-          dialogue: sb.dialogue || null,
-          dialogueChar: sb.dialogueChar || null,
-          duration: sb.duration,
-          imagePrompt: sb.imagePrompt || null,
-          videoPrompt: sb.videoPrompt || null,
-          atmosphere: sb.atmosphere || null,
-          status: 'pending',
-        },
+  try {
+    await db.$transaction(async (tx) => {
+      // Delete existing storyboards for this episode
+      await tx.storyboard.deleteMany({
+        where: { episodeId: context.episodeId },
       })
-      created.push({ id: record.id, shotNumber: record.shotNumber })
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      errors.push({ shotNumber: sb.shotNumber, error: errMsg })
-      console.error(`[save_storyboards] Failed to save shot ${sb.shotNumber}:`, errMsg)
-    }
+
+      // Save storyboards ONE BY ONE within the transaction
+      for (const sb of validatedStoryboards) {
+        try {
+          const record = await tx.storyboard.create({
+            data: {
+              episodeId: context.episodeId,
+              shotNumber: sb.shotNumber,
+              title: sb.title || '',
+              shotType: sb.shotType || 'medium',
+              cameraAngle: sb.cameraAngle || 'eye-level',
+              cameraMovement: sb.cameraMovement || 'static',
+              action: sb.action || '',
+              description: sb.description || '',
+              dialogue: sb.dialogue || null,
+              dialogueChar: sb.dialogueChar || null,
+              duration: sb.duration,
+              imagePrompt: sb.imagePrompt || null,
+              videoPrompt: sb.videoPrompt || null,
+              atmosphere: sb.atmosphere || null,
+              status: 'pending',
+            },
+          })
+          created.push({ id: record.id, shotNumber: record.shotNumber })
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          saveErrors.push({ shotNumber: sb.shotNumber, error: errMsg })
+          console.error(`[save_storyboards] Failed to save shot ${sb.shotNumber}:`, errMsg)
+          // Don't throw — continue saving other shots within the transaction
+        }
+      }
+
+      // Only update episode status if at least some storyboards were saved
+      if (created.length > 0) {
+        await tx.episode.update({
+          where: { id: context.episodeId },
+          data: { storyboardStatus: 'completed' },
+        })
+      }
+    })
+  } catch (txError) {
+    // Transaction failed entirely (e.g., all creates failed)
+    const txErrMsg = txError instanceof Error ? txError.message : String(txError)
+    console.error('[save_storyboards] Transaction failed:', txErrMsg)
   }
 
-  // Update episode storyboard status
-  await db.episode.update({
-    where: { id: context.episodeId },
-    data: { storyboardStatus: created.length > 0 ? 'completed' : 'failed' },
-  })
-
   // If some saves failed, report them
-  if (errors.length > 0 && created.length > 0) {
+  if (saveErrors.length > 0 && created.length > 0) {
     return {
       success: true,
       count: created.length,
       totalAttempted: validatedStoryboards.length,
-      failedCount: errors.length,
-      errors,
-      message: `已保存 ${created.length}/${validatedStoryboards.length} 个分镜镜头（${errors.length}个失败）`,
+      failedCount: saveErrors.length,
+      errors: saveErrors,
+      message: `已保存 ${created.length}/${validatedStoryboards.length} 个分镜镜头（${saveErrors.length}个失败）`,
     }
   }
 
   if (created.length === 0) {
-    throw new Error(`所有分镜保存失败: ${errors.map(e => `镜头${e.shotNumber}: ${e.error}`).join('; ')}`)
+    throw new Error(`所有分镜保存失败: ${saveErrors.map(e => `镜头${e.shotNumber}: ${e.error}`).join('; ')}`)
   }
 
   return {
