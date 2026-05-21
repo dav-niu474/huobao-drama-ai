@@ -184,6 +184,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   save_scenes: '💾 保存场景',
   read_storyboard_context: '📋 读取分镜上下文',
   save_storyboards: '💾 保存分镜',
+  save_single_storyboard: '💾 保存单个分镜',
   update_storyboard: '✏️ 更新分镜',
   get_characters: '👥 获取角色列表',
   list_available_voices: '🔊 浏览音色库',

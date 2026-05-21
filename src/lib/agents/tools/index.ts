@@ -193,7 +193,7 @@ const STORYBOARD_BREAKER_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'save_storyboards',
-    description: '批量保存生成的分镜镜头序列。会先删除该集已有的分镜。⚠️重要：storyboards参数必须直接传入数组对象，不要传入JSON字符串。',
+    description: '批量保存生成的分镜镜头序列。会先删除该集已有的分镜。⚠️重要：storyboards参数必须直接传入数组对象，不要传入JSON字符串。如果分镜数量多（>5个），建议改用save_single_storyboard逐条保存，更稳定可靠。',
     parameters: {
       storyboards: {
         type: 'array',
@@ -262,6 +262,67 @@ const STORYBOARD_BREAKER_TOOLS: ToolDefinition[] = [
           },
           requiredFields: ['shotNumber'],
         },
+      },
+    },
+  },
+  {
+    name: 'save_single_storyboard',
+    description: '逐条保存单个分镜镜头。比save_storyboards更稳定，特别适合分镜数量多的场景。每调用一次保存一个镜头，可多次调用。如果该镜头编号已存在，会更新而非重复创建。建议每生成一个镜头就调用一次，让用户能看到实时进度。',
+    parameters: {
+      shotNumber: {
+        type: 'number',
+        description: '镜头编号（正整数，从1开始）',
+        required: true,
+      },
+      title: {
+        type: 'string',
+        description: '镜头标题（3-5字简短描述）',
+      },
+      shotType: {
+        type: 'string',
+        description: '景别：extreme-wide | wide | medium | close-up | extreme-close-up | over-shoulder | pov | two-shot',
+        enum: ['extreme-wide', 'wide', 'medium', 'close-up', 'extreme-close-up', 'over-shoulder', 'pov', 'two-shot'],
+      },
+      cameraAngle: {
+        type: 'string',
+        description: '摄影角度：eye-level | low-angle | high-angle | dutch-angle | birds-eye | worms-eye',
+        enum: ['eye-level', 'low-angle', 'high-angle', 'dutch-angle', 'birds-eye', 'worms-eye'],
+      },
+      cameraMovement: {
+        type: 'string',
+        description: '运镜方式：static | pan-left | pan-right | tilt-up | tilt-down | zoom-in | zoom-out | dolly-in | dolly-out | tracking | crane-up | crane-down | handheld | steady',
+      },
+      action: {
+        type: 'string',
+        description: '画面中的动作描述（谁+做什么+身体细节+表情）',
+      },
+      description: {
+        type: 'string',
+        description: '镜头的视觉描述（详细的画面构成说明）',
+      },
+      dialogue: {
+        type: 'string',
+        description: '对白内容（无对白则不传或传null）',
+      },
+      dialogueChar: {
+        type: 'string',
+        description: '说话的角色名（无对白则不传或传null）',
+      },
+      duration: {
+        type: 'number',
+        description: '镜头时长（秒），默认3.0',
+      },
+      imagePrompt: {
+        type: 'string',
+        description: '专业级英文图片提示词（6维度：风格+构图+角色+场景+光线+画质）',
+      },
+      videoPrompt: {
+        type: 'string',
+        description: '专业级XML格式视频提示词（3秒分段，用<n>分隔）',
+      },
+      atmosphere: {
+        type: 'string',
+        description: '氛围描述（光线+色彩+声音+整体情绪）',
       },
     },
   },

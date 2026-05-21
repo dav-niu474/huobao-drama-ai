@@ -473,7 +473,9 @@ function summarizeToolResult(toolName: string, result: unknown): string {
     case 'read_storyboard_context':
       return `读取到剧本、${String((r as any).characters?.length || 0)}个角色、${String((r as any).scenes?.length || 0)}个场景`
     case 'save_storyboards':
-      return r.success ? `已保存 ${r.count} 个分镜镜头` : '保存失败'
+      return r.success ? `已保存 ${r.count}${r.total ? `/${r.total}` : ''} 个分镜镜头` : '保存失败'
+    case 'save_single_storyboard':
+      return r.success ? `镜头 ${r.shotNumber} 已保存（共 ${r.totalSaved} 个）` : '保存失败'
     case 'update_storyboard':
       return r.success ? `镜头已更新` : '更新失败'
     case 'get_characters':

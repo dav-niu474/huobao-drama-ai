@@ -562,7 +562,7 @@ export function EpisodeWorkspace() {
         'storyboard_breaker',
         selectedEpisodeId,
         selectedDramaId,
-        '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后为每个镜头生成完整的分镜数据。⚠️重要：每个分镜的imagePrompt必须是6维度专业英文提示词（风格+构图+角色+场景+光线+画质），videoPrompt必须使用3秒分段XML格式。一步到位，无需二次增强。最后用save_storyboards保存所有分镜。',
+        '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后逐条生成每个分镜并立即使用save_single_storyboard保存。⚠️重要：每个分镜的imagePrompt必须是6维度专业英文提示词（风格+构图+角色+场景+光线+画质），videoPrompt必须使用3秒分段XML格式。一步到位，无需二次增强。每生成一个镜头就立即保存，不要等所有镜头都生成完再保存。',
         { model: workspaceModels.llm || undefined }
       )
       // Check if agent reported an error
@@ -571,18 +571,52 @@ export function EpisodeWorkspace() {
         toast({ title: '分镜生成失败', description: agentError, variant: 'destructive' })
         return
       }
+      // Check for tool errors in agent logs
+      const agentLogs = agentExec.logs['storyboard_breaker'] || []
+      const toolErrors = agentLogs.filter(l => l.type === 'tool_error')
+      const saveStoryboardsResult = agentLogs.find(
+        l => l.type === 'tool_result' && l.toolResult?.name === 'save_storyboards' && l.toolResult.result
+      )
+      const saveSingleResults = agentLogs.filter(
+        l => l.type === 'tool_result' && l.toolResult?.name === 'save_single_storyboard' && l.toolResult.result
+      )
+
       await fetchEpisode()
       // Verify storyboards were actually saved
       const detail = await api.episodes.get(selectedEpisodeId)
       const savedCount = detail.storyboards?.length ?? 0
       if (savedCount > 0) {
-        showResultDialog('success', '分镜生成完成', `成功生成 ${savedCount} 个分镜镜头，结果已保存。`, [
+        const details = [
           `共 ${savedCount} 个镜头`,
           '每个镜头包含图片提示词和视频提示词',
           '可在下方列表中查看和编辑',
-        ])
+        ]
+        // Add tool error info if any
+        if (toolErrors.length > 0) {
+          details.push(`⚠️ 有 ${toolErrors.length} 个工具执行错误（部分数据可能不完整）`)
+        }
+        showResultDialog('success', '分镜生成完成', `成功生成 ${savedCount} 个分镜镜头，结果已保存。`, details)
       } else {
-        showResultDialog('warning', '分镜生成完成（未保存）', 'AI已完成分镜生成，但数据可能未正确保存到数据库，请重新生成或检查网络。')
+        // No storyboards saved — check for specific errors
+        const errorDetails: string[] = []
+        if (toolErrors.length > 0) {
+          errorDetails.push(`Agent执行过程中有 ${toolErrors.length} 个工具错误`)
+          toolErrors.forEach(e => {
+            if (e.toolResult?.error) {
+              errorDetails.push(`  - ${e.toolResult.error}`)
+            }
+          })
+        }
+        if (saveStoryboardsResult || saveSingleResults.length > 0) {
+          errorDetails.push('保存工具已被调用但数据未出现在数据库中，可能是数据库连接问题')
+        } else {
+          errorDetails.push('Agent未成功调用保存工具，可能是因为：')
+          errorDetails.push('  1. LLM输出token不足，无法完成完整调用')
+          errorDetails.push('  2. JSON参数格式错误导致保存失败')
+          errorDetails.push('  3. LLM未遵循保存指令')
+          errorDetails.push('请尝试重新生成，或更换更大的模型')
+        }
+        showResultDialog('warning', '分镜生成完成（未保存）', 'AI已完成分镜生成，但数据未正确保存到数据库。', errorDetails)
       }
     } catch (err) {
       toast({ title: '分镜生成失败', description: String(err), variant: 'destructive' })

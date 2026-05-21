@@ -300,37 +300,79 @@ const readStoryboardContext: ToolExecutor = async (_params, context) => {
   }
 }
 
+// Shared validation helper for a single storyboard entry
+function validateStoryboardEntry(sb: Record<string, unknown>, index: number): {
+  shotNumber: number
+  title: string
+  shotType: string
+  cameraAngle: string
+  cameraMovement: string
+  action: string
+  description: string
+  dialogue: string | null
+  dialogueChar: string | null
+  duration: number
+  imagePrompt: string | null
+  videoPrompt: string | null
+  atmosphere: string | null
+} {
+  const rawShotNumber = sb.shotNumber
+  let shotNumber: number
+  if (typeof rawShotNumber === 'number') {
+    shotNumber = Math.round(rawShotNumber)
+  } else if (typeof rawShotNumber === 'string') {
+    shotNumber = Math.round(parseFloat(rawShotNumber))
+  } else {
+    throw new Error(`分镜 #${index + 1} 的 shotNumber 缺失或格式错误（收到: ${JSON.stringify(rawShotNumber)}）`)
+  }
+  if (isNaN(shotNumber) || shotNumber < 1) {
+    throw new Error(`分镜 #${index + 1} 的 shotNumber 无效（收到: ${JSON.stringify(rawShotNumber)}），必须是正整数`)
+  }
+
+  let duration: number = 3.0
+  const rawDuration = sb.duration
+  if (rawDuration !== undefined && rawDuration !== null) {
+    if (typeof rawDuration === 'number') {
+      duration = rawDuration
+    } else if (typeof rawDuration === 'string') {
+      duration = parseFloat(rawDuration) || 3.0
+    }
+  }
+
+  return {
+    shotNumber,
+    title: (sb.title as string) || '',
+    shotType: (sb.shotType as string) || 'medium',
+    cameraAngle: (sb.cameraAngle as string) || 'eye-level',
+    cameraMovement: (sb.cameraMovement as string) || 'static',
+    action: (sb.action as string) || '',
+    description: (sb.description as string) || '',
+    dialogue: (sb.dialogue as string) || null,
+    dialogueChar: (sb.dialogueChar as string) || null,
+    duration,
+    imagePrompt: (sb.imagePrompt as string) || null,
+    videoPrompt: (sb.videoPrompt as string) || null,
+    atmosphere: (sb.atmosphere as string) || null,
+  }
+}
+
 const saveStoryboards: ToolExecutor = async (params, context) => {
   // Defensive parsing: LLMs often pass arrays as JSON strings instead of
   // actual arrays. This is the #1 cause of "无法存入数据库" errors.
-  let storyboards = params.storyboards as Array<{
-    shotNumber: number
-    title?: string
-    shotType?: string
-    cameraAngle?: string
-    cameraMovement?: string
-    action?: string
-    description?: string
-    dialogue?: string
-    dialogueChar?: string
-    duration?: number
-    imagePrompt?: string
-    videoPrompt?: string
-    atmosphere?: string
-  }>
+  let storyboards = params.storyboards as Array<Record<string, unknown>>
 
   if (typeof storyboards === 'string') {
     try {
       storyboards = JSON.parse(storyboards)
     } catch {
-      throw new Error('storyboards 参数格式错误：无法解析为JSON数组。请直接传入数组，而非JSON字符串。')
+      throw new Error('storyboards 参数格式错误：无法解析为JSON数组。请直接传入数组，而非JSON字符串。如传入数组仍有问题，请改用 save_single_storyboard 逐条保存。')
     }
   }
 
   if (!Array.isArray(storyboards)) {
     throw new Error(
       `storyboards 必须是数组，但收到的是 ${typeof storyboards} 类型。` +
-      '请确保直接传入数组对象，例如：{"storyboards": [{"shotNumber": 1, ...}]}'
+      '请改用 save_single_storyboard 逐条保存每个分镜镜头。'
     )
   }
 
@@ -338,79 +380,148 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
     throw new Error('storyboards 数组不能为空，至少需要包含一个分镜镜头')
   }
 
-  // Validate and fix each storyboard entry
-  const validatedStoryboards = storyboards.map((sb, index) => {
-    // shotNumber: must be integer — LLMs sometimes pass floats or strings
-    const rawShotNumber = sb.shotNumber
-    let shotNumber: number
-    if (typeof rawShotNumber === 'number') {
-      shotNumber = Math.round(rawShotNumber)
-    } else if (typeof rawShotNumber === 'string') {
-      shotNumber = Math.round(parseFloat(rawShotNumber))
-    } else {
-      throw new Error(`分镜 #${index + 1} 的 shotNumber 缺失或格式错误（收到: ${JSON.stringify(rawShotNumber)}）`)
-    }
-    if (isNaN(shotNumber) || shotNumber < 1) {
-      throw new Error(`分镜 #${index + 1} 的 shotNumber 无效（收到: ${JSON.stringify(rawShotNumber)}），必须是正整数`)
-    }
-
-    // duration: coerce to float — LLMs sometimes pass strings
-    let duration: number = 3.0
-    if (sb.duration !== undefined && sb.duration !== null) {
-      if (typeof sb.duration === 'number') {
-        duration = sb.duration
-      } else if (typeof sb.duration === 'string') {
-        duration = parseFloat(sb.duration) || 3.0
-      }
-    }
-
-    return {
-      ...sb,
-      shotNumber,
-      duration,
-    }
-  })
+  // Validate each storyboard entry
+  const validatedStoryboards = storyboards.map((sb, index) =>
+    validateStoryboardEntry(sb as Record<string, unknown>, index)
+  )
 
   // Delete existing storyboards for this episode
   await db.storyboard.deleteMany({
     where: { episodeId: context.episodeId },
   })
 
-  // Create all new storyboards with validated data
-  const created = await Promise.all(
-    validatedStoryboards.map((sb) =>
-      db.storyboard.create({
+  // Create storyboards one by one (more reliable than Promise.all on serverless)
+  const created = []
+  const errors: string[] = []
+  for (const sb of validatedStoryboards) {
+    try {
+      const record = await db.storyboard.create({
         data: {
           episodeId: context.episodeId,
           shotNumber: sb.shotNumber,
-          title: sb.title || '',
-          shotType: sb.shotType || 'medium',
-          cameraAngle: sb.cameraAngle || 'eye-level',
-          cameraMovement: sb.cameraMovement || 'static',
-          action: sb.action || '',
-          description: sb.description || '',
-          dialogue: sb.dialogue || null,
-          dialogueChar: sb.dialogueChar || null,
+          title: sb.title,
+          shotType: sb.shotType,
+          cameraAngle: sb.cameraAngle,
+          cameraMovement: sb.cameraMovement,
+          action: sb.action,
+          description: sb.description,
+          dialogue: sb.dialogue,
+          dialogueChar: sb.dialogueChar,
           duration: sb.duration,
-          imagePrompt: sb.imagePrompt || null,
-          videoPrompt: sb.videoPrompt || null,
-          atmosphere: sb.atmosphere || null,
+          imagePrompt: sb.imagePrompt,
+          videoPrompt: sb.videoPrompt,
+          atmosphere: sb.atmosphere,
           status: 'pending',
         },
       })
-    )
-  )
+      created.push(record)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      errors.push(`镜头${sb.shotNumber}保存失败: ${msg}`)
+    }
+  }
+
+  // Update episode storyboard status if at least one was saved
+  if (created.length > 0) {
+    await db.episode.update({
+      where: { id: context.episodeId },
+      data: { storyboardStatus: 'completed' },
+    })
+  }
+
+  if (errors.length > 0 && created.length === 0) {
+    throw new Error(`所有分镜保存失败:\n${errors.join('\n')}`)
+  }
+
+  return {
+    success: created.length > 0,
+    count: created.length,
+    total: validatedStoryboards.length,
+    errors: errors.length > 0 ? errors : undefined,
+    message: errors.length > 0
+      ? `已保存 ${created.length}/${validatedStoryboards.length} 个分镜，${errors.length} 个失败`
+      : `已保存 ${created.length} 个分镜镜头`,
+  }
+}
+
+// Save a single storyboard shot — used when batch save fails or for
+// incremental/progressive storyboard generation.
+const saveSingleStoryboard: ToolExecutor = async (params, context) => {
+  const sb = params as Record<string, unknown>
+
+  // Defensive: if the LLM wraps the data in a "storyboard" key, unwrap it
+  const data = (sb.storyboard && typeof sb.storyboard === 'object')
+    ? sb.storyboard as Record<string, unknown>
+    : sb
+
+  const validated = validateStoryboardEntry(data, 0)
+
+  // Check if a storyboard with this shotNumber already exists
+  const existing = await db.storyboard.findFirst({
+    where: {
+      episodeId: context.episodeId,
+      shotNumber: validated.shotNumber,
+    },
+  })
+
+  if (existing) {
+    // Update the existing one
+    await db.storyboard.update({
+      where: { id: existing.id },
+      data: {
+        title: validated.title,
+        shotType: validated.shotType,
+        cameraAngle: validated.cameraAngle,
+        cameraMovement: validated.cameraMovement,
+        action: validated.action,
+        description: validated.description,
+        dialogue: validated.dialogue,
+        dialogueChar: validated.dialogueChar,
+        duration: validated.duration,
+        imagePrompt: validated.imagePrompt,
+        videoPrompt: validated.videoPrompt,
+        atmosphere: validated.atmosphere,
+      },
+    })
+  } else {
+    // Create new
+    await db.storyboard.create({
+      data: {
+        episodeId: context.episodeId,
+        shotNumber: validated.shotNumber,
+        title: validated.title,
+        shotType: validated.shotType,
+        cameraAngle: validated.cameraAngle,
+        cameraMovement: validated.cameraMovement,
+        action: validated.action,
+        description: validated.description,
+        dialogue: validated.dialogue,
+        dialogueChar: validated.dialogueChar,
+        duration: validated.duration,
+        imagePrompt: validated.imagePrompt,
+        videoPrompt: validated.videoPrompt,
+        atmosphere: validated.atmosphere,
+        status: 'pending',
+      },
+    })
+  }
 
   // Update episode storyboard status
-  await db.episode.update({
-    where: { id: context.episodeId },
-    data: { storyboardStatus: 'completed' },
+  const totalCount = await db.storyboard.count({
+    where: { episodeId: context.episodeId },
   })
+  if (totalCount > 0) {
+    await db.episode.update({
+      where: { id: context.episodeId },
+      data: { storyboardStatus: 'completed' },
+    })
+  }
 
   return {
     success: true,
-    count: created.length,
-    message: `已保存 ${created.length} 个分镜镜头`,
+    shotNumber: validated.shotNumber,
+    totalSaved: totalCount,
+    message: `镜头 ${validated.shotNumber} 已保存（当前共 ${totalCount} 个分镜）`,
   }
 }
 
@@ -738,6 +849,7 @@ export const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
   // Storyboard Breaker
   read_storyboard_context: readStoryboardContext,
   save_storyboards: saveStoryboards,
+  save_single_storyboard: saveSingleStoryboard,
   update_storyboard: updateStoryboard,
 
   // Voice Assigner
@@ -788,6 +900,7 @@ const AGENT_TOOL_NAMES: Record<string, Record<string, string>> = {
   storyboard_breaker: {
     read_storyboard_context: 'read_storyboard_context',
     save_storyboards: 'save_storyboards',
+    save_single_storyboard: 'save_single_storyboard',
     update_storyboard: 'update_storyboard',
   },
   voice_assigner: {
