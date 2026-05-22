@@ -39,7 +39,7 @@
 - **无Key也可用** — 即使没有API Key，也能复制提示词去其他平台生成后本地上传
 
 ### ⚙️ 多供应商配置
-- **LLM语言模型** — 70+ 模型可选：NVIDIA NIM / OpenAI / SiliconFlow / DeepSeek / 自定义兼容接口
+- **LLM语言模型** — 70+ 模型可选：NVIDIA NIM / 商汤SenseNova(日日新) / OpenAI / SiliconFlow / DeepSeek / OpenRouter / 自定义兼容接口
 - **图片生成** — NVIDIA SDXL / OpenAI DALL·E / SiliconFlow / Stability AI / z-ai-sdk / 自定义接口
 - **视频生成** — Seedance 2.0 / z-ai-sdk / SiliconFlow / 火山引擎(Kling) / 自定义接口
 - **语音合成** — OpenAI TTS / NVIDIA Riva / Fish Audio / z-ai-sdk / 火山引擎 / 自定义接口
@@ -58,7 +58,7 @@
 | **数据库** | Prisma ORM + SQLite (开发) / PostgreSQL (生产) |
 | **状态管理** | Zustand + TanStack Query |
 | **动画** | Framer Motion |
-| **AI-LLM** | 多供应商：NVIDIA NIM (70+模型) / OpenAI / DeepSeek / SiliconFlow |
+| **AI-LLM** | 多供应商：NVIDIA NIM (70+模型) / 商汤SenseNova / OpenAI / DeepSeek / SiliconFlow / OpenRouter |
 | **AI-图像** | 多供应商：NVIDIA SDXL / DALL·E / GPT Image / Stability AI / SiliconFlow / z-ai-sdk |
 | **AI-视频** | 多供应商：Seedance 2.0 / z-ai-sdk / SiliconFlow / 火山引擎 |
 | **AI-语音** | 多供应商：OpenAI TTS / NVIDIA Riva / Fish Audio / z-ai-sdk / 火山引擎 |
@@ -112,6 +112,8 @@ bun run dev
 | `STABILITY_API_KEY` | Stability AI API 密钥 | ❌ |
 | `VOLCENGINE_API_KEY` | 火山引擎 API 密钥 | ❌ |
 | `FISH_AUDIO_API_KEY` | Fish Audio API 密钥 | ❌ |
+| `SENSENOVA_KEY` | 商汤日日新 SenseNova API 密钥 | ❌ |
+| `OPENROUTER_API_KEY` | OpenRouter API 密钥 | ❌ |
 
 > 💡 只需配置至少一个供应商即可使用，也可在平台设置页面中配置（保存到数据库）
 
@@ -217,12 +219,23 @@ src/
 | Mixtral 8x22B | Mistral MoE模型 | — |
 | GPT-OSS 120B / Yi Large / Seed OSS 36B | 其他开源模型 | — |
 
+#### 商汤 SenseNova（日日新）
+| 模型 | 说明 | 标签 |
+|------|------|------|
+| DeepSeek V4 Flash | DeepSeek快速版（限时免费） | 🆓 免费, ⭐ 推荐 |
+| SenseChat-5 | 商汤日日新5代对话模型 | ⭐ 推荐 |
+| SenseChat-5 Pro | 商汤日日新5代增强版 | 💎 高级 |
+| DeepSeek V3 | DeepSeek V3 | — |
+| Qwen3 235B | 通义千问3 235B | — |
+| Qwen3 30B | 通义千问3 30B | ⚡ 快速 |
+
 #### 其他LLM供应商
 | 供应商 | 模型示例 | 适用场景 |
 |--------|----------|----------|
 | OpenAI | GPT-4o, GPT-4.1, o3, o4-mini | 通用任务, 推理 |
 | SiliconFlow | DeepSeek-V3, Qwen, Llama | 国内高速访问 |
 | DeepSeek | DeepSeek Chat, DeepSeek Reasoner | 性价比高 |
+| OpenRouter | 300+模型聚合，含免费模型 | 一个Key访问所有模型 |
 | 自定义 | 任何 OpenAI 兼容接口 | 中转站/私有部署 |
 
 ### 图片生成
@@ -329,7 +342,7 @@ src/
 |----------|------|
 | **用户体系** | NextAuth完整认证 + free/pro/admin角色权限 + 用户自配API Key |
 | **流式Agent** | SSE流式Agent执行，实时查看AI工作过程 |
-| **模型广度** | 15+供应商、300+模型，可视化网格选择器 |
+| **模型广度** | 15+供应商、300+模型，含商汤日日新免费模型，可视化网格选择器 |
 | **TTS多样** | 5家语音供应商 vs 竞品1家，34+音色可选 |
 | **角色多形象** | CharacterAppearance多外观管理 |
 | **Serverless** | Vercel零运维部署，自动DB迁移 |
