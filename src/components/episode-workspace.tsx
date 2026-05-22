@@ -348,10 +348,10 @@ export function EpisodeWorkspace() {
   const getPipelineStepStatus = useCallback(
     (key: PipelineStepKey): 'pending' | 'active' | 'completed' => {
       if (pipelineStatus?.pipeline?.[key]) {
-        const raw = pipelineStatus.pipeline[key].status as string
-        // Map server status to UI status
-        if (raw === 'done') return 'completed'
-        if (raw === 'partial') return 'active'
+        const status = pipelineStatus.pipeline[key].status
+        // api.ts already maps: done→completed, partial→active, pending→pending
+        if (status === 'completed') return 'completed'
+        if (status === 'active') return 'active'
         return 'pending'
       }
       return 'pending'
