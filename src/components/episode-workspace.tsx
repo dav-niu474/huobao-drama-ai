@@ -1996,58 +1996,44 @@ export function EpisodeWorkspace() {
                           </button>
 
                           {/* Stage sub-steps */}
-                          <div className="ml-2 border-l border-border/30 pl-0.5">
+                          <div className="ml-2 pl-0.5 space-y-1 mt-1">
                             {stageSteps.map((step) => {
                               const stepStatus = getPipelineStepStatus(step.key)
                               const isActive = activePipelineStep === step.key
-                              const completionInfo = getStepCompletionInfo(step.key)
+                              const isCompleted = stepStatus === 'completed'
+                              const isProcessing = stepStatus === 'active'
                               return (
                                 <button
                                   key={step.key}
                                   onClick={() => handlePipelineStepClick(step.key)}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-r-md text-left transition-all duration-150 group ${
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-all duration-150 ${
                                     isActive
-                                      ? 'bg-primary/10 text-primary'
-                                      : stepStatus === 'completed'
-                                        ? 'hover:bg-muted/50'
-                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                      ? 'bg-primary/10 outline outline-1 outline-primary/20'
+                                      : isCompleted
+                                        ? 'bg-primary/5 hover:bg-primary/10'
+                                        : 'hover:bg-muted/50'
                                   }`}
                                 >
                                   {/* Status indicator */}
-                                  <div className="flex-shrink-0 size-5 rounded-full flex items-center justify-center">
-                                    {stepStatus === 'completed' ? (
-                                      <div className="size-5 rounded-full bg-primary/15 flex items-center justify-center">
-                                        <Check className="size-3 text-primary" />
-                                      </div>
-                                    ) : stepStatus === 'active' ? (
-                                      <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center">
-                                        <Loader2 className="size-2.5 text-primary animate-spin" />
-                                      </div>
+                                  <div className="flex-shrink-0 w-4 text-center">
+                                    {isCompleted ? (
+                                      <Check className="size-3.5 text-primary mx-auto" />
+                                    ) : isProcessing ? (
+                                      <Loader2 className="size-3.5 text-primary animate-spin mx-auto" />
                                     ) : (
-                                      <div className="size-5 rounded-full bg-muted flex items-center justify-center">
-                                        <span className="text-[9px] font-bold text-muted-foreground">
-                                          {step.stepNumber}
-                                        </span>
-                                      </div>
+                                      <span className="text-[9px] font-bold text-muted-foreground">{step.stepNumber}</span>
                                     )}
                                   </div>
 
-                                  <div className="flex-1 min-w-0">
-                                    <span className={`text-[11px] font-medium ${
-                                      isActive ? 'text-primary' : stepStatus === 'completed' ? 'text-foreground' : ''
-                                    }`}>
-                                      {step.label}
-                                    </span>
-                                    {completionInfo && !completionInfo.startsWith('待') && step.key !== 'script:raw' && step.key !== 'script:rewrite' && (
-                                      <div className="text-[9px] text-muted-foreground/70 mt-0.5 truncate">
-                                        {completionInfo}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {isActive && (
-                                    <ChevronRight className="size-2.5 text-primary flex-shrink-0" />
-                                  )}
+                                  <span className={`flex-1 min-w-0 text-[11px] font-medium truncate ${
+                                    isActive
+                                      ? 'text-primary'
+                                      : isCompleted
+                                        ? 'text-primary'
+                                        : 'text-muted-foreground'
+                                  }`}>
+                                    {step.label}
+                                  </span>
                                 </button>
                               )
                             })}
