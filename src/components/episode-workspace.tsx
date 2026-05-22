@@ -2008,27 +2008,29 @@ export function EpisodeWorkspace() {
                                   onClick={() => handlePipelineStepClick(step.key)}
                                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-all duration-150 ${
                                     isActive
-                                      ? 'bg-primary/10 outline outline-1 outline-primary/20'
+                                      ? 'bg-blue-500/6 border-l-2 border-l-blue-500'
                                       : isCompleted
-                                        ? 'bg-emerald-500/8 hover:bg-emerald-500/12'
-                                        : 'hover:bg-muted/50'
+                                        ? 'bg-muted/40 hover:bg-muted/60'
+                                        : 'hover:bg-muted/30'
                                   }`}
                                 >
                                   {/* Status indicator */}
                                   <div className="flex-shrink-0 w-4 text-center">
                                     {isCompleted ? (
-                                      <Check className="size-3.5 text-emerald-600 mx-auto" />
+                                      <Check className="size-3.5 text-green-500 mx-auto" />
                                     ) : isProcessing ? (
-                                      <Loader2 className="size-3.5 text-primary animate-spin mx-auto" />
+                                      <Loader2 className="size-3.5 text-blue-500 animate-spin mx-auto" />
                                     ) : (
-                                      <span className="text-[9px] font-bold text-muted-foreground">{step.stepNumber}</span>
+                                      <span className="text-[9px] font-bold text-muted-foreground/60">{step.stepNumber}</span>
                                     )}
                                   </div>
 
                                   <span className={`flex-1 min-w-0 text-[11px] font-medium truncate ${
                                     isActive
-                                      ? 'text-primary'
-                                      : 'text-foreground'
+                                      ? 'text-foreground'
+                                      : isCompleted
+                                        ? 'text-foreground'
+                                        : 'text-muted-foreground'
                                   }`}>
                                     {step.label}
                                   </span>
