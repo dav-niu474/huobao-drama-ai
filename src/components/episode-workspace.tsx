@@ -2028,9 +2028,7 @@ export function EpisodeWorkspace() {
                                   <span className={`flex-1 min-w-0 text-[11px] font-medium truncate ${
                                     isActive
                                       ? 'text-primary'
-                                      : isCompleted
-                                        ? 'text-emerald-700 dark:text-emerald-400'
-                                        : 'text-muted-foreground'
+                                      : 'text-foreground'
                                   }`}>
                                     {step.label}
                                   </span>
