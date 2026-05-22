@@ -1976,56 +1976,107 @@ export function EpisodeWorkspace() {
               <div className="w-[240px] h-full flex flex-col">
                 {/* Pipeline steps grouped by stage */}
                 <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-3">
+                  <div className="p-3 space-y-2">
                     {STAGES.map((stage) => {
                       const stageSteps = getStepsForStage(stage.key)
                       const isStageActive = activeStage === stage.key
+                      const stageCompletedCount = stageSteps.filter(s => getPipelineStepStatus(s.key) === 'completed').length
+                      const stageAllDone = stageCompletedCount === stageSteps.length
+                      const stagePartialDone = stageCompletedCount > 0 && !stageAllDone
                       return (
                         <div key={stage.key}>
                           {/* Stage header */}
                           <button
                             onClick={() => setActiveStage(stage.key)}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-all duration-200 ${
                               isStageActive
                                 ? 'bg-primary/10 text-primary'
-                                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                : stageAllDone
+                                  ? 'bg-emerald-500/8 text-emerald-600 hover:bg-emerald-500/12'
+                                  : stagePartialDone
+                                    ? 'text-foreground/80 hover:bg-muted/50'
+                                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                             }`}
                           >
-                            <span className="text-sm">{stage.icon}</span>
+                            <span className={`text-sm transition-colors duration-200 ${
+                              stageAllDone && !isStageActive ? 'text-emerald-500' : ''
+                            }`}>{stage.icon}</span>
                             <span className="text-xs font-semibold">{stage.label}</span>
+                            <span className={`ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-full transition-colors duration-200 ${
+                              stageAllDone
+                                ? 'bg-emerald-500/15 text-emerald-600'
+                                : stagePartialDone
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-muted text-muted-foreground'
+                            }`}>
+                              {stageCompletedCount}/{stageSteps.length}
+                            </span>
                           </button>
 
                           {/* Stage sub-steps */}
-                          <div className="ml-2 border-l border-border/30 pl-0.5">
-                            {stageSteps.map((step) => {
+                          <div className={`ml-3.5 border-l transition-colors duration-300 ${
+                            stageAllDone
+                              ? 'border-emerald-500/30'
+                              : stagePartialDone
+                                ? 'border-primary/20'
+                                : 'border-border/30'
+                          }`}>
+                            {stageSteps.map((step, idx) => {
                               const stepStatus = getPipelineStepStatus(step.key)
                               const isActive = activePipelineStep === step.key
                               const completionInfo = getStepCompletionInfo(step.key)
+                              const isCompleted = stepStatus === 'completed'
+                              const isActive_processing = stepStatus === 'active'
+                              // Check if all steps before this one are completed (for connector line color)
+                              const allPrevCompleted = stageSteps.slice(0, idx).every(s => getPipelineStepStatus(s.key) === 'completed')
                               return (
                                 <button
                                   key={step.key}
                                   onClick={() => handlePipelineStepClick(step.key)}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-r-md text-left transition-all duration-150 group ${
+                                  className={`relative w-full flex items-center gap-2 px-2 py-1.5 text-left transition-all duration-200 group ${
                                     isActive
                                       ? 'bg-primary/10 text-primary'
-                                      : stepStatus === 'completed'
-                                        ? 'text-emerald-600 hover:bg-emerald-500/5'
-                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                      : isCompleted
+                                        ? 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/8'
+                                        : isActive_processing
+                                          ? 'text-amber-600 hover:bg-amber-500/5'
+                                          : 'text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground/80'
                                   }`}
                                 >
+                                  {/* Colored connector dot on the left border line */}
+                                  <span className={`absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-1.5 rounded-full transition-colors duration-300 ${
+                                    isCompleted
+                                      ? 'bg-emerald-500'
+                                      : isActive_processing
+                                        ? 'bg-amber-400'
+                                        : isActive
+                                          ? 'bg-primary'
+                                          : 'bg-border/50'
+                                  }`} />
+
                                   {/* Status indicator */}
-                                  <div className="flex-shrink-0 size-5 rounded-full flex items-center justify-center">
-                                    {stepStatus === 'completed' ? (
-                                      <div className="size-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                        <Check className="size-3 text-emerald-500" />
+                                  <div className="flex-shrink-0 size-5 rounded-full flex items-center justify-center transition-all duration-300">
+                                    {isCompleted ? (
+                                      <div className={`size-5 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                        isActive
+                                          ? 'bg-emerald-500/20 ring-1 ring-emerald-500/40'
+                                          : 'bg-emerald-500/15'
+                                      }`}>
+                                        <Check className={`size-3 transition-colors duration-300 ${
+                                          isActive ? 'text-emerald-600' : 'text-emerald-500'
+                                        }`} />
                                       </div>
-                                    ) : stepStatus === 'active' ? (
-                                      <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center">
-                                        <Loader2 className="size-2.5 text-primary animate-spin" />
+                                    ) : isActive_processing ? (
+                                      <div className="size-5 rounded-full bg-amber-500/15 flex items-center justify-center ring-1 ring-amber-500/30">
+                                        <Loader2 className="size-2.5 text-amber-500 animate-spin" />
                                       </div>
                                     ) : (
-                                      <div className="size-5 rounded-full bg-muted flex items-center justify-center">
-                                        <span className="text-[9px] font-bold text-muted-foreground">
+                                      <div className={`size-5 rounded-full flex items-center justify-center transition-colors duration-300 ${
+                                        isActive ? 'bg-primary/15 ring-1 ring-primary/30' : 'bg-muted/60'
+                                      }`}>
+                                        <span className={`text-[9px] font-bold transition-colors duration-300 ${
+                                          isActive ? 'text-primary' : 'text-muted-foreground/50'
+                                        }`}>
                                           {step.stepNumber}
                                         </span>
                                       </div>
@@ -2033,11 +2084,15 @@ export function EpisodeWorkspace() {
                                   </div>
 
                                   <div className="flex-1 min-w-0">
-                                    <span className={`text-[11px] font-medium ${isActive ? 'text-primary' : ''}`}>
+                                    <span className={`text-[11px] font-medium transition-colors duration-200 ${
+                                      isActive ? 'text-primary' : isCompleted ? 'text-emerald-700 dark:text-emerald-400' : ''
+                                    }`}>
                                       {step.label}
                                     </span>
                                     {completionInfo && !completionInfo.startsWith('待') && step.key !== 'script:raw' && step.key !== 'script:rewrite' && (
-                                      <div className="text-[9px] text-muted-foreground/70 mt-0.5 truncate">
+                                      <div className={`text-[9px] mt-0.5 truncate transition-colors duration-200 ${
+                                        isCompleted ? 'text-emerald-600/60 dark:text-emerald-400/50' : 'text-muted-foreground/50'
+                                      }`}>
                                         {completionInfo}
                                       </div>
                                     )}
@@ -2062,9 +2117,15 @@ export function EpisodeWorkspace() {
                     <span>管线进度</span>
                     <span className="font-medium">{pipelineCompletedCount}/{pipelineTotalCount} 步完成</span>
                   </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-muted/60 rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full bg-emerald-500 rounded-full"
+                      className={`h-full rounded-full transition-colors duration-500 ${
+                        pipelineCompletedCount === pipelineTotalCount
+                          ? 'bg-emerald-500'
+                          : pipelineCompletedCount > 0
+                            ? 'bg-primary'
+                            : 'bg-muted'
+                      }`}
                       initial={{ width: 0 }}
                       animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
                       transition={{ duration: 0.5 }}
@@ -2107,24 +2168,33 @@ export function EpisodeWorkspace() {
                 <span className="hidden sm:inline">上一步</span>
               </Button>
 
-              {/* Step dots */}
-              <div className="flex items-center gap-1.5 overflow-x-auto px-2">
-                {PIPELINE_STEPS.map((step) => {
+              {/* Step dots with stage group separators */}
+              <div className="flex items-center gap-1 overflow-x-auto px-2">
+                {PIPELINE_STEPS.map((step, idx) => {
                   const stepStatus = getPipelineStepStatus(step.key)
                   const isActive = activePipelineStep === step.key
+                  const isCompleted = stepStatus === 'completed'
+                  const isActive_processing = stepStatus === 'active'
+                  // Add separator between stages
+                  const prevStep = idx > 0 ? PIPELINE_STEPS[idx - 1] : null
+                  const showSeparator = prevStep && prevStep.stage !== step.stage
                   return (
-                    <button
-                      key={step.key}
-                      onClick={() => handlePipelineStepClick(step.key)}
-                      title={step.label}
-                      className={`flex-shrink-0 transition-all duration-150 rounded-full ${
-                        isActive
-                          ? 'size-3 bg-primary'
-                          : stepStatus === 'completed'
-                            ? 'size-2 bg-emerald-500 hover:bg-emerald-400'
-                            : 'size-2 bg-muted-foreground/30 hover:bg-muted-foreground/60'
-                      }`}
-                    />
+                    <span key={step.key} className="flex items-center gap-1">
+                      {showSeparator && <span className="w-px h-3 bg-border/50 mx-0.5" />}
+                      <button
+                        onClick={() => handlePipelineStepClick(step.key)}
+                        title={step.label}
+                        className={`flex-shrink-0 rounded-full transition-all duration-200 ${
+                          isActive
+                            ? 'size-3 bg-primary ring-2 ring-primary/30'
+                            : isCompleted
+                              ? 'size-2 bg-emerald-500 hover:bg-emerald-400 hover:size-2.5'
+                              : isActive_processing
+                                ? 'size-2 bg-amber-400 animate-pulse hover:bg-amber-300'
+                                : 'size-2 bg-muted-foreground/20 hover:bg-muted-foreground/40'
+                        }`}
+                      />
+                    </span>
                   )
                 })}
               </div>
