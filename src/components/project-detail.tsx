@@ -17,10 +17,11 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2 } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
+import { CostStatsPanel } from '@/components/episode/cost-stats-panel'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -170,6 +171,9 @@ export function ProjectDetailView() {
   const [lockSettingsOpen, setLockSettingsOpen] = useState(false)
   const [defaultLockConfig, setDefaultLockConfig] = useState<LockedConfig>({})
   const [savingLockConfig, setSavingLockConfig] = useState(false)
+
+  // Cost stats dialog
+  const [costStatsOpen, setCostStatsOpen] = useState(false)
 
   // Fetch drama detail
   const fetchDrama = useCallback(async () => {
@@ -390,6 +394,15 @@ export function ProjectDetailView() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => setCostStatsOpen(true)}
+                  className="text-xs gap-1"
+                >
+                  <Coins className="size-3.5" />
+                  <span className="hidden sm:inline">成本统计</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={handleOpenLockSettings}
                   className="text-xs gap-1"
                 >
@@ -526,6 +539,15 @@ export function ProjectDetailView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Cost Stats Dialog ────────────────────────────── */}
+      {drama && (
+        <CostStatsPanel
+          dramaId={drama.id}
+          open={costStatsOpen}
+          onOpenChange={setCostStatsOpen}
+        />
+      )}
 
       {/* ── Default Lock Config Dialog ─────────────────────── */}
       <Dialog open={lockSettingsOpen} onOpenChange={setLockSettingsOpen}>

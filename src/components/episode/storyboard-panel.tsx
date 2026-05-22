@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Loader2,
@@ -17,6 +18,7 @@ import {
   Wand2,
   ChevronDown,
   Copy,
+  Grid as GridIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -29,6 +31,7 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { GridGenerateDialog } from './grid-generate-dialog'
 import { statusBadge, shotTypeLabel } from './helpers'
 import type { StoryboardPanelProps } from './types'
 
@@ -44,6 +47,7 @@ export function StoryboardPanel({
   batchProgress,
   uploadingField,
   copiedField,
+  gridState,
   handleGenerateStoryboard,
   handleEnhanceShotPrompt,
   handleGenerateAllImages,
@@ -53,7 +57,9 @@ export function StoryboardPanel({
   handleGenerateTts,
   handleUpload,
   handleCopy,
+  handleGridGenerate,
 }: StoryboardPanelProps) {
+  const [gridDialogOpen, setGridDialogOpen] = useState(false)
   // Empty state
   if (storyboards.length === 0 && !isStoryboarding && !aiLoading) {
     return (
@@ -106,6 +112,8 @@ export function StoryboardPanel({
   const t2vShots = pendingVideoShots.filter((s) => !s.firstFrameUrl)
   const i2vShots = pendingVideoShots.filter((s) => s.firstFrameUrl)
 
+  const isGridWorking = gridState.isGeneratingGrid || gridState.isSplittingGrid
+
   // Storyboard cards with media preview + action buttons
   return (
     <div className="flex flex-col h-full">
@@ -150,6 +158,21 @@ export function StoryboardPanel({
             >
               {generatingShotImg ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
               生成全部图片
+            </Button>
+          )}
+          {pendingImageShots.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setGridDialogOpen(true)}
+              disabled={isGridWorking || !!generatingShotImg || !!generatingVideo}
+              className="amber-glow"
+            >
+              {isGridWorking ? <Loader2 className="size-3.5 animate-spin" /> : <GridIcon className="size-3.5" />}
+              宫格图生成
+              <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">
+                {pendingImageShots.length}
+              </Badge>
             </Button>
           )}
           <Button
@@ -517,6 +540,14 @@ export function StoryboardPanel({
           ))}
         </div>
       </ScrollArea>
+
+      <GridGenerateDialog
+        open={gridDialogOpen}
+        onOpenChange={setGridDialogOpen}
+        storyboards={storyboards}
+        gridState={gridState}
+        handleGridGenerate={handleGridGenerate}
+      />
     </div>
   )
 }

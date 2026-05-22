@@ -180,15 +180,11 @@ export async function POST(request: NextRequest) {
           },
         })
       } else {
-        // For last_frame, we store it differently since the schema
-        // doesn't have a lastFrameUrl field. We'll use composedUrl
-        // as a temporary storage, or we could extend the schema.
-        // For now, update the firstFrameUrl since that's the primary
-        // frame field available.
+        // last_frame — write to lastFrameUrl
         await db.storyboard.update({
           where: { id: storyboardId },
           data: {
-            firstFrameUrl: cellImageUrl,
+            lastFrameUrl: cellImageUrl,
             status: 'image_generated',
           },
         })

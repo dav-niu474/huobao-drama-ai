@@ -16,6 +16,8 @@ import {
 import { DEFAULT_SYSTEM_PROMPTS } from '@/lib/agents/prompts'
 import { executeAgent } from '@/lib/agents/factory'
 import { loadAgentSkill } from '@/lib/agents/skills'
+import { getActiveProviderForUser } from '@/lib/ai-config'
+import { recordGenerationCost, calcLlmCredits } from '@/lib/cost-tracker'
 
 // ============================================================
 // Validate agent type
@@ -273,8 +275,28 @@ export async function POST(
   }
 
   // Execute the agent
+  const agentStartTime = Date.now()
   try {
     const result = await executeAgent(agentType, episodeId, dramaId, message, undefined, { modelOverride: effectiveModel, userId: auth.userId })
+
+    // Record LLM cost (non-blocking)
+    try {
+      const llmProvider = await getActiveProviderForUser('llm', auth.userId)
+      const providerName = llmProvider?.provider || ''
+      const modelName = effectiveModel || llmProvider?.model || ''
+      // Estimate token usage from steps (rough: ~2K tokens per step)
+      const estimatedTokens = result.steps * 2000
+      recordGenerationCost({
+        dramaId,
+        episodeId,
+        category: 'llm',
+        provider: providerName,
+        model: modelName,
+        credits: calcLlmCredits(estimatedTokens),
+        tokensUsed: estimatedTokens,
+        generationMs: Date.now() - agentStartTime,
+      })
+    } catch { /* non-blocking */ }
 
     return NextResponse.json({
       agentType,

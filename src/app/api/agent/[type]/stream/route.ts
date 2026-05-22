@@ -11,6 +11,8 @@ import { NextRequest } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
 import { AgentType, ALL_AGENT_TYPES, AGENT_NAMES } from '@/lib/agents/types'
 import { executeAgent, AgentProgressEvent } from '@/lib/agents/factory'
+import { getActiveProviderForUser } from '@/lib/ai-config'
+import { recordGenerationCost, calcLlmCredits } from '@/lib/cost-tracker'
 
 // ============================================================
 // Validate agent type
@@ -130,6 +132,25 @@ export async function POST(
           steps: result.steps,
           duration: Date.now() - startTime,
         } as AgentProgressEvent & { toolCalls: unknown[]; steps: number; duration: number })
+
+        // Record LLM cost (non-blocking)
+        try {
+          const llmProvider = await getActiveProviderForUser('llm', auth.userId)
+          const providerName = llmProvider?.provider || ''
+          const modelName = effectiveModel || llmProvider?.model || ''
+          // Estimate token usage from steps (rough: ~2K tokens per step)
+          const estimatedTokens = result.steps * 2000
+          recordGenerationCost({
+            dramaId,
+            episodeId,
+            category: 'llm',
+            provider: providerName,
+            model: modelName,
+            credits: calcLlmCredits(estimatedTokens),
+            tokensUsed: estimatedTokens,
+            generationMs: Date.now() - startTime,
+          })
+        } catch { /* non-blocking */ }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         console.error(`[Agent ${agentType} Stream] Execution failed:`, errorMsg)

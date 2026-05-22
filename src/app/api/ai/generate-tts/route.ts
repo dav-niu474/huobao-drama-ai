@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { aiClient } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth-helpers'
+import { getActiveProviderForUser } from '@/lib/ai-config'
+import { recordGenerationCost, calcTtsCredits } from '@/lib/cost-tracker'
 
 // POST /api/ai/generate-tts - Generate TTS audio for a storyboard shot (multi-provider)
 // Now looks up the character's voiceId and voiceStyle from the database
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  let providerName = ''
+  let modelName = ''
+
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
@@ -41,9 +47,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Resolve provider/model info for cost tracking
+    try {
+      const provider = await getActiveProviderForUser('tts', auth.userId)
+      if (provider) {
+        providerName = provider.provider
+        modelName = provider.model
+      }
+    } catch {
+      // non-critical
+    }
+
     // Resolve voiceId and voiceStyle from the character if not explicitly provided
     let resolvedVoiceId = voiceId
     let resolvedVoiceStyle = voiceStyle
+
+    // Resolve dramaId and episodeId for cost tracking
+    let dramaId: string | undefined
+    let episodeId: string | undefined
+    try {
+      const episode = await db.episode.findUnique({
+        where: { id: storyboard.episodeId },
+        select: { dramaId: true, id: true },
+      })
+      if (episode) {
+        dramaId = episode.dramaId
+        episodeId = episode.id
+      }
+    } catch {
+      // non-critical
+    }
 
     if (!resolvedVoiceId && storyboard.dialogueChar) {
       // Look up the episode to get dramaId, then find the character
@@ -82,6 +115,21 @@ export async function POST(request: NextRequest) {
     const updatedStoryboard = await db.storyboard.findUnique({
       where: { id: storyboardId },
     })
+
+    // Record cost for TTS generation
+    if (dramaId) {
+      try {
+        recordGenerationCost({
+          dramaId,
+          episodeId,
+          category: 'tts',
+          provider: providerName,
+          model: modelName,
+          credits: calcTtsCredits(),
+          generationMs: Date.now() - startTime,
+        })
+      } catch { /* non-blocking */ }
+    }
 
     return NextResponse.json({ storyboard: updatedStoryboard })
   } catch (error) {

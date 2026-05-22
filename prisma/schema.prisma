@@ -3,10 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
-  directUrl         = env("DIRECT_URL")
-  relationMode      = "prisma"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ============ User (Auth) ============
@@ -45,6 +43,7 @@ model Drama {
   episodes   Episode[]
   characters Character[]
   scenes     Scene[]
+  generationCosts GenerationCost[]
 }
 
 // ============ Episode ============
@@ -192,6 +191,9 @@ model ImageGeneration {
   imageUrl        String?  // Final image URL
   status          String   @default("pending")  // pending, processing, completed, failed
   errorMsg        String?
+  tokensUsed      Int?     // Estimated tokens consumed
+  generationMs    Int?     // Generation latency in milliseconds
+  costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 1 standard image)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -262,8 +264,28 @@ model VideoGeneration {
   videoUrl        String?
   status          String   @default("pending") // pending, processing, completed, failed
   errorMsg        String?
+  tokensUsed      Int?     // Estimated tokens consumed
+  generationMs    Int?     // Generation latency in milliseconds
+  costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 5s standard video)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// ============ Generation Cost Tracking ============
+model GenerationCost {
+  id          String   @id @default(cuid())
+  dramaId     String
+  episodeId   String?  // null = drama-level
+  category    String   // "image" | "video" | "tts" | "llm"
+  provider    String
+  model       String
+  credits     Float    @default(0)
+  tokensUsed  Int      @default(0)
+  count       Int      @default(1)  // Number of generations
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drama       Drama    @relation(fields: [dramaId], references: [id])
 }
 
 // ============ Video Merge Tracking ============

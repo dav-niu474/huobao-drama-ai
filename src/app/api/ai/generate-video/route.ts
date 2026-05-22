@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { aiClient } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth-helpers'
+import { getActiveProviderForUser } from '@/lib/ai-config'
+import { recordGenerationCost, calcVideoCredits } from '@/lib/cost-tracker'
 
 // POST /api/ai/generate-video - Generate video for a storyboard shot (multi-provider)
 // Supports both text-to-video (no firstFrameUrl) and image-to-video (with firstFrameUrl)
@@ -34,6 +36,10 @@ function enhanceVideoPrompt(
 }
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  let providerName = ''
+  let modelName = ''
+
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
@@ -59,6 +65,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Resolve provider/model info for cost tracking
+    try {
+      const provider = await getActiveProviderForUser('video', auth.userId)
+      if (provider) {
+        providerName = provider.provider
+        modelName = provider.model
+      }
+    } catch {
+      // non-critical
+    }
+
     // Use storyboard's videoPrompt if no prompt provided
     const rawVideoPrompt = prompt || storyboard.videoPrompt || storyboard.action || ''
 
@@ -75,6 +92,22 @@ export async function POST(request: NextRequest) {
     // firstFrameUrl is optional - when present, it's image-to-video; when absent, text-to-video
     const frameUrl = firstFrameUrl || storyboard.firstFrameUrl || undefined
 
+    // Resolve dramaId and episodeId for cost tracking
+    let dramaId: string | undefined
+    let episodeId: string | undefined
+    try {
+      const episode = await db.episode.findUnique({
+        where: { id: storyboard.episodeId },
+        select: { dramaId: true, id: true },
+      })
+      if (episode) {
+        dramaId = episode.dramaId
+        episodeId = episode.id
+      }
+    } catch {
+      // non-critical
+    }
+
     // Use multi-provider aiClient
     // The aiClient.generateVideo handles both text-to-video and image-to-video
     try {
@@ -83,6 +116,20 @@ export async function POST(request: NextRequest) {
       // Handle async task — return taskId for client-side polling
       if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
         const taskId = error.message.replace('ASYNC_TASK:', '')
+        // Record cost for async task
+        if (dramaId) {
+          try {
+            recordGenerationCost({
+              dramaId,
+              episodeId,
+              category: 'video',
+              provider: providerName,
+              model: modelName,
+              credits: calcVideoCredits(5),
+              generationMs: Date.now() - startTime,
+            })
+          } catch { /* non-blocking */ }
+        }
         return NextResponse.json({
           status: 'processing',
           taskId,
@@ -98,6 +145,21 @@ export async function POST(request: NextRequest) {
     const updatedStoryboard = await db.storyboard.findUnique({
       where: { id: storyboardId },
     })
+
+    // Record cost for successful generation
+    if (dramaId) {
+      try {
+        recordGenerationCost({
+          dramaId,
+          episodeId,
+          category: 'video',
+          provider: providerName,
+          model: modelName,
+          credits: calcVideoCredits(5),
+          generationMs: Date.now() - startTime,
+        })
+      } catch { /* non-blocking */ }
+    }
 
     return NextResponse.json({
       storyboard: updatedStoryboard,
