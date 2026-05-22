@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
-import { splitGridImage, validateGridDimensions } from '@/lib/grid'
+import { splitGridImage } from '@/lib/grid.server'
+import { validateGridDimensions } from '@/lib/grid'
 
 // POST /api/ai/grid/split — Split a grid image and assign to storyboards
 export async function POST(request: NextRequest) {

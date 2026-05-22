@@ -1,12 +1,8 @@
 // ============================================================
-// Grid Image Utilities — Split, Resolution, Prompt Building
-// Core utilities for the grid image generation and splitting
-// system. A "grid image" is a single large image containing
-// multiple storyboard frames arranged in rows x cols, which
-// can be split back into individual cell images.
+// Grid Image Utilities — Resolution, Prompt Building, Validation
+// This file is SAFE for client-side imports (no Node.js deps).
+// Server-only utilities (sharp-based splitting) live in grid.server.ts
 // ============================================================
-
-import sharp from 'sharp'
 
 // ============================================================
 // Resolution Calculation
@@ -49,80 +45,6 @@ export function calculateGridResolution(
 export function getGridSizeString(rows: number, cols: number): string {
   const { width, height } = calculateGridResolution(rows, cols)
   return `${width}x${height}`
-}
-
-// ============================================================
-// Grid Image Splitting
-// ============================================================
-
-/**
- * Split a grid image buffer into individual cell image buffers
- * using Sharp.
- *
- * The grid is assumed to be evenly divided: each cell has
- * (imageWidth / cols) x (imageHeight / rows) pixels.
- *
- * Cells are numbered left-to-right, top-to-bottom:
- *   0 | 1 | 2
- *   3 | 4 | 5
- *   6 | 7 | 8
- *
- * @param imageBuffer  The full grid image as a Buffer
- * @param rows         Number of rows in the grid
- * @param cols         Number of columns in the grid
- * @returns Array of cell image Buffers in row-major order
- */
-export async function splitGridImage(
-  imageBuffer: Buffer,
-  rows: number,
-  cols: number
-): Promise<Buffer[]> {
-  if (rows < 1 || cols < 1) {
-    throw new Error('Rows and cols must be at least 1')
-  }
-
-  const image = sharp(imageBuffer)
-  const metadata = await image.metadata()
-
-  const imageWidth = metadata.width || 0
-  const imageHeight = metadata.height || 0
-
-  if (imageWidth === 0 || imageHeight === 0) {
-    throw new Error('Could not determine image dimensions')
-  }
-
-  const cellWidth = Math.floor(imageWidth / cols)
-  const cellHeight = Math.floor(imageHeight / rows)
-
-  if (cellWidth < 10 || cellHeight < 10) {
-    throw new Error(
-      `Cell dimensions too small (${cellWidth}x${cellHeight}). ` +
-        `Image: ${imageWidth}x${imageHeight}, Grid: ${rows}x${cols}`
-    )
-  }
-
-  const cells: Buffer[] = []
-
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const left = col * cellWidth
-      const top = row * cellHeight
-
-      const cellBuffer = await sharp(imageBuffer)
-        .extract({
-          left,
-          top,
-          width: cellWidth,
-          height: cellHeight,
-        })
-        .png()
-        .toBuffer()
-
-      cells.push(cellBuffer)
-    }
-  }
-
-  return cells
 }
 
 // ============================================================
@@ -196,7 +118,7 @@ export function buildGridPrompt(
 }
 
 // ============================================================
-// Grid Layout Validation
+// Grid Layout Validation & Helpers
 // ============================================================
 
 export interface GridMode {
