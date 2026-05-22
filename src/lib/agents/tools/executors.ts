@@ -358,6 +358,7 @@ const saveCharacters: ToolExecutor = async (params, context) => {
     appearance?: string
     personality?: string
     voiceStyle?: string
+    imagePrompt?: string
   }>
 
   if (!Array.isArray(characters)) {
@@ -389,6 +390,8 @@ const saveCharacters: ToolExecutor = async (params, context) => {
         updateData.personality = char.personality
       if (!existingChar.voiceStyle && char.voiceStyle)
         updateData.voiceStyle = char.voiceStyle
+      if (!existingChar.imagePrompt && char.imagePrompt)
+        updateData.imagePrompt = char.imagePrompt
 
       if (Object.keys(updateData).length > 0) {
         await db.character.update({
@@ -411,6 +414,7 @@ const saveCharacters: ToolExecutor = async (params, context) => {
           appearance: char.appearance || '',
           personality: char.personality || '',
           voiceStyle: char.voiceStyle || '',
+          imagePrompt: char.imagePrompt || '',
         },
       })
       results.push({ name: char.name, action: 'created' })

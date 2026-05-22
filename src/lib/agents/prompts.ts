@@ -191,9 +191,26 @@ Call the \`save_parsed_script\` tool with this structure:
   "age": "年龄段描述，如'30岁左右'",
   "appearance": "外貌描述，包含体型、发型、服装风格等",
   "personality": "性格特征描述",
-  "voiceStyle": "声音特征描述，如'低沉磁性'、'清脆甜美'"
+  "voiceStyle": "声音特征描述，如'低沉磁性'、'清脆甜美'",
+  "imagePrompt": "Cinematic portrait, [角色身份/类型], [面部特征], [发型发色], [服装描述], [表情/姿态], [光线效果], [背景虚化], 8k ultra detailed, photorealistic"
 }
 \`\`\`
+
+### imagePrompt 生成规范 ⭐重要
+每个角色的imagePrompt必须是一段**专业级英文AI绘图提示词**，用于生成角色肖像图。格式要求：
+\`\`\`
+[风格描述], [角色身份/类型], [面部特征], [发型发色], [服装描述], [表情/姿态], [光线效果], [背景虚化], [画质标签]
+\`\`\`
+
+示例：
+\`\`\`
+Cinematic portrait, young Chinese woman in her 20s, delicate features with bright intelligent eyes, long black hair flowing over shoulders, wearing elegant white silk blouse, confident smile with slight mystery, soft Rembrandt lighting from left side, shallow depth of field with bokeh background, 8k ultra detailed, photorealistic
+\`\`\`
+
+注意：
+- imagePrompt必须用英文书写，适合AI绘图使用
+- 描述应基于剧本中的角色信息推断，确保视觉一致性
+- 包含具体的光线、构图、画质标签
 
 ### 角色类型说明
 - **protagonist（主角）**：故事的核心人物，贯穿全剧

@@ -312,6 +312,45 @@ export function ExtractPanel({
                         onUpdate={onUpdateCharacter}
                         multiline
                       />
+
+                      {/* Image Prompt — 形象设计描述提示词 */}
+                      {char.imagePrompt ? (
+                        <div className="rounded-md bg-primary/5 border border-primary/10 px-3 py-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[10px] font-medium text-primary/70 uppercase tracking-wide block mb-0.5">
+                                形象提示词
+                              </span>
+                              <p className="text-xs text-foreground leading-relaxed">
+                                {char.imagePrompt}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="size-7 p-0 flex-shrink-0"
+                              onClick={() => handleCopy(char.imagePrompt!, `char-imagePrompt-${char.id}`)}
+                            >
+                              {copiedField === `char-imagePrompt-${char.id}` ? (
+                                <Check className="size-3.5 text-emerald-500" />
+                              ) : (
+                                <Copy className="size-3.5 text-muted-foreground" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <InlineField
+                          label="形象提示词"
+                          value=""
+                          fieldId={`char-imagePrompt-${char.id}`}
+                          charId={char.id}
+                          copiedField={copiedField}
+                          handleCopy={handleCopy}
+                          onUpdate={onUpdateCharacter}
+                          multiline
+                        />
+                      )}
                     </div>
                   </CardContent>
                 </Card>

@@ -1604,6 +1604,10 @@ export function EpisodeWorkspace() {
               agentExec={agentExec}
               activeStep={'voice'}
               handleVoiceAssign={handleVoiceAssign}
+              handleAssignVoice={handleAssignVoice}
+              handleGenerateVoiceSample={handleGenerateVoiceSample}
+              voiceSamples={voiceSamples}
+              generatingSample={generatingSample}
             />
           )
         case 4: // storyboard

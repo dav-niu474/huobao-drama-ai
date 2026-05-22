@@ -154,6 +154,7 @@ const EXTRACTOR_TOOLS: ToolDefinition[] = [
             appearance: { type: 'string', description: '外貌描述' },
             personality: { type: 'string', description: '性格特征' },
             voiceStyle: { type: 'string', description: '声音特征' },
+            imagePrompt: { type: 'string', description: '角色形象设计英文提示词，用于AI绘图生成角色肖像' },
           },
           requiredFields: ['name'],
         },

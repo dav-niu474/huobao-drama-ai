@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Upload, FileText, Check, ChevronRight, Sparkles } from 'lucide-react'
+import { Loader2, Upload, FileText, Check, ChevronRight, Sparkles, AlertCircle } from 'lucide-react'
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -135,6 +135,8 @@ export function ScriptUploadDialog({
   const [charCount, setCharCount] = useState(0)
   const [parsing, setParsing] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [uploading, setUploading] = useState(false)  // 文件上传中状态
+  const [parseProgress, setParseProgress] = useState('')  // AI解析进度文字
 
   // Parsed result (editable)
   const [title, setTitle] = useState('')
@@ -159,6 +161,8 @@ export function ScriptUploadDialog({
     setCharCount(0)
     setParsing(false)
     setCreating(false)
+    setUploading(false)
+    setParseProgress('')
     setTitle('')
     setGenre('都市')
     setStyle('realistic')
@@ -172,7 +176,10 @@ export function ScriptUploadDialog({
   }, [])
 
   const handleClose = (open: boolean) => {
-    if (!open) reset()
+    if (!open) {
+      hasAutoParsed.current = false
+      reset()
+    }
     onOpenChange(open)
   }
 
@@ -190,10 +197,12 @@ export function ScriptUploadDialog({
       return
     }
 
+    setUploading(true)  // 立即显示上传状态
+    setFileName(file.name)
+
     try {
       const result = await api.upload.script(file)
       setUploadingText(result.text)
-      setFileName(result.fileName)
       setCharCount(result.charCount)
 
       // Auto-parse with simple heuristics
@@ -204,8 +213,11 @@ export function ScriptUploadDialog({
       setEpisodes(parsed.episodes)
       setSummary(parsed.summary)
 
+      setUploading(false)
       setStep(1) // Move to AI parsing step
     } catch (err) {
+      setUploading(false)
+      setFileName('')
       toast({ title: '上传失败', description: String(err), variant: 'destructive' })
     }
   }, [toast])
@@ -291,17 +303,40 @@ export function ScriptUploadDialog({
     }
   }
 
-  // ── AI Parse (using script_parser agent) ──
+  // ── AI Parse (using script_parser agent with streaming) ──
   const handleAiParse = useCallback(async () => {
     if (!uploadingText.trim()) return
     setParsing(true)
+    setParseProgress('正在启动AI解析...')
+
     try {
-      // Use the agent API to parse
-      const result = await api.ai.agentExecute(
+      // Use the streaming agent API for real-time progress
+      const result = await api.ai.agentStream(
         'script_parser',
         '__upload__',  // dummy episodeId
         '__upload__',  // dummy dramaId
-        `请分析以下剧本文本，识别剧本结构，拆分集数，推断题材和风格：\n\n${uploadingText.slice(0, 30000)}${uploadingText.length > 30000 ? '\n\n[文本已截断，共' + uploadingText.length + '字]' : ''}`
+        `请分析以下剧本文本，识别剧本结构，拆分集数，推断题材和风格：\n\n${uploadingText.slice(0, 30000)}${uploadingText.length > 30000 ? '\n\n[文本已截断，共' + uploadingText.length + '字]' : ''}`,
+        (data) => {
+          // Update progress text from SSE events
+          if (data.step === 'thinking') {
+            setParseProgress('AI正在思考分析策略...')
+          } else if (data.step === 'tool_call') {
+            const toolName = data.toolName || data.tool || ''
+            if (toolName === 'read_uploaded_text') {
+              setParseProgress('正在读取剧本文本...')
+            } else if (toolName === 'save_parsed_script') {
+              setParseProgress('正在保存解析结果...')
+            } else {
+              setParseProgress(`正在执行: ${toolName}...`)
+            }
+          } else if (data.step === 'tool_result') {
+            setParseProgress('正在处理工具返回结果...')
+          } else if (data.step === 'text') {
+            setParseProgress('AI正在生成分析...')
+          } else if (data.message) {
+            setParseProgress(data.message)
+          }
+        }
       )
 
       // Extract parsed data from toolCalls
@@ -326,15 +361,26 @@ export function ScriptUploadDialog({
         if (data.props?.length) setProps(data.props)
       }
 
+      setParseProgress('')
       setStep(2) // Move to confirm step
     } catch (err) {
       // Fallback: even if AI parse fails, we still have simpleParse results
+      setParseProgress('')
       toast({ title: 'AI解析未成功，已使用基础解析', description: '你可以手动调整信息后创建', variant: 'default' })
       setStep(2)
     } finally {
       setParsing(false)
     }
   }, [uploadingText, toast])
+
+  // ── Auto-trigger AI parse when entering step 1 ──
+  const hasAutoParsed = useRef(false)
+  useEffect(() => {
+    if (step === 1 && !parsing && !hasAutoParsed.current && uploadingText.trim()) {
+      hasAutoParsed.current = true
+      handleAiParse()
+    }
+  }, [step, parsing, uploadingText, handleAiParse])
 
   // ── Create project ──
   const handleCreate = useCallback(async () => {
@@ -408,40 +454,59 @@ export function ScriptUploadDialog({
             >
               {/* Drop zone */}
               <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-3 transition-colors cursor-pointer ${
-                  dragging
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border/60 hover:border-primary/40'
+                onDragOver={uploading ? undefined : handleDragOver}
+                onDragLeave={uploading ? undefined : handleDragLeave}
+                onDrop={uploading ? undefined : handleDrop}
+                className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-3 transition-colors ${
+                  uploading
+                    ? 'border-primary/30 bg-primary/5 cursor-wait'
+                    : dragging
+                      ? 'border-primary bg-primary/5 cursor-pointer'
+                      : 'border-border/60 hover:border-primary/40 cursor-pointer'
                 }`}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={uploading ? undefined : () => fileInputRef.current?.click()}
               >
-                <Upload className={`size-8 ${dragging ? 'text-primary' : 'text-muted-foreground'}`} />
-                <p className="text-sm text-muted-foreground">拖拽文件到此处上传</p>
-                <p className="text-xs text-muted-foreground/70">或点击选择文件</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">
-                  支持 .txt .md .docx .pdf
-                </p>
-                <p className="text-[10px] text-muted-foreground/40">最大 10MB</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    fileInputRef.current?.click()
-                  }}
-                >
-                  选择文件
-                </Button>
+                {uploading ? (
+                  <>
+                    <Loader2 className="size-8 text-primary animate-spin" />
+                    <p className="text-sm font-medium text-primary">正在上传文件...</p>
+                    {fileName && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50">
+                        <FileText className="size-4 text-muted-foreground" />
+                        <span className="text-xs truncate max-w-[200px]">{fileName}</span>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground/60">请稍候，文件上传中</p>
+                  </>
+                ) : (
+                  <>
+                    <Upload className={`size-8 ${dragging ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <p className="text-sm text-muted-foreground">拖拽文件到此处上传</p>
+                    <p className="text-xs text-muted-foreground/70">或点击选择文件</p>
+                    <p className="text-xs text-muted-foreground/50 mt-1">
+                      支持 .txt .md .docx .pdf
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/40">最大 10MB</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                    >
+                      选择文件
+                    </Button>
+                  </>
+                )}
               </div>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".txt,.md,.docx,.pdf"
                 className="hidden"
+                disabled={uploading}
                 onChange={handleFileSelect}
               />
 
@@ -451,7 +516,6 @@ export function ScriptUploadDialog({
             </motion.div>
           )}
 
-          {/* ── Step 1: Parsing ── */}
           {step === 1 && (
             <motion.div
               key="parsing"
@@ -471,8 +535,14 @@ export function ScriptUploadDialog({
               {parsing ? (
                 <div className="flex flex-col items-center gap-3 py-6">
                   <Loader2 className="size-6 text-primary animate-spin" />
-                  <p className="text-sm text-muted-foreground">AI正在分析剧本结构...</p>
+                  <p className="text-sm font-medium text-primary">
+                    {parseProgress || 'AI正在分析剧本结构...'}
+                  </p>
                   <p className="text-xs text-muted-foreground/60">识别集数、推断题材和风格</p>
+                  {/* 进度条动画 */}
+                  <div className="w-48 h-1.5 bg-muted rounded-full overflow-hidden mt-1">
+                    <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-3 py-6">

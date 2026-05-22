@@ -184,6 +184,10 @@ export interface VoicePanelProps {
   agentExec: AgentExecState
   activeStep: 'voice'
   handleVoiceAssign: () => Promise<void>
+  handleAssignVoice: (characterId: string, voiceId: string) => Promise<void>
+  handleGenerateVoiceSample: (characterId: string, voiceId: string) => Promise<void>
+  voiceSamples: Record<string, string>
+  generatingSample: string | null
 }
 
 export interface StoryboardPanelProps {
