@@ -51,7 +51,32 @@ export interface ParsedScriptResult {
   genre: string
   style: string
   totalEpisodes: number
-  episodes: Array<{ title: string; content: string }>
+  episodes: Array<{
+    title: string
+    content: string
+    scenes: Array<{
+      sceneNumber: number
+      location: string
+      timeOfDay: string
+      description: string
+      content: string
+    }>
+  }>
+  characters: Array<{
+    name: string
+    role: string  // 'protagonist' | 'supporting' | 'minor'
+    gender: string
+    description: string
+  }>
+  scenes: Array<{
+    location: string
+    timeOfDay: string
+    description: string
+  }>
+  props: Array<{
+    name: string
+    description: string
+  }>
   summary: string
 }
 
@@ -102,7 +127,32 @@ const saveParsedScript: ToolExecutor = async (params, _context) => {
   const genre = params.genre as string
   const style = params.style as string
   const totalEpisodes = params.totalEpisodes as number
-  const episodes = params.episodes as Array<{ title: string; content: string }>
+  const episodes = params.episodes as Array<{
+    title: string
+    content: string
+    scenes?: Array<{
+      sceneNumber: number
+      location: string
+      timeOfDay?: string
+      description?: string
+      content: string
+    }>
+  }>
+  const characters = params.characters as Array<{
+    name: string
+    role?: string
+    gender?: string
+    description?: string
+  }>
+  const scenes = params.scenes as Array<{
+    location: string
+    timeOfDay?: string
+    description?: string
+  }>
+  const props = params.props as Array<{
+    name: string
+    description?: string
+  }>
   const summary = params.summary as string
 
   // Validate required fields
@@ -132,21 +182,74 @@ const saveParsedScript: ToolExecutor = async (params, _context) => {
     const ep = episodes[i]
     if (!ep.title) throw new Error(`Episode ${i + 1} is missing title`)
     if (!ep.content) throw new Error(`Episode ${i + 1} is missing content`)
+    // Validate episode scenes if provided
+    if (ep.scenes && Array.isArray(ep.scenes)) {
+      for (let j = 0; j < ep.scenes.length; j++) {
+        const sc = ep.scenes[j]
+        if (!sc.location) throw new Error(`Episode ${i + 1} Scene ${j + 1} is missing location`)
+        if (!sc.content) throw new Error(`Episode ${i + 1} Scene ${j + 1} is missing content`)
+      }
+    }
   }
+
+  // Normalize characters: default to empty array, fill defaults
+  const normalizedCharacters = Array.isArray(characters)
+    ? characters.map((c) => ({
+        name: c.name,
+        role: c.role || 'supporting',
+        gender: c.gender || 'unknown',
+        description: c.description || '',
+      }))
+    : []
+
+  // Normalize scenes: default to empty array, fill defaults
+  const normalizedScenes = Array.isArray(scenes)
+    ? scenes.map((s) => ({
+        location: s.location,
+        timeOfDay: s.timeOfDay || 'day',
+        description: s.description || '',
+      }))
+    : []
+
+  // Normalize props: default to empty array, fill defaults
+  const normalizedProps = Array.isArray(props)
+    ? props.map((p) => ({
+        name: p.name,
+        description: p.description || '',
+      }))
+    : []
+
+  // Normalize episode scenes
+  const normalizedEpisodes = episodes.map((ep) => ({
+    title: ep.title,
+    content: ep.content,
+    scenes: Array.isArray(ep.scenes)
+      ? ep.scenes.map((sc) => ({
+          sceneNumber: typeof sc.sceneNumber === 'number' ? sc.sceneNumber : 0,
+          location: sc.location,
+          timeOfDay: sc.timeOfDay || 'day',
+          description: sc.description || '',
+          content: sc.content,
+        }))
+      : [],
+  }))
 
   const result: ParsedScriptResult = {
     title,
     genre,
     style,
     totalEpisodes,
-    episodes,
+    episodes: normalizedEpisodes,
+    characters: normalizedCharacters,
+    scenes: normalizedScenes,
+    props: normalizedProps,
     summary,
   }
 
   return {
     success: true,
     data: result,
-    message: `剧本解析完成："${title}"，${genre}题材，共${totalEpisodes}集`,
+    message: `剧本解析完成："${title}"，${genre}题材，共${totalEpisodes}集，检测到${normalizedCharacters.length}个角色、${normalizedScenes.length}个场景、${normalizedProps.length}个道具`,
   }
 }
 

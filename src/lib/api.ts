@@ -924,11 +924,15 @@ export const api = {
     genre: string
     style: string
     episodes: Array<{ title: string; rawContent: string }>
+    characters?: Array<{ name: string; role?: string; gender?: string; description?: string }>
+    scenes?: Array<{ location: string; timeOfDay?: string; description?: string }>
     autoStartPipeline?: boolean
   }) =>
     request<{
       drama: Drama
       episodes: Episode[]
+      characters: Character[]
+      scenes: Scene[]
       pipelineStarted: boolean
     }>('/api/dramas/create-from-script', {
       method: 'POST',

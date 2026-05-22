@@ -13,6 +13,26 @@ import { db } from '@/lib/db'
 interface EpisodeInput {
   title: string
   rawContent: string
+  scenes?: Array<{
+    sceneNumber: number
+    location: string
+    timeOfDay?: string
+    description?: string
+    content: string
+  }>
+}
+
+interface CharacterInput {
+  name: string
+  role?: string
+  gender?: string
+  description?: string
+}
+
+interface SceneInput {
+  location: string
+  timeOfDay?: string
+  description?: string
 }
 
 interface CreateFromScriptBody {
@@ -20,6 +40,8 @@ interface CreateFromScriptBody {
   genre: string
   style: string
   episodes: EpisodeInput[]
+  characters?: CharacterInput[]
+  scenes?: SceneInput[]
   autoStartPipeline?: boolean
 }
 
@@ -46,7 +68,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: CreateFromScriptBody = await request.json()
-    const { title, genre, style, episodes, autoStartPipeline } = body
+    const { title, genre, style, episodes, characters, scenes, autoStartPipeline } = body
 
     // Validate required fields
     if (!title) {
@@ -78,7 +100,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create Drama + Episodes in a transaction
+    // Create Drama + Episodes + Characters + Scenes in a transaction
     const result = await db.$transaction(async (tx) => {
       // 1. Create Drama
       const drama = await tx.drama.create({
@@ -95,19 +117,64 @@ export async function POST(request: NextRequest) {
       const createdEpisodes: any[] = []
       for (let i = 0; i < episodes.length; i++) {
         const ep = episodes[i]
+        // If episodes have scenes data, store scene breakdown as JSON in rawContent
+        // We keep rawContent as the full episode text, and append scenes JSON metadata
+        let rawContent = ep.rawContent
+        if (ep.scenes && Array.isArray(ep.scenes) && ep.scenes.length > 0) {
+          // Append scene breakdown metadata as a JSON comment at the end
+          rawContent += '\n\n---SCENE_BREAK---\n' + JSON.stringify(ep.scenes)
+        }
+
         const episode = await tx.episode.create({
           data: {
             dramaId: drama.id,
             episodeNumber: i + 1,
             title: ep.title,
-            rawContent: ep.rawContent,
+            rawContent,
             scriptStatus: 'pending',
+            // Inherit defaultLockedConfig from the newly created drama
+            lockedConfig: drama.defaultLockedConfig || 'null',
           },
         })
         createdEpisodes.push(episode)
       }
 
-      return { drama, episodes: createdEpisodes }
+      // 3. Create Characters (if provided)
+      const createdCharacters: any[] = []
+      if (characters && Array.isArray(characters) && characters.length > 0) {
+        for (const char of characters) {
+          if (!char.name) continue
+          const character = await tx.character.create({
+            data: {
+              dramaId: drama.id,
+              name: char.name,
+              role: char.role || 'supporting',
+              gender: char.gender || 'unknown',
+              appearance: char.description || '',
+            },
+          })
+          createdCharacters.push(character)
+        }
+      }
+
+      // 4. Create Scenes (if provided)
+      const createdScenes: any[] = []
+      if (scenes && Array.isArray(scenes) && scenes.length > 0) {
+        for (const scene of scenes) {
+          if (!scene.location) continue
+          const sceneRecord = await tx.scene.create({
+            data: {
+              dramaId: drama.id,
+              location: scene.location,
+              timeOfDay: scene.timeOfDay || 'day',
+              description: scene.description || '',
+            },
+          })
+          createdScenes.push(sceneRecord)
+        }
+      }
+
+      return { drama, episodes: createdEpisodes, characters: createdCharacters, scenes: createdScenes }
     })
 
     // If autoStartPipeline is requested, we return a flag for the frontend
@@ -122,6 +189,8 @@ export async function POST(request: NextRequest) {
       {
         drama: result.drama,
         episodes: result.episodes,
+        characters: result.characters,
+        scenes: result.scenes,
         pipelineStarted,
       },
       { status: 201 }

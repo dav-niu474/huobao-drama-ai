@@ -13,6 +13,7 @@ export interface Drama {
   coverImage: string | null
   totalEpisodes: number
   status: string
+  defaultLockedConfig: string | null
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }

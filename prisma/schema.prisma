@@ -36,9 +36,10 @@ model Drama {
   coverImage    String?
   totalEpisodes Int      @default(0)
   status        String   @default("draft")
-  userId        String?                    // nullable for backward compat
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  userId              String?                    // nullable for backward compat
+  defaultLockedConfig String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
   episodes   Episode[]

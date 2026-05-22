@@ -49,11 +49,22 @@ export async function POST(
 
     const episodeNumber = (maxEpisode?.episodeNumber ?? 0) + 1;
 
+    // Copy defaultLockedConfig from drama to new episode
+    let lockedConfig = 'null';
+    const drama = await db.drama.findUnique({
+      where: { id: dramaId },
+      select: { defaultLockedConfig: true },
+    });
+    if (drama?.defaultLockedConfig && drama.defaultLockedConfig !== 'null') {
+      lockedConfig = drama.defaultLockedConfig;
+    }
+
     const episode = await db.episode.create({
       data: {
         dramaId,
         episodeNumber,
         title: title || `第${episodeNumber}集`,
+        lockedConfig,
       },
     });
 

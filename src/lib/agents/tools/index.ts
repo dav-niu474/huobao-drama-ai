@@ -331,7 +331,7 @@ const SCRIPT_PARSER_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'save_parsed_script',
-    description: '保存解析后的剧本结构数据，包含项目名称、题材、风格、集数拆分等信息。',
+    description: '保存解析后的剧本结构数据，包含项目名称、题材、风格、集数拆分、场次拆分、角色/场景/道具提取等信息。',
     parameters: {
       title: {
         type: 'string',
@@ -357,7 +357,7 @@ const SCRIPT_PARSER_TOOLS: ToolDefinition[] = [
       },
       episodes: {
         type: 'array',
-        description: '剧集数组，每个元素包含标题和内容',
+        description: '剧集数组，每个元素包含标题、内容和场次拆分',
         required: true,
         items: {
           type: 'object',
@@ -365,8 +365,66 @@ const SCRIPT_PARSER_TOOLS: ToolDefinition[] = [
           properties: {
             title: { type: 'string', description: '集标题（如：第1集：初遇）', required: true },
             content: { type: 'string', description: '该集的完整文本内容（不要截断或摘要）', required: true },
+            scenes: {
+              type: 'array',
+              description: '该集的场次拆分数组',
+              items: {
+                type: 'object',
+                description: '单场数据',
+                properties: {
+                  sceneNumber: { type: 'number', description: '场次编号（从1开始）', required: true },
+                  location: { type: 'string', description: '场景地点（如：咖啡馆、办公室）', required: true },
+                  timeOfDay: { type: 'string', description: '时间段：day/night/dawn/dusk/morning/afternoon/evening' },
+                  description: { type: 'string', description: '场景简要描述' },
+                  content: { type: 'string', description: '该场次的文本内容', required: true },
+                },
+                requiredFields: ['sceneNumber', 'location', 'content'],
+              },
+            },
           },
           requiredFields: ['title', 'content'],
+        },
+      },
+      characters: {
+        type: 'array',
+        description: '提取的角色数组',
+        items: {
+          type: 'object',
+          description: '角色数据',
+          properties: {
+            name: { type: 'string', description: '角色名称', required: true },
+            role: { type: 'string', description: '角色类型：protagonist/supporting/minor' },
+            gender: { type: 'string', description: '性别：male/female/unknown' },
+            description: { type: 'string', description: '角色外貌和性格的简要描述' },
+          },
+          requiredFields: ['name'],
+        },
+      },
+      scenes: {
+        type: 'array',
+        description: '提取的场景数组（去重后的唯一场景列表）',
+        items: {
+          type: 'object',
+          description: '场景数据',
+          properties: {
+            location: { type: 'string', description: '地点名称', required: true },
+            timeOfDay: { type: 'string', description: '时间段：day/night/dawn/dusk/morning/afternoon/evening' },
+            description: { type: 'string', description: '场景描述' },
+          },
+          requiredFields: ['location'],
+        },
+      },
+      props: {
+        type: 'array',
+        description: '提取的道具数组（只提取对剧情有推动作用的关键道具）',
+        items: {
+          type: 'object',
+          description: '道具数据',
+          properties: {
+            name: { type: 'string', description: '道具名称', required: true },
+            description: { type: 'string', description: '道具外观和用途描述' },
+          },
+          requiredFields: ['name'],
         },
       },
       summary: {

@@ -78,9 +78,27 @@ export async function PATCH(
 
     const body = await request.json();
 
+    // Sanitize allowed fields — prevent arbitrary data injection
+    const allowedFields = [
+      'title', 'description', 'genre', 'style', 'coverImage',
+      'totalEpisodes', 'status', 'defaultLockedConfig',
+    ];
+    const data: Record<string, unknown> = {};
+    for (const field of allowedFields) {
+      if (field in body) {
+        if (field === 'defaultLockedConfig') {
+          // Store as JSON string; accept object or string
+          const val = body[field];
+          data[field] = typeof val === 'string' ? val : JSON.stringify(val);
+        } else {
+          data[field] = body[field];
+        }
+      }
+    }
+
     const drama = await db.drama.update({
       where: { id },
-      data: body,
+      data,
     });
 
     return NextResponse.json(drama);

@@ -54,12 +54,33 @@ interface ParsedEpisode {
   rawContent: string
 }
 
+interface ParsedCharacter {
+  name: string
+  role: string
+  gender: string
+  description: string
+}
+
+interface ParsedScene {
+  location: string
+  timeOfDay: string
+  description: string
+}
+
+interface ParsedProp {
+  name: string
+  description: string
+}
+
 interface ParsedResult {
   title: string
   genre: string
   style: string
   totalEpisodes: number
   episodes: ParsedEpisode[]
+  characters: ParsedCharacter[]
+  scenes: ParsedScene[]
+  props: ParsedProp[]
   summary: string
 }
 
@@ -122,6 +143,9 @@ export function ScriptUploadDialog({
   const [episodes, setEpisodes] = useState<ParsedEpisode[]>([])
   const [summary, setSummary] = useState('')
   const [autoPipeline, setAutoPipeline] = useState(true)
+  const [characters, setCharacters] = useState<ParsedCharacter[]>([])
+  const [scenes, setScenes] = useState<ParsedScene[]>([])
+  const [props, setProps] = useState<ParsedProp[]>([])
 
   // Drag state
   const [dragging, setDragging] = useState(false)
@@ -142,6 +166,9 @@ export function ScriptUploadDialog({
     setSummary('')
     setAutoPipeline(true)
     setDragging(false)
+    setCharacters([])
+    setScenes([])
+    setProps([])
   }, [])
 
   const handleClose = (open: boolean) => {
@@ -257,6 +284,9 @@ export function ScriptUploadDialog({
       style: 'realistic',
       totalEpisodes: episodes.length,
       episodes,
+      characters: [],
+      scenes: [],
+      props: [],
       summary: `${episodes.length}集剧本，共${text.length.toLocaleString()}字`,
     }
   }
@@ -291,6 +321,9 @@ export function ScriptUploadDialog({
           })))
         }
         if (data.summary) setSummary(data.summary)
+        if (data.characters?.length) setCharacters(data.characters)
+        if (data.scenes?.length) setScenes(data.scenes)
+        if (data.props?.length) setProps(data.props)
       }
 
       setStep(2) // Move to confirm step
@@ -313,6 +346,8 @@ export function ScriptUploadDialog({
         genre,
         style,
         episodes: episodes.filter(ep => ep.rawContent.trim()),
+        characters: characters.length > 0 ? characters : undefined,
+        scenes: scenes.length > 0 ? scenes : undefined,
         autoStartPipeline: autoPipeline,
       })
       toast({ title: '项目创建成功', description: `已创建「${title}」项目，包含${episodes.length}集内容` })
@@ -323,7 +358,7 @@ export function ScriptUploadDialog({
     } finally {
       setCreating(false)
     }
-  }, [title, genre, style, episodes, autoPipeline, toast, handleClose, onSuccess])
+  }, [title, genre, style, episodes, characters, scenes, autoPipeline, toast, handleClose, onSuccess])
 
   // ── Drop handlers ──
   const handleDragOver = (e: React.DragEvent) => {
@@ -574,6 +609,78 @@ export function ScriptUploadDialog({
                   ))}
                 </div>
               </div>
+
+              {/* Extracted Characters */}
+              {characters.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">
+                    检测到 {characters.length} 个角色
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {characters.map((char, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-muted/60 border border-border/40"
+                      >
+                        <span className="font-medium">{char.name}</span>
+                        <span className="text-muted-foreground">
+                          {char.role === 'protagonist' ? '主角' : char.role === 'minor' ? '龙套' : '配角'}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Extracted Scenes */}
+              {scenes.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">
+                    检测到 {scenes.length} 个场景
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {scenes.map((scene, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-muted/60 border border-border/40"
+                      >
+                        <span className="font-medium">{scene.location}</span>
+                        <span className="text-muted-foreground">
+                          {scene.timeOfDay === 'day' ? '日' :
+                           scene.timeOfDay === 'night' ? '夜' :
+                           scene.timeOfDay === 'dawn' ? '黎明' :
+                           scene.timeOfDay === 'dusk' ? '黄昏' :
+                           scene.timeOfDay === 'morning' ? '上午' :
+                           scene.timeOfDay === 'afternoon' ? '下午' :
+                           scene.timeOfDay === 'evening' ? '傍晚' : scene.timeOfDay}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Extracted Props */}
+              {props.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">
+                    检测到 {props.length} 个道具
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {props.map((prop, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-muted/60 border border-border/40"
+                      >
+                        <span className="font-medium">{prop.name}</span>
+                        {prop.description && (
+                          <span className="text-muted-foreground">{prop.description.slice(0, 20)}{prop.description.length > 20 ? '...' : ''}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Auto pipeline checkbox */}
               <label className="flex items-center gap-2 cursor-pointer">

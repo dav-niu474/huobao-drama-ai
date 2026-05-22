@@ -68,6 +68,26 @@ export async function POST(
     )
   }
 
+  // ── Locked config enforcement ──
+  // If the episode has a lockedConfig with an llm override,
+  // use it as the model regardless of what the client sent.
+  let effectiveModel = model
+  try {
+    const { db } = await import('@/lib/db')
+    const episode = await db.episode.findUnique({
+      where: { id: episodeId },
+      select: { lockedConfig: true },
+    })
+    if (episode?.lockedConfig && episode.lockedConfig !== 'null') {
+      const locked = JSON.parse(episode.lockedConfig)
+      if (locked?.llm) {
+        effectiveModel = locked.llm
+      }
+    }
+  } catch {
+    // If we can't read lockedConfig, fall through with client model
+  }
+
   // Create SSE stream
   const encoder = new TextEncoder()
   const startTime = Date.now()
@@ -93,7 +113,7 @@ export async function POST(
           (event) => {
             sendEvent(event)
           },
-          { modelOverride: model, userId: auth.userId }
+          { modelOverride: effectiveModel, userId: auth.userId }
         )
 
         // Send final completed event with full results

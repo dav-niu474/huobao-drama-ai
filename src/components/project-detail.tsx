@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { useAppStore, type DramaDetail, type Episode } from '@/lib/store'
+import { useAppStore, type DramaDetail, type Episode, type LockedConfig } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { Card, CardContent } from '@/components/ui/card'
@@ -17,8 +17,10 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
+import { ModelSelector } from '@/components/model-selector'
+import { Separator } from '@/components/ui/separator'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -67,6 +69,10 @@ function formatDuration(seconds: number): string {
 
 // ── episode card ─────────────────────────────────────────────
 
+function isLocked(lockedConfig: string | null | undefined): boolean {
+  return !!lockedConfig && lockedConfig !== 'null'
+}
+
 function EpisodeCard({
   episode,
   onClick,
@@ -77,6 +83,7 @@ function EpisodeCard({
   const status = scriptStatusLabel(episode.scriptStatus)
   const storyboardCount = episode._count?.storyboards ?? 0
   const durationStr = formatDuration(episode.duration)
+  const locked = isLocked(episode.lockedConfig)
 
   return (
     <motion.div whileHover={{ x: 4 }}>
@@ -98,6 +105,10 @@ function EpisodeCard({
               <h4 className="text-sm font-medium truncate">
                 {episode.title || `第${episode.episodeNumber}集`}
               </h4>
+              {/* Lock icon */}
+              {locked && (
+                <Lock className="size-3 text-amber-500 flex-shrink-0" />
+              )}
               {/* Status dot */}
               <div className="flex items-center gap-1.5">
                 <span className={`size-2 rounded-full ${status.color}`} />
@@ -151,6 +162,14 @@ export function ProjectDetailView() {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [savingTitle, setSavingTitle] = useState(false)
+
+  // Bulk lock/unlock state
+  const [bulkLoading, setBulkLoading] = useState(false)
+
+  // Default lock config dialog
+  const [lockSettingsOpen, setLockSettingsOpen] = useState(false)
+  const [defaultLockConfig, setDefaultLockConfig] = useState<LockedConfig>({})
+  const [savingLockConfig, setSavingLockConfig] = useState(false)
 
   // Fetch drama detail
   const fetchDrama = useCallback(async () => {
@@ -223,6 +242,84 @@ export function ProjectDetailView() {
     setEditTitle('')
   }
 
+  // ── Bulk lock/unlock handlers ──
+  const handleBulkLock = async () => {
+    if (!selectedDramaId) return
+    setBulkLoading(true)
+    try {
+      const res = await fetch(`/api/dramas/${selectedDramaId}/bulk-lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'lock' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '操作失败')
+      toast({ title: data.message || '已锁定全部集数' })
+      fetchDrama()
+    } catch (err) {
+      toast({ title: '批量锁定失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const handleBulkUnlock = async () => {
+    if (!selectedDramaId) return
+    setBulkLoading(true)
+    try {
+      const res = await fetch(`/api/dramas/${selectedDramaId}/bulk-lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unlock' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '操作失败')
+      toast({ title: data.message || '已解锁全部集数' })
+      fetchDrama()
+    } catch (err) {
+      toast({ title: '批量解锁失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  // ── Default lock config handlers ──
+  const handleOpenLockSettings = () => {
+    if (!drama) return
+    const raw = drama.defaultLockedConfig
+    if (raw && raw !== 'null') {
+      try {
+        setDefaultLockConfig(JSON.parse(raw))
+      } catch {
+        setDefaultLockConfig({})
+      }
+    } else {
+      setDefaultLockConfig({})
+    }
+    setLockSettingsOpen(true)
+  }
+
+  const handleSaveDefaultLockConfig = async () => {
+    if (!drama) return
+    setSavingLockConfig(true)
+    try {
+      const clean: LockedConfig = {}
+      for (const [k, v] of Object.entries(defaultLockConfig)) {
+        if (v) (clean as Record<string, string>)[k] = v
+      }
+      await api.dramas.update(drama.id, {
+        defaultLockedConfig: Object.keys(clean).length > 0 ? JSON.stringify(clean) : 'null',
+      } as any)
+      toast({ title: '项目默认AI配置已保存' })
+      setLockSettingsOpen(false)
+      fetchDrama()
+    } catch (err) {
+      toast({ title: '保存失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setSavingLockConfig(false)
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
@@ -289,10 +386,21 @@ export function ProjectDetailView() {
                   </span>
                 </div>
               </div>
-              <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow flex-shrink-0">
-                <Plus className="size-4" />
-                <span className="hidden sm:inline">添加集</span>
-              </Button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenLockSettings}
+                  className="text-xs gap-1"
+                >
+                  <Settings2 className="size-3.5" />
+                  <span className="hidden sm:inline">AI锁定</span>
+                </Button>
+                <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
+                  <Plus className="size-4" />
+                  <span className="hidden sm:inline">添加集</span>
+                </Button>
+              </div>
             </div>
           )}
 
@@ -327,6 +435,40 @@ export function ProjectDetailView() {
           </div>
         ) : drama && drama.episodes && drama.episodes.length > 0 ? (
           <div className="space-y-3">
+            {/* Bulk action bar */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>{drama.episodes.length} 集</span>
+                {drama.episodes.some((ep) => isLocked(ep.lockedConfig)) && (
+                  <Badge variant="secondary" className="text-[10px] gap-1 h-5">
+                    <Lock className="size-2.5" />
+                    {drama.episodes.filter((ep) => isLocked(ep.lockedConfig)).length} 已锁定
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                  onClick={handleBulkLock}
+                  disabled={bulkLoading}
+                >
+                  {bulkLoading ? <Loader2 className="size-3 animate-spin" /> : <Lock className="size-3" />}
+                  锁定全部
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={handleBulkUnlock}
+                  disabled={bulkLoading}
+                >
+                  <LockOpen className="size-3" />
+                  解锁全部
+                </Button>
+              </div>
+            </div>
             {drama.episodes
               .sort((a, b) => a.episodeNumber - b.episodeNumber)
               .map((ep) => (
@@ -380,6 +522,119 @@ export function ProjectDetailView() {
             </Button>
             <Button onClick={handleAddEpisode} disabled={adding}>
               {adding ? '添加中...' : '创建'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Default Lock Config Dialog ─────────────────────── */}
+      <Dialog open={lockSettingsOpen} onOpenChange={setLockSettingsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="size-4 text-amber-500" />
+              项目级AI配置锁定
+            </DialogTitle>
+            <DialogDescription>
+              设置项目的默认AI模型锁定。新建集数将自动继承此配置，「锁定全部」也会使用此配置。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              选择要锁定的模型后，锁定状态下的集数在执行AI操作时将强制使用锁定的模型，而非全局默认模型。留空表示不锁定该类别。
+            </p>
+            <Separator />
+
+            <div className="space-y-3">
+              {/* LLM */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium w-16 shrink-0">LLM</span>
+                <ModelSelector
+                  category="llm"
+                  value={defaultLockConfig.llm || ''}
+                  onChange={(m) => setDefaultLockConfig((prev) => ({ ...prev, llm: m || undefined }))}
+                />
+                {defaultLockConfig.llm && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => setDefaultLockConfig((prev) => { const next = { ...prev }; delete next.llm; return next })}
+                  >
+                    ×
+                  </Button>
+                )}
+              </div>
+
+              {/* Image */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium w-16 shrink-0">图片</span>
+                <ModelSelector
+                  category="image"
+                  value={defaultLockConfig.image || ''}
+                  onChange={(m) => setDefaultLockConfig((prev) => ({ ...prev, image: m || undefined }))}
+                />
+                {defaultLockConfig.image && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => setDefaultLockConfig((prev) => { const next = { ...prev }; delete next.image; return next })}
+                  >
+                    ×
+                  </Button>
+                )}
+              </div>
+
+              {/* Video */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium w-16 shrink-0">视频</span>
+                <ModelSelector
+                  category="video"
+                  value={defaultLockConfig.video || ''}
+                  onChange={(m) => setDefaultLockConfig((prev) => ({ ...prev, video: m || undefined }))}
+                />
+                {defaultLockConfig.video && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => setDefaultLockConfig((prev) => { const next = { ...prev }; delete next.video; return next })}
+                  >
+                    ×
+                  </Button>
+                )}
+              </div>
+
+              {/* TTS */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium w-16 shrink-0">TTS</span>
+                <ModelSelector
+                  category="tts"
+                  value={defaultLockConfig.tts || ''}
+                  onChange={(m) => setDefaultLockConfig((prev) => ({ ...prev, tts: m || undefined }))}
+                />
+                {defaultLockConfig.tts && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => setDefaultLockConfig((prev) => { const next = { ...prev }; delete next.tts; return next })}
+                  >
+                    ×
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLockSettingsOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={handleSaveDefaultLockConfig} disabled={savingLockConfig}>
+              {savingLockConfig ? '保存中...' : '保存'}
             </Button>
           </DialogFooter>
         </DialogContent>

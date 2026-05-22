@@ -230,7 +230,7 @@ export async function POST(
   const agentType = type as AgentType
 
   // Parse request body
-  let body: { episodeId?: string; dramaId?: string; message?: string }
+  let body: { episodeId?: string; dramaId?: string; message?: string; model?: string }
   try {
     body = await request.json()
   } catch {
@@ -240,7 +240,7 @@ export async function POST(
     )
   }
 
-  const { episodeId, dramaId, message } = body
+  const { episodeId, dramaId, message, model } = body
 
   if (!episodeId || !dramaId || !message) {
     return NextResponse.json(
@@ -252,9 +252,29 @@ export async function POST(
     )
   }
 
+  // ── Locked config enforcement ──
+  // If the episode has a lockedConfig with an llm override,
+  // use it as the model regardless of what the client sent.
+  let effectiveModel = model
+  try {
+    const { db } = await import('@/lib/db')
+    const episode = await db.episode.findUnique({
+      where: { id: episodeId },
+      select: { lockedConfig: true },
+    })
+    if (episode?.lockedConfig && episode.lockedConfig !== 'null') {
+      const locked = JSON.parse(episode.lockedConfig)
+      if (locked?.llm) {
+        effectiveModel = locked.llm
+      }
+    }
+  } catch {
+    // If we can't read lockedConfig, fall through with client model
+  }
+
   // Execute the agent
   try {
-    const result = await executeAgent(agentType, episodeId, dramaId, message, undefined, { userId: auth.userId })
+    const result = await executeAgent(agentType, episodeId, dramaId, message, undefined, { modelOverride: effectiveModel, userId: auth.userId })
 
     return NextResponse.json({
       agentType,
