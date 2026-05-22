@@ -1976,76 +1976,78 @@ export function EpisodeWorkspace() {
               <div className="w-[240px] h-full flex flex-col">
                 {/* Pipeline steps grouped by stage */}
                 <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-1">
+                  <div className="p-3 space-y-3">
                     {STAGES.map((stage) => {
                       const stageSteps = getStepsForStage(stage.key)
                       const isStageActive = activeStage === stage.key
-                      const stageCompletedCount = stageSteps.filter(s => getPipelineStepStatus(s.key) === 'completed').length
-                      const stageAllDone = stageCompletedCount === stageSteps.length
                       return (
                         <div key={stage.key}>
                           {/* Stage header */}
                           <button
                             onClick={() => setActiveStage(stage.key)}
-                            className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left transition-colors ${
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
                               isStageActive
-                                ? 'bg-accent text-foreground'
-                                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                             }`}
                           >
                             <span className="text-sm">{stage.icon}</span>
-                            <span className="text-xs font-medium">{stage.label}</span>
-                            <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
-                              {stageCompletedCount}/{stageSteps.length}
-                            </span>
+                            <span className="text-xs font-semibold">{stage.label}</span>
                           </button>
 
                           {/* Stage sub-steps */}
-                          <div className="ml-[19px] border-l border-border/40">
+                          <div className="ml-2 border-l border-border/30 pl-0.5">
                             {stageSteps.map((step) => {
                               const stepStatus = getPipelineStepStatus(step.key)
                               const isActive = activePipelineStep === step.key
                               const completionInfo = getStepCompletionInfo(step.key)
-                              const isCompleted = stepStatus === 'completed'
-                              const isProcessing = stepStatus === 'active'
                               return (
                                 <button
                                   key={step.key}
                                   onClick={() => handlePipelineStepClick(step.key)}
-                                  className={`relative w-full flex items-center gap-2.5 pl-3 pr-2 py-[7px] rounded-r-md text-left transition-colors group ${
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-r-md text-left transition-all duration-150 group ${
                                     isActive
-                                      ? 'bg-accent'
-                                      : 'hover:bg-accent/50'
+                                      ? 'bg-primary/10 text-primary'
+                                      : stepStatus === 'completed'
+                                        ? 'hover:bg-muted/50'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                                   }`}
                                 >
-                                  {/* Status dot — the ONLY element that shows state color */}
-                                  <span className={`flex-shrink-0 size-[7px] rounded-full transition-colors ${
-                                    isCompleted
-                                      ? 'bg-foreground/70'
-                                      : isProcessing
-                                        ? 'bg-primary animate-pulse'
-                                        : isActive
-                                          ? 'bg-primary'
-                                          : 'bg-muted-foreground/25'
-                                  }`} />
+                                  {/* Status indicator */}
+                                  <div className="flex-shrink-0 size-5 rounded-full flex items-center justify-center">
+                                    {stepStatus === 'completed' ? (
+                                      <div className="size-5 rounded-full bg-primary/15 flex items-center justify-center">
+                                        <Check className="size-3 text-primary" />
+                                      </div>
+                                    ) : stepStatus === 'active' ? (
+                                      <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center">
+                                        <Loader2 className="size-2.5 text-primary animate-spin" />
+                                      </div>
+                                    ) : (
+                                      <div className="size-5 rounded-full bg-muted flex items-center justify-center">
+                                        <span className="text-[9px] font-bold text-muted-foreground">
+                                          {step.stepNumber}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
 
-                                  {/* Step label — always same color, never green */}
-                                  <span className={`flex-1 min-w-0 text-[11px] leading-none truncate ${
-                                    isActive
-                                      ? 'text-foreground font-medium'
-                                      : isCompleted
-                                        ? 'text-foreground/80'
-                                        : 'text-muted-foreground'
-                                  }`}>
-                                    {step.label}
-                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <span className={`text-[11px] font-medium ${
+                                      isActive ? 'text-primary' : stepStatus === 'completed' ? 'text-foreground' : ''
+                                    }`}>
+                                      {step.label}
+                                    </span>
+                                    {completionInfo && !completionInfo.startsWith('待') && step.key !== 'script:raw' && step.key !== 'script:rewrite' && (
+                                      <div className="text-[9px] text-muted-foreground/70 mt-0.5 truncate">
+                                        {completionInfo}
+                                      </div>
+                                    )}
+                                  </div>
 
-                                  {/* Completion info or chevron */}
-                                  {isActive ? (
-                                    <ChevronRight className="size-3 text-muted-foreground/50 flex-shrink-0" />
-                                  ) : completionInfo && !completionInfo.startsWith('待') && step.key !== 'script:raw' && step.key !== 'script:rewrite' ? (
-                                    <span className="text-[9px] text-muted-foreground/40 tabular-nums flex-shrink-0">{completionInfo}</span>
-                                  ) : null}
+                                  {isActive && (
+                                    <ChevronRight className="size-2.5 text-primary flex-shrink-0" />
+                                  )}
                                 </button>
                               )
                             })}
@@ -2057,18 +2059,18 @@ export function EpisodeWorkspace() {
                 </ScrollArea>
 
                 {/* Progress */}
-                <div className="px-3 py-2.5 border-t border-border/40">
-                  <div className="h-1 bg-muted rounded-full overflow-hidden">
+                <div className="p-3 border-t border-border/50">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                    <span>管线进度</span>
+                    <span className="font-medium">{pipelineCompletedCount}/{pipelineTotalCount} 步完成</span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full bg-foreground/30 rounded-full"
+                      className="h-full bg-primary rounded-full"
                       initial={{ width: 0 }}
                       animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
                       transition={{ duration: 0.5 }}
                     />
-                  </div>
-                  <div className="flex items-center justify-between mt-1.5">
-                    <span className="text-[10px] text-muted-foreground/50">进度</span>
-                    <span className="text-[10px] text-muted-foreground/50 tabular-nums">{pipelineCompletedCount}/{pipelineTotalCount}</span>
                   </div>
                 </div>
               </div>
@@ -2107,32 +2109,24 @@ export function EpisodeWorkspace() {
                 <span className="hidden sm:inline">上一步</span>
               </Button>
 
-              {/* Step dots with stage group separators */}
+              {/* Step dots */}
               <div className="flex items-center gap-1.5 overflow-x-auto px-2">
-                {PIPELINE_STEPS.map((step, idx) => {
+                {PIPELINE_STEPS.map((step) => {
                   const stepStatus = getPipelineStepStatus(step.key)
                   const isActive = activePipelineStep === step.key
-                  const isCompleted = stepStatus === 'completed'
-                  const isProcessing = stepStatus === 'active'
-                  const prevStep = idx > 0 ? PIPELINE_STEPS[idx - 1] : null
-                  const showSeparator = prevStep && prevStep.stage !== step.stage
                   return (
-                    <span key={step.key} className="flex items-center gap-1.5">
-                      {showSeparator && <span className="w-px h-2.5 bg-border/40" />}
-                      <button
-                        onClick={() => handlePipelineStepClick(step.key)}
-                        title={step.label}
-                        className={`flex-shrink-0 rounded-full transition-all duration-200 ${
-                          isActive
-                            ? 'size-2.5 bg-foreground'
-                            : isCompleted
-                              ? 'size-1.5 bg-foreground/50 hover:bg-foreground/70'
-                              : isProcessing
-                                ? 'size-1.5 bg-primary animate-pulse'
-                                : 'size-1.5 bg-muted-foreground/20 hover:bg-muted-foreground/40'
-                        }`}
-                      />
-                    </span>
+                    <button
+                      key={step.key}
+                      onClick={() => handlePipelineStepClick(step.key)}
+                      title={step.label}
+                      className={`flex-shrink-0 transition-all duration-150 rounded-full ${
+                        isActive
+                          ? 'size-3 bg-primary'
+                          : stepStatus === 'completed'
+                            ? 'size-2 bg-primary/50 hover:bg-primary/70'
+                            : 'size-2 bg-muted-foreground/30 hover:bg-muted-foreground/60'
+                      }`}
+                    />
                   )
                 })}
               </div>
