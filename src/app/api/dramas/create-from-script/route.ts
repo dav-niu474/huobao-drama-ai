@@ -100,82 +100,91 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log(`[create-from-script] Creating drama "${title}" with ${episodes.length} episodes, ${characters?.length || 0} characters, ${scenes?.length || 0} scenes`)
+
     // Create Drama + Episodes + Characters + Scenes in a transaction
-    const result = await db.$transaction(async (tx) => {
-      // 1. Create Drama
-      const drama = await tx.drama.create({
-        data: {
-          title,
-          genre,
-          style,
-          userId,
-          totalEpisodes: episodes.length,
-        },
-      })
-
-      // 2. Create Episodes
-      const createdEpisodes: any[] = []
-      for (let i = 0; i < episodes.length; i++) {
-        const ep = episodes[i]
-        // If episodes have scenes data, store scene breakdown as JSON in rawContent
-        // We keep rawContent as the full episode text, and append scenes JSON metadata
-        let rawContent = ep.rawContent
-        if (ep.scenes && Array.isArray(ep.scenes) && ep.scenes.length > 0) {
-          // Append scene breakdown metadata as a JSON comment at the end
-          rawContent += '\n\n---SCENE_BREAK---\n' + JSON.stringify(ep.scenes)
-        }
-
-        const episode = await tx.episode.create({
+    // Use 30s timeout (default is 5s which is too short for multiple writes)
+    const result = await db.$transaction(
+      async (tx) => {
+        // 1. Create Drama
+        const drama = await tx.drama.create({
           data: {
+            title,
+            genre,
+            style,
+            userId,
+            totalEpisodes: episodes.length,
+          },
+        })
+
+        // 2. Create Episodes — use createMany for batch efficiency, then fetch back
+        const episodeData = episodes.map((ep, i) => {
+          let rawContent = ep.rawContent
+          if (ep.scenes && Array.isArray(ep.scenes) && ep.scenes.length > 0) {
+            rawContent += '\n\n---SCENE_BREAK---\n' + JSON.stringify(ep.scenes)
+          }
+          return {
             dramaId: drama.id,
             episodeNumber: i + 1,
             title: ep.title,
             rawContent,
             scriptStatus: 'pending',
-            // Inherit defaultLockedConfig from the newly created drama
             lockedConfig: drama.defaultLockedConfig || 'null',
-          },
+          }
         })
-        createdEpisodes.push(episode)
-      }
 
-      // 3. Create Characters (if provided)
-      const createdCharacters: any[] = []
-      if (characters && Array.isArray(characters) && characters.length > 0) {
-        for (const char of characters) {
-          if (!char.name) continue
-          const character = await tx.character.create({
-            data: {
+        await tx.episode.createMany({ data: episodeData })
+        const createdEpisodes = await tx.episode.findMany({
+          where: { dramaId: drama.id },
+          orderBy: { episodeNumber: 'asc' },
+        })
+
+        // 3. Create Characters (if provided) — use createMany for batch
+        let createdCharacters: any[] = []
+        if (characters && Array.isArray(characters) && characters.length > 0) {
+          const validChars = characters.filter(c => c.name)
+          if (validChars.length > 0) {
+            const charData = validChars.map(char => ({
               dramaId: drama.id,
               name: char.name,
               role: char.role || 'supporting',
               gender: char.gender || 'unknown',
               appearance: char.description || '',
-            },
-          })
-          createdCharacters.push(character)
+            }))
+            await tx.character.createMany({ data: charData })
+            createdCharacters = await tx.character.findMany({
+              where: { dramaId: drama.id },
+            })
+          }
         }
-      }
 
-      // 4. Create Scenes (if provided)
-      const createdScenes: any[] = []
-      if (scenes && Array.isArray(scenes) && scenes.length > 0) {
-        for (const scene of scenes) {
-          if (!scene.location) continue
-          const sceneRecord = await tx.scene.create({
-            data: {
+        // 4. Create Scenes (if provided) — use createMany for batch
+        let createdScenes: any[] = []
+        if (scenes && Array.isArray(scenes) && scenes.length > 0) {
+          const validScenes = scenes.filter(s => s.location)
+          if (validScenes.length > 0) {
+            const sceneData = validScenes.map(scene => ({
               dramaId: drama.id,
               location: scene.location,
               timeOfDay: scene.timeOfDay || 'day',
               description: scene.description || '',
-            },
-          })
-          createdScenes.push(sceneRecord)
+            }))
+            await tx.scene.createMany({ data: sceneData })
+            createdScenes = await tx.scene.findMany({
+              where: { dramaId: drama.id },
+            })
+          }
         }
-      }
 
-      return { drama, episodes: createdEpisodes, characters: createdCharacters, scenes: createdScenes }
-    })
+        return { drama, episodes: createdEpisodes, characters: createdCharacters, scenes: createdScenes }
+      },
+      {
+        maxWait: 10000,   // max time to wait for transaction to start (10s)
+        timeout: 30000,   // max time for transaction to complete (30s)
+      }
+    )
+
+    console.log(`[create-from-script] Successfully created drama "${title}" (id: ${result.drama.id})`)
 
     // If autoStartPipeline is requested, we return a flag for the frontend
     // to handle starting the pipeline (too complex for this endpoint)

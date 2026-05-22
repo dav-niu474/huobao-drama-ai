@@ -629,53 +629,91 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
   const saveErrors: Array<{ shotNumber: number; error: string }> = []
 
   try {
-    await db.$transaction(async (tx) => {
-      // Only delete existing storyboards if NOT in append mode
-      if (!append) {
-        await tx.storyboard.deleteMany({
-          where: { episodeId: context.episodeId },
-        })
-      }
-
-      // Save storyboards ONE BY ONE within the transaction
-      for (const sb of validatedStoryboards) {
-        try {
-          const record = await tx.storyboard.create({
-            data: {
-              episodeId: context.episodeId,
-              shotNumber: sb.shotNumber,
-              title: sb.title || '',
-              shotType: sb.shotType || 'medium',
-              cameraAngle: sb.cameraAngle || 'eye-level',
-              cameraMovement: sb.cameraMovement || 'static',
-              action: sb.action || '',
-              description: sb.description || '',
-              dialogue: sb.dialogue || null,
-              dialogueChar: sb.dialogueChar || null,
-              duration: sb.duration,
-              imagePrompt: sb.imagePrompt || null,
-              videoPrompt: sb.videoPrompt || null,
-              atmosphere: sb.atmosphere || null,
-              status: 'pending',
-            },
+    await db.$transaction(
+      async (tx) => {
+        // Only delete existing storyboards if NOT in append mode
+        if (!append) {
+          await tx.storyboard.deleteMany({
+            where: { episodeId: context.episodeId },
           })
-          created.push({ id: record.id, shotNumber: record.shotNumber })
+        }
+
+        // Batch-create storyboards with createMany for efficiency
+        const storyboardData = validatedStoryboards.map(sb => ({
+          episodeId: context.episodeId,
+          shotNumber: sb.shotNumber,
+          title: sb.title || '',
+          shotType: sb.shotType || 'medium',
+          cameraAngle: sb.cameraAngle || 'eye-level',
+          cameraMovement: sb.cameraMovement || 'static',
+          action: sb.action || '',
+          description: sb.description || '',
+          dialogue: sb.dialogue || null,
+          dialogueChar: sb.dialogueChar || null,
+          duration: sb.duration,
+          imagePrompt: sb.imagePrompt || null,
+          videoPrompt: sb.videoPrompt || null,
+          atmosphere: sb.atmosphere || null,
+          status: 'pending' as const,
+        }))
+
+        try {
+          await tx.storyboard.createMany({ data: storyboardData })
+          // Fetch back the created records to get their IDs
+          const savedRecords = await tx.storyboard.findMany({
+            where: { episodeId: context.episodeId },
+            orderBy: { shotNumber: 'asc' },
+          })
+          for (const record of savedRecords) {
+            created.push({ id: record.id, shotNumber: record.shotNumber })
+          }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
-          saveErrors.push({ shotNumber: sb.shotNumber, error: errMsg })
-          console.error(`[save_storyboards] Failed to save shot ${sb.shotNumber}:`, errMsg)
-          // Don't throw — continue saving other shots within the transaction
+          console.error('[save_storyboards] createMany failed:', errMsg)
+          // Fallback: try saving ONE BY ONE so partial success is possible
+          for (const sb of validatedStoryboards) {
+            try {
+              const record = await tx.storyboard.create({
+                data: {
+                  episodeId: context.episodeId,
+                  shotNumber: sb.shotNumber,
+                  title: sb.title || '',
+                  shotType: sb.shotType || 'medium',
+                  cameraAngle: sb.cameraAngle || 'eye-level',
+                  cameraMovement: sb.cameraMovement || 'static',
+                  action: sb.action || '',
+                  description: sb.description || '',
+                  dialogue: sb.dialogue || null,
+                  dialogueChar: sb.dialogueChar || null,
+                  duration: sb.duration,
+                  imagePrompt: sb.imagePrompt || null,
+                  videoPrompt: sb.videoPrompt || null,
+                  atmosphere: sb.atmosphere || null,
+                  status: 'pending',
+                },
+              })
+              created.push({ id: record.id, shotNumber: record.shotNumber })
+            } catch (innerErr) {
+              const innerErrMsg = innerErr instanceof Error ? innerErr.message : String(innerErr)
+              saveErrors.push({ shotNumber: sb.shotNumber, error: innerErrMsg })
+              console.error(`[save_storyboards] Failed to save shot ${sb.shotNumber}:`, innerErrMsg)
+            }
+          }
         }
-      }
 
-      // Only update episode status if at least some storyboards were saved
-      if (created.length > 0) {
-        await tx.episode.update({
-          where: { id: context.episodeId },
-          data: { storyboardStatus: 'completed' },
-        })
+        // Only update episode status if at least some storyboards were saved
+        if (created.length > 0) {
+          await tx.episode.update({
+            where: { id: context.episodeId },
+            data: { storyboardStatus: 'completed' },
+          })
+        }
+      },
+      {
+        maxWait: 10000,  // max time to wait for transaction to start (10s)
+        timeout: 30000,  // max time for transaction to complete (30s)
       }
-    })
+    )
   } catch (txError) {
     // Transaction failed entirely (e.g., all creates failed)
     const txErrMsg = txError instanceof Error ? txError.message : String(txError)
