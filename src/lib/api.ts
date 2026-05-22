@@ -166,21 +166,6 @@ export const api = {
     pipelineStatus: async (episodeId: string) => {
       const raw = await request<Record<string, unknown>>(`/api/episodes/${episodeId}/pipeline-status`)
 
-      // Map camelCase step keys to snake_case (matching PIPELINE_STEPS definitions)
-      const camelToSnake: Record<string, string> = {
-        rawContent: 'raw_content',
-        scriptRewrite: 'script_rewrite',
-        characterExtract: 'character_extract',
-        voiceAssign: 'voice_assign',
-        storyboard: 'storyboard',
-        characterImages: 'character_images',
-        sceneImages: 'scene_images',
-        dubbing: 'dubbing',
-        shotFrames: 'shot_frames',
-        video: 'video',
-        composeMerge: 'compose_merge',
-      }
-
       // Map backend status to frontend status
       const mapStatus = (s: string): 'pending' | 'active' | 'completed' => {
         if (s === 'done') return 'completed'
@@ -188,30 +173,27 @@ export const api = {
         return 'pending'
       }
 
-      const rawSteps = (raw.steps ?? {}) as Record<string, { status: string; completed: number; total: number }>
+      // Backend returns pipeline with stage-prefixed keys (e.g. 'script:raw', 'prod:chars')
+      const rawPipeline = (raw.pipeline ?? {}) as Record<string, { status: string; completed: number; total: number; label?: string }>
       const summary = (raw.summary ?? {}) as Record<string, unknown>
 
-      const pipeline: Record<string, { status: 'pending' | 'active' | 'completed'; completed: number; total: number }> = {}
-      const stepKeys: string[] = []
+      const pipeline: Record<string, { status: 'pending' | 'active' | 'completed'; completed: number; total: number; label?: string }> = {}
 
-      for (const [camelKey, snakeKey] of Object.entries(camelToSnake)) {
-        const stepData = rawSteps[camelKey]
-        if (stepData) {
-          pipeline[snakeKey] = {
-            status: mapStatus(stepData.status),
-            completed: stepData.completed,
-            total: stepData.total,
-          }
-          stepKeys.push(snakeKey)
+      for (const [key, stepData] of Object.entries(rawPipeline)) {
+        pipeline[key] = {
+          status: mapStatus(stepData.status),
+          completed: stepData.completed,
+          total: stepData.total,
+          label: stepData.label,
         }
       }
 
       return {
         pipeline,
-        steps: stepKeys,
-        completedSteps: (summary.completedSteps as number) ?? 0,
-        totalSteps: (summary.totalSteps as number) ?? 11,
-        progressPercent: (summary.overallProgress as number) ?? 0,
+        steps: Object.keys(pipeline),
+        completedSteps: (summary.completedSteps as number) ?? (raw.completedSteps as number) ?? 0,
+        totalSteps: (summary.totalSteps as number) ?? (raw.totalSteps as number) ?? 12,
+        progressPercent: (summary.overallProgress as number) ?? (raw.progressPercent as number) ?? 0,
       }
     },
 

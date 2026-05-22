@@ -31,7 +31,7 @@ export type ProdTabKey = 'chars' | 'scenes' | 'dubbing' | 'shots' | 'videos' | '
 // ── Pipeline step status ──────────────────────────────────────
 
 export interface PipelineStepStatus {
-  status: 'pending' | 'partial' | 'done'
+  status: 'pending' | 'active' | 'completed'
   label: string
   completed: number
   total: number
