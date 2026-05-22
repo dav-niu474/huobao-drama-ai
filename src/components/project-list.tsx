@@ -36,8 +36,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Film, Users, MapPin, Clock, Trash2, Settings } from 'lucide-react'
+import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
+import { ScriptUploadDialog } from '@/components/script-upload-dialog'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -205,6 +206,9 @@ export function ProjectListView() {
   const [newStyle, setNewStyle] = useState('realistic')
   const [creating, setCreating] = useState(false)
 
+  // upload dialog
+  const [uploadOpen, setUploadOpen] = useState(false)
+
   // delete dialog
   const [deleteTarget, setDeleteTarget] = useState<Drama | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -298,6 +302,15 @@ export function ProjectListView() {
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
               <Settings className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setUploadOpen(true)}
+              disabled={!perms.canCreateProject(dramas.length)}
+              className="border-primary/40 text-primary hover:bg-primary/10"
+            >
+              <Upload className="size-4" />
+              <span className="hidden sm:inline">上传剧本</span>
             </Button>
             <Button
               onClick={() => setCreateOpen(true)}
@@ -437,6 +450,13 @@ export function ProjectListView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Script Upload Dialog ───────────────────────────── */}
+      <ScriptUploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onSuccess={fetchDramas}
+      />
 
       {/* ── Delete Confirmation Dialog ──────────────────────── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

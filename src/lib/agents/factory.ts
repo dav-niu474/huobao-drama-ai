@@ -530,6 +530,7 @@ export async function executeAgent(
   // Strategy: only use DB value if it EXCEEDS the type-specific default; otherwise
   // the DB value is likely a stale/generic default and should be ignored.
   const defaultMaxTokens: Record<string, number> = {
+    script_parser: 8192,
     storyboard_breaker: 32768,
     extractor: 8192,
     script_rewriter: 8192,
@@ -676,7 +677,8 @@ export async function executeAgent(
       // text output instead of tool calls)
       const hasToolDefinitions = openAITools.length > 0
       const isStoryboardBreaker = agentType === 'storyboard_breaker'
-      const shouldUseTools = hasToolDefinitions && isStoryboardBreaker && steps < MAX_STEPS - 2
+      const isScriptParser = agentType === 'script_parser'
+      const shouldUseTools = hasToolDefinitions && (isStoryboardBreaker || isScriptParser) && steps < MAX_STEPS - 2
       const contentStr = assistantMessage.content || ''
 
       // If this is storyboard_breaker and it hasn't called any tools yet,
@@ -685,14 +687,17 @@ export async function executeAgent(
       if (shouldUseTools && toolCallResults.length === 0) {
         onProgress?.({
           type: 'thinking',
-          message: `步骤 ${steps}: LLM未调用工具，正在引导使用save_storyboards...`,
+          message: `步骤 ${steps}: LLM未调用工具，正在引导使用工具...`,
           timestamp: Date.now(),
           stepNumber: steps,
         })
         // NOTE: Do NOT push assistant message again — it was already pushed above (line 654)
+        const nudgeMessage = isScriptParser
+          ? '⚠️ 你需要使用提供的工具来完成任务。请先调用 read_uploaded_text 工具读取上传的剧本文本，然后调用 save_parsed_script 工具保存解析结果。'
+          : '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。重要：请分批保存，每次3-5个镜头，使用append参数控制是否追加。'
         messages.push({
           role: 'user',
-          content: '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。重要：请分批保存，每次3-5个镜头，使用append参数控制是否追加。',
+          content: nudgeMessage,
         })
         continue
       }
@@ -889,6 +894,16 @@ export async function executeAgent(
     }
   }
 
+  // Check if script_parser completed without saving parsed result
+  if (agentType === 'script_parser') {
+    const saveResult = toolCallResults.find(
+      (r) => r.name === 'save_parsed_script' && !(r.result as Record<string, unknown>)?.error
+    )
+    if (!saveResult) {
+      finalText = '⚠️ 剧本解析完成但未成功输出解析结果。' + finalText
+    }
+  }
+
   // NOTE: Do NOT emit 'completed' here — the stream route does that
   // with full result data. Duplicate events confuse the frontend.
 
@@ -909,6 +924,10 @@ function summarizeToolResult(toolName: string, result: unknown): string {
   const r = result as Record<string, unknown>
 
   switch (toolName) {
+    case 'read_uploaded_text':
+      return `读取到上传文本 (${String(r.charCount || 0)}字符)`
+    case 'save_parsed_script':
+      return r.success ? `剧本解析完成：${String((r.data as Record<string, unknown>)?.title || '')}，${String((r.data as Record<string, unknown>)?.totalEpisodes || 0)}集` : '解析失败'
     case 'read_episode_script':
       return `读取到剧本内容 (${String(r.rawContent || '').length}字原始内容, ${String(r.scriptContent || '').length}字已改写)`
     case 'save_script':

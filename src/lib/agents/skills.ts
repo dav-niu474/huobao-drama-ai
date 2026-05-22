@@ -11,6 +11,7 @@ import * as path from 'path'
 
 // Map agent type to skill file name
 const SKILL_FILE_MAP: Record<AgentType, string> = {
+  script_parser: 'script_parser_SKILL.md',
   script_rewriter: 'script_rewriter_SKILL.md',
   extractor: 'extractor_SKILL.md',
   storyboard_breaker: 'storyboard_breaker_SKILL.md',

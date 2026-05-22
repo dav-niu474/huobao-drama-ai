@@ -892,5 +892,47 @@ export const api = {
 
       return res.json() as Promise<{ url: string; storyboard?: Storyboard; character?: Character; scene?: Scene }>
     },
+
+    // Upload script file and extract text
+    script: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/upload/script', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
+        throw new Error(`Upload failed: ${text}`)
+      }
+
+      return res.json() as Promise<{
+        text: string
+        fileName: string
+        fileSize: number
+        fileType: string
+        charCount: number
+      }>
+    },
   },
+
+  // ---- Create from Script ----
+  createFromScript: async (data: {
+    title: string
+    genre: string
+    style: string
+    episodes: Array<{ title: string; rawContent: string }>
+    autoStartPipeline?: boolean
+  }) =>
+    request<{
+      drama: Drama
+      episodes: Episode[]
+      pipelineStarted: boolean
+    }>('/api/dramas/create-from-script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
 }

@@ -5,6 +5,7 @@
 // ============================================================
 
 export type AgentType =
+  | 'script_parser'
   | 'script_rewriter'
   | 'extractor'
   | 'storyboard_breaker'
@@ -61,6 +62,7 @@ export interface AgentExecutionResult {
 }
 
 export const AGENT_NAMES: Record<AgentType, string> = {
+  script_parser: '剧本解析器',
   script_rewriter: '剧本改写专家',
   extractor: '角色场景提取器',
   storyboard_breaker: '分镜拆解+提示词专家',
@@ -69,6 +71,8 @@ export const AGENT_NAMES: Record<AgentType, string> = {
 }
 
 export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
+  script_parser:
+    '从上传的剧本文本中智能识别剧本结构，拆分集数，推断题材和风格',
   script_rewriter:
     '将小说/故事原文改写为标准剧本格式，包含场景描述、对白和动作指示',
   extractor:
@@ -82,6 +86,7 @@ export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
 }
 
 export const ALL_AGENT_TYPES: AgentType[] = [
+  'script_parser',
   'script_rewriter',
   'extractor',
   'storyboard_breaker',

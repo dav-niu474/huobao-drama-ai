@@ -8,10 +8,147 @@
 
 import { db } from '@/lib/db'
 
+// ============================================================
+// Temporary Storage for Uploaded Script Text
+// Used by script_parser agent to read uploaded text.
+// Keyed by a temp ID passed from the API route.
+// ============================================================
+
+const uploadedTextStore = new Map<string, string>()
+
+/**
+ * Store uploaded text for the script_parser agent to read later.
+ * Returns a temp ID that should be passed in the agent message.
+ */
+export function storeUploadedText(text: string): string {
+  const tempId = `upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  uploadedTextStore.set(tempId, text)
+  // Auto-cleanup after 30 minutes
+  setTimeout(() => uploadedTextStore.delete(tempId), 30 * 60 * 1000)
+  return tempId
+}
+
+/**
+ * Retrieve and remove uploaded text by temp ID.
+ */
+function consumeUploadedText(tempId: string): string | null {
+  const text = uploadedTextStore.get(tempId)
+  if (text) {
+    uploadedTextStore.delete(tempId)
+  }
+  return text || null
+}
+
+// ============================================================
+// Parsed Script Result Store
+// The save_parsed_script executor validates and returns the
+// parsed data. The result is captured by the agent execution
+// loop and returned to the API caller.
+// ============================================================
+
+export interface ParsedScriptResult {
+  title: string
+  genre: string
+  style: string
+  totalEpisodes: number
+  episodes: Array<{ title: string; content: string }>
+  summary: string
+}
+
+// Track the tempId currently being processed
+let currentUploadTempId: string | null = null
+
+/**
+ * Set the current upload temp ID for the script_parser agent.
+ * Called before agent execution starts.
+ */
+export function setCurrentUploadTempId(tempId: string): void {
+  currentUploadTempId = tempId
+}
+
+/**
+ * Clear the current upload temp ID after agent execution.
+ */
+export function clearCurrentUploadTempId(): void {
+  currentUploadTempId = null
+}
+
 export type ToolExecutor = (
   params: Record<string, unknown>,
   context: { episodeId: string; dramaId: string }
 ) => Promise<unknown>
+
+// ============================================================
+// Script Parser Tools
+// ============================================================
+
+const readUploadedText: ToolExecutor = async (_params, _context) => {
+  if (!currentUploadTempId) {
+    throw new Error('No uploaded text available. The upload temp ID was not set.')
+  }
+  const text = consumeUploadedText(currentUploadTempId)
+  if (!text) {
+    throw new Error('Uploaded text not found or has expired. Please re-upload the file.')
+  }
+  return {
+    text,
+    charCount: text.length,
+    message: `成功读取上传文本，共${text.length}个字符`,
+  }
+}
+
+const saveParsedScript: ToolExecutor = async (params, _context) => {
+  const title = params.title as string
+  const genre = params.genre as string
+  const style = params.style as string
+  const totalEpisodes = params.totalEpisodes as number
+  const episodes = params.episodes as Array<{ title: string; content: string }>
+  const summary = params.summary as string
+
+  // Validate required fields
+  if (!title) throw new Error('title is required')
+  if (!genre) throw new Error('genre is required')
+  if (!style) throw new Error('style is required')
+  if (!totalEpisodes || totalEpisodes < 1) throw new Error('totalEpisodes must be >= 1')
+  if (!episodes || !Array.isArray(episodes) || episodes.length === 0) {
+    throw new Error('episodes must be a non-empty array')
+  }
+  if (!summary) throw new Error('summary is required')
+
+  // Validate genre enum
+  const validGenres = ['都市', '古装', '悬疑', '科幻', '甜宠', '复仇', '励志', '校园']
+  if (!validGenres.includes(genre)) {
+    throw new Error(`Invalid genre "${genre}". Must be one of: ${validGenres.join('/')}`)
+  }
+
+  // Validate style enum
+  const validStyles = ['realistic', 'anime', 'cinematic', 'comic', 'watercolor', '3d']
+  if (!validStyles.includes(style)) {
+    throw new Error(`Invalid style "${style}". Must be one of: ${validStyles.join('/')}`)
+  }
+
+  // Validate each episode
+  for (let i = 0; i < episodes.length; i++) {
+    const ep = episodes[i]
+    if (!ep.title) throw new Error(`Episode ${i + 1} is missing title`)
+    if (!ep.content) throw new Error(`Episode ${i + 1} is missing content`)
+  }
+
+  const result: ParsedScriptResult = {
+    title,
+    genre,
+    style,
+    totalEpisodes,
+    episodes,
+    summary,
+  }
+
+  return {
+    success: true,
+    data: result,
+    message: `剧本解析完成："${title}"，${genre}题材，共${totalEpisodes}集`,
+  }
+}
 
 // ============================================================
 // Script Rewriter Tools
@@ -777,6 +914,10 @@ const generateGridPrompt: ToolExecutor = async (params, context) => {
 // ============================================================
 
 export const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
+  // Script Parser
+  read_uploaded_text: readUploadedText,
+  save_parsed_script: saveParsedScript,
+
   // Script Rewriter
   read_episode_script: readEpisodeScript,
   save_script: saveScript,
@@ -827,6 +968,10 @@ export function getExecutorsForAgent(
 
 // Map agent type to its tool names
 const AGENT_TOOL_NAMES: Record<string, Record<string, string>> = {
+  script_parser: {
+    read_uploaded_text: 'read_uploaded_text',
+    save_parsed_script: 'save_parsed_script',
+  },
   script_rewriter: {
     read_episode_script: 'read_episode_script',
     save_script: 'save_script',

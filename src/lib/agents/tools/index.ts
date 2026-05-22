@@ -323,6 +323,61 @@ const VOICE_ASSIGNER_TOOLS: ToolDefinition[] = [
   },
 ]
 
+const SCRIPT_PARSER_TOOLS: ToolDefinition[] = [
+  {
+    name: 'read_uploaded_text',
+    description: '读取上传的剧本文本内容。返回完整的上传文本。',
+    parameters: {},
+  },
+  {
+    name: 'save_parsed_script',
+    description: '保存解析后的剧本结构数据，包含项目名称、题材、风格、集数拆分等信息。',
+    parameters: {
+      title: {
+        type: 'string',
+        description: '项目名称（从内容推断或使用文件名）',
+        required: true,
+      },
+      genre: {
+        type: 'string',
+        description: '题材类型：都市/古装/悬疑/科幻/甜宠/复仇/励志/校园',
+        required: true,
+        enum: ['都市', '古装', '悬疑', '科幻', '甜宠', '复仇', '励志', '校园'],
+      },
+      style: {
+        type: 'string',
+        description: '视觉风格：realistic/anime/cinematic/comic/watercolor/3d',
+        required: true,
+        enum: ['realistic', 'anime', 'cinematic', 'comic', 'watercolor', '3d'],
+      },
+      totalEpisodes: {
+        type: 'number',
+        description: '总集数',
+        required: true,
+      },
+      episodes: {
+        type: 'array',
+        description: '剧集数组，每个元素包含标题和内容',
+        required: true,
+        items: {
+          type: 'object',
+          description: '单集数据',
+          properties: {
+            title: { type: 'string', description: '集标题（如：第1集：初遇）', required: true },
+            content: { type: 'string', description: '该集的完整文本内容（不要截断或摘要）', required: true },
+          },
+          requiredFields: ['title', 'content'],
+        },
+      },
+      summary: {
+        type: 'string',
+        description: '1-2句话的故事概要',
+        required: true,
+      },
+    },
+  },
+]
+
 const GRID_PROMPT_GENERATOR_TOOLS: ToolDefinition[] = [
   {
     name: 'read_characters',
@@ -399,6 +454,7 @@ const GRID_PROMPT_GENERATOR_TOOLS: ToolDefinition[] = [
 // ============================================================
 
 export const AGENT_TOOLS: Record<AgentType, ToolDefinition[]> = {
+  script_parser: SCRIPT_PARSER_TOOLS,
   script_rewriter: SCRIPT_REWRITER_TOOLS,
   extractor: EXTRACTOR_TOOLS,
   storyboard_breaker: STORYBOARD_BREAKER_TOOLS,

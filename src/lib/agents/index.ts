@@ -4,7 +4,7 @@
 // ============================================================
 
 export {
-  AgentType,
+  type AgentType,
   ALL_AGENT_TYPES,
   AGENT_NAMES,
   AGENT_DESCRIPTIONS,
