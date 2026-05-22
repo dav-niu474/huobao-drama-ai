@@ -2010,14 +2010,14 @@ export function EpisodeWorkspace() {
                                     isActive
                                       ? 'bg-primary/10 outline outline-1 outline-primary/20'
                                       : isCompleted
-                                        ? 'bg-primary/5 hover:bg-primary/10'
+                                        ? 'bg-emerald-500/8 hover:bg-emerald-500/12'
                                         : 'hover:bg-muted/50'
                                   }`}
                                 >
                                   {/* Status indicator */}
                                   <div className="flex-shrink-0 w-4 text-center">
                                     {isCompleted ? (
-                                      <Check className="size-3.5 text-primary mx-auto" />
+                                      <Check className="size-3.5 text-emerald-600 mx-auto" />
                                     ) : isProcessing ? (
                                       <Loader2 className="size-3.5 text-primary animate-spin mx-auto" />
                                     ) : (
@@ -2029,7 +2029,7 @@ export function EpisodeWorkspace() {
                                     isActive
                                       ? 'text-primary'
                                       : isCompleted
-                                        ? 'text-primary'
+                                        ? 'text-emerald-700 dark:text-emerald-400'
                                         : 'text-muted-foreground'
                                   }`}>
                                     {step.label}
@@ -2052,7 +2052,7 @@ export function EpisodeWorkspace() {
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full bg-primary rounded-full"
+                      className="h-full bg-emerald-500 rounded-full"
                       initial={{ width: 0 }}
                       animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
                       transition={{ duration: 0.5 }}
@@ -2109,7 +2109,7 @@ export function EpisodeWorkspace() {
                         isActive
                           ? 'size-3 bg-primary'
                           : stepStatus === 'completed'
-                            ? 'size-2 bg-primary/50 hover:bg-primary/70'
+                            ? 'size-2 bg-emerald-500 hover:bg-emerald-400'
                             : 'size-2 bg-muted-foreground/30 hover:bg-muted-foreground/60'
                       }`}
                     />
