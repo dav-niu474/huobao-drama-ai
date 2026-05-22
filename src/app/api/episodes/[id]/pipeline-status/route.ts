@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { isFFmpegAvailable } from '@/lib/ffmpeg'
 
-// Pipeline steps in order:
-// raw_content → script_rewrite → character_extract → voice_assign →
-// storyboard → character_images → scene_images → dubbing →
-// shot_frames → video → compose_merge
+// Pipeline steps in order (3 stages, 12 steps):
+// Script: script:raw → script:rewrite → script:extract → script:voice → script:storyboard
+// Production: prod:chars → prod:scenes → prod:dubbing → prod:shots → prod:videos → prod:compose
+// Export: export:merge
 
 interface StepStatus {
   status: 'pending' | 'partial' | 'done'
@@ -37,17 +37,19 @@ export async function GET(
     const storyboards = episode.storyboards
     const total = storyboards.length
 
-    // ── Step 1: Raw Content ──
-    const rawContent: StepStatus = {
+    // ── Script Stage ──
+
+    // Step 1: Raw Content
+    const scriptRaw: StepStatus = {
       label: '原始内容',
       completed: episode.rawContent?.trim() ? 1 : 0,
       total: 1,
       status: episode.rawContent?.trim() ? 'done' : 'pending',
     }
 
-    // ── Step 2: Script Rewrite ──
+    // Step 2: Script Rewrite
     const scriptRewrite: StepStatus = {
-      label: '剧本改写',
+      label: 'AI改写',
       completed: episode.scriptContent?.trim() ? 1 : 0,
       total: 1,
       status: episode.scriptContent?.trim()
@@ -58,29 +60,35 @@ export async function GET(
       extra: { scriptStatus: episode.scriptStatus },
     }
 
-    // ── Step 3: Character Extract ──
+    // Step 3: Character & Scene Extract
     const characters = await db.character.findMany({
       where: { dramaId: episode.dramaId },
     })
-    const characterExtract: StepStatus = {
-      label: '角色提取',
-      completed: characters.length > 0 ? 1 : 0,
+    const scenes = await db.scene.findMany({
+      where: { dramaId: episode.dramaId },
+      include: { images: true },
+    })
+
+    const scriptExtract: StepStatus = {
+      label: '角色场景提取',
+      completed: characters.length > 0 || scenes.length > 0 ? 1 : 0,
       total: 1,
-      status: characters.length > 0
+      status: characters.length > 0 || scenes.length > 0
         ? 'done'
         : episode.extractStatus === 'processing'
           ? 'partial'
           : 'pending',
       extra: {
-        count: characters.length,
+        characterCount: characters.length,
+        sceneCount: scenes.length,
         extractStatus: episode.extractStatus,
       },
     }
 
-    // ── Step 4: Voice Assign ──
+    // Step 4: Voice Assign
     const charactersWithVoice = characters.filter((c) => c.voiceId)
-    const voiceAssign: StepStatus = {
-      label: '配音分配',
+    const scriptVoice: StepStatus = {
+      label: '音色分配',
       completed: charactersWithVoice.length,
       total: characters.length,
       status: characters.length > 0 && charactersWithVoice.length >= characters.length
@@ -90,8 +98,8 @@ export async function GET(
           : 'pending',
     }
 
-    // ── Step 5: Storyboard Generation ──
-    const storyboard: StepStatus = {
+    // Step 5: Storyboard Generation
+    const scriptStoryboard: StepStatus = {
       label: '分镜生成',
       completed: total > 0 ? 1 : 0,
       total: 1,
@@ -103,10 +111,12 @@ export async function GET(
       extra: { count: total, storyboardStatus: episode.storyboardStatus },
     }
 
-    // ── Step 6: Character Images ──
+    // ── Production Stage ──
+
+    // Step 6: Character Images (角色形象)
     const charactersWithImage = characters.filter((c) => c.imageUrl)
-    const characterImages: StepStatus = {
-      label: '角色图片',
+    const prodChars: StepStatus = {
+      label: '角色形象',
       completed: charactersWithImage.length,
       total: characters.length,
       status: characters.length > 0 && charactersWithImage.length >= characters.length
@@ -116,13 +126,9 @@ export async function GET(
           : 'pending',
     }
 
-    // ── Step 7: Scene Images ──
-    const scenes = await db.scene.findMany({
-      where: { dramaId: episode.dramaId },
-      include: { images: true },
-    })
+    // Step 7: Scene Images (场景图片)
     const scenesWithImage = scenes.filter((s) => s.imageUrl || s.images.some((i) => i.imageUrl))
-    const sceneImages: StepStatus = {
+    const prodScenes: StepStatus = {
       label: '场景图片',
       completed: scenesWithImage.length,
       total: scenes.length,
@@ -133,13 +139,13 @@ export async function GET(
           : 'pending',
     }
 
-    // ── Step 8: Dubbing (TTS) ──
+    // Step 8: Dubbing / TTS (配音生成)
     const dialogueCount = storyboards.filter((s) => s.dialogue).length
     const ttsCompleted = storyboards.filter((s) => s.ttsAudioUrl).length
-    const dubbing: StepStatus = {
+    const prodDubbing: StepStatus = {
       label: '配音生成',
       completed: ttsCompleted,
-      total: dialogueCount,
+      total: dialogueCount || total, // If no dialogue yet, show against total storyboards
       status: dialogueCount > 0 && ttsCompleted >= dialogueCount
         ? 'done'
         : ttsCompleted > 0
@@ -147,9 +153,9 @@ export async function GET(
           : 'pending',
     }
 
-    // ── Step 9: Shot Frames (first frame images) ──
-    const framesCompleted = storyboards.filter((s) => s.firstFrameUrl).length
-    const shotFrames: StepStatus = {
+    // Step 9: Shot Frames (镜头图片 — first + last frame)
+    const framesCompleted = storyboards.filter((s) => s.firstFrameUrl || s.lastFrameUrl).length
+    const prodShots: StepStatus = {
       label: '镜头图片',
       completed: framesCompleted,
       total,
@@ -160,9 +166,9 @@ export async function GET(
           : 'pending',
     }
 
-    // ── Step 10: Video Generation ──
+    // Step 10: Video Generation (视频生成)
     const videosCompleted = storyboards.filter((s) => s.videoUrl).length
-    const video: StepStatus = {
+    const prodVideos: StepStatus = {
       label: '视频生成',
       completed: videosCompleted,
       total,
@@ -173,22 +179,34 @@ export async function GET(
           : 'pending',
     }
 
-    // ── Step 11: Compose & Merge ──
+    // Step 11: Video Compositing (视频合成)
     const composedCompleted = storyboards.filter((s) => s.composedUrl).length
-
-    // Check for merge records
-    const latestMerge = await db.videoMerge.findFirst({
-      where: { episodeId: id },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    const composeMerge: StepStatus = {
-      label: '合成合并',
+    const prodCompose: StepStatus = {
+      label: '视频合成',
       completed: composedCompleted,
       total,
       status: total > 0 && composedCompleted === total
         ? 'done'
         : composedCompleted > 0
+          ? 'partial'
+          : 'pending',
+    }
+
+    // ── Export Stage ──
+
+    // Step 12: Merge & Export (拼接导出)
+    const latestMerge = await db.videoMerge.findFirst({
+      where: { episodeId: id },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    const exportMerge: StepStatus = {
+      label: '拼接导出',
+      completed: episode.videoUrl ? 1 : 0,
+      total: 1,
+      status: episode.videoUrl
+        ? 'done'
+        : latestMerge?.status === 'processing'
           ? 'partial'
           : 'pending',
       extra: {
@@ -200,17 +218,9 @@ export async function GET(
 
     // ── Overall Pipeline Progress ──
     const steps: StepStatus[] = [
-      rawContent,
-      scriptRewrite,
-      characterExtract,
-      voiceAssign,
-      storyboard,
-      characterImages,
-      sceneImages,
-      dubbing,
-      shotFrames,
-      video,
-      composeMerge,
+      scriptRaw, scriptRewrite, scriptExtract, scriptVoice, scriptStoryboard,
+      prodChars, prodScenes, prodDubbing, prodShots, prodVideos, prodCompose,
+      exportMerge,
     ]
 
     // Calculate overall progress (weighted)
@@ -237,20 +247,38 @@ export async function GET(
     // FFmpeg availability
     const ffmpegAvailable = await isFFmpegAvailable()
 
+    // Build pipeline object with new stage-prefixed keys
+    const pipeline: Record<string, StepStatus> = {
+      'script:raw': scriptRaw,
+      'script:rewrite': scriptRewrite,
+      'script:extract': scriptExtract,
+      'script:voice': scriptVoice,
+      'script:storyboard': scriptStoryboard,
+      'prod:chars': prodChars,
+      'prod:scenes': prodScenes,
+      'prod:dubbing': prodDubbing,
+      'prod:shots': prodShots,
+      'prod:videos': prodVideos,
+      'prod:compose': prodCompose,
+      'export:merge': exportMerge,
+    }
+
     return NextResponse.json({
-      // Detailed steps
+      // Detailed pipeline with stage-prefixed keys
+      pipeline,
+      // Legacy keys for backward compatibility
       steps: {
-        rawContent,
+        rawContent: scriptRaw,
         scriptRewrite,
-        characterExtract,
-        voiceAssign,
-        storyboard,
-        characterImages,
-        sceneImages,
-        dubbing,
-        shotFrames,
-        video,
-        composeMerge,
+        characterExtract: scriptExtract,
+        voiceAssign: scriptVoice,
+        storyboard: scriptStoryboard,
+        characterImages: prodChars,
+        sceneImages: prodScenes,
+        dubbing: prodDubbing,
+        shotFrames: prodShots,
+        video: prodVideos,
+        composeMerge: prodCompose,
       },
       // Summary
       summary: {
@@ -263,43 +291,10 @@ export async function GET(
       },
       // Environment
       ffmpegAvailable,
-      // Legacy compatibility — keep the old format for existing frontend
-      scriptRewrite: {
-        status: scriptRewrite.status,
-        hasContent: scriptRewrite.completed > 0,
-      },
-      extractCharacters: {
-        status: characterExtract.status,
-        count: characters.length,
-      },
-      extractScenes: {
-        status: scenes.length > 0 ? 'done' : episode.extractStatus === 'processing' ? 'partial' : 'pending',
-        count: scenes.length,
-      },
-      generateImages: {
-        status: shotFrames.status,
-        completed: framesCompleted,
-        total,
-      },
-      generateVideos: {
-        status: video.status,
-        completed: videosCompleted,
-        total,
-      },
-      generateTts: {
-        status: dubbing.status,
-        completed: ttsCompleted,
-        total: dialogueCount,
-      },
-      composeShots: {
-        status: composeMerge.status,
-        completed: composedCompleted,
-        total,
-      },
-      mergeEpisode: {
-        status: episode.videoUrl ? 'done' : 'pending',
-        mergedUrl: episode.videoUrl,
-      },
+      // Total steps count
+      totalSteps: steps.length,
+      completedSteps: steps.filter((s) => s.status === 'done').length,
+      progressPercent: overallProgress,
     })
   } catch (error) {
     console.error('Failed to get pipeline status:', error)

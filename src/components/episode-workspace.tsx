@@ -19,13 +19,11 @@ import {
   FileText,
   Users,
   Film,
-  Clapperboard,
   Check,
   ChevronRight,
   ChevronLeft,
   PanelLeftClose,
   PanelLeftOpen,
-  Mic,
   Lock,
   LockOpen,
 } from 'lucide-react'
@@ -37,11 +35,16 @@ import { ScriptPanel } from '@/components/episode/script-panel'
 import { ExtractPanel } from '@/components/episode/extract-panel'
 import { VoicePanel } from '@/components/episode/voice-panel'
 import { StoryboardPanel } from '@/components/episode/storyboard-panel'
-import { ProductionPanel } from '@/components/episode/production-panel'
+import { CharImagesPanel } from '@/components/episode/char-images-panel'
+import { SceneImagesPanel } from '@/components/episode/scene-images-panel'
+import { DubbingPanel } from '@/components/episode/dubbing-panel'
+import { ShotFramesPanel } from '@/components/episode/shot-frames-panel'
+import { VideoPanel } from '@/components/episode/video-panel'
+import { ComposePanel } from '@/components/episode/compose-panel'
 
 // Shared types & helpers
-import type { StepKey, StepDef, UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
-import { STEPS, PIPELINE_STEPS, PIPELINE_TO_STEP_MAP, statusBadge, panelVariants } from '@/components/episode/helpers'
+import type { StageKey, ProdTabKey, UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
+import { STAGES, PIPELINE_STEPS, PROD_TABS, getStepsForStage, statusBadge, panelVariants } from '@/components/episode/helpers'
 
 // ── Main component ───────────────────────────────────────────
 
@@ -59,8 +62,10 @@ export function EpisodeWorkspace() {
   const { toast } = useToast()
   const perms = usePermissions()
 
-  const [activeStep, setActiveStep] = useState<StepKey>('raw')
-  const [activePipelineStep, setActivePipelineStep] = useState<PipelineStepKey>('raw_content')
+  const [activeStage, setActiveStage] = useState<StageKey>('script')
+  const [scriptStep, setScriptStep] = useState(0) // 0=raw, 1=rewrite, 2=extract, 3=voice, 4=storyboard
+  const [prodTab, setProdTab] = useState<ProdTabKey>('chars')
+  const [activePipelineStep, setActivePipelineStep] = useState<PipelineStepKey>('script:raw')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rawContent, setRawContent] = useState('')
   const [scriptContent, setScriptContent] = useState('')
@@ -153,7 +158,7 @@ export function EpisodeWorkspace() {
     }
     // No valid lock — clear
     setEpisodeLockedConfig(null)
-  }, [currentEpisode?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentEpisode?.id])
 
   // ── Lock / Unlock handlers ──────────────────────────────────
   const handleLockConfig = async () => {
@@ -226,10 +231,10 @@ export function EpisodeWorkspace() {
       const normalized: PipelineStatus = {
         steps: raw.pipeline as Record<PipelineStepKey, PipelineStepStatus> ?? {} as Record<PipelineStepKey, PipelineStepStatus>,
         summary: {
-          totalSteps: raw.totalSteps ?? 11,
+          totalSteps: raw.totalSteps ?? 12,
           completedSteps: raw.completedSteps ?? 0,
           partialSteps: 0,
-          pendingSteps: (raw.totalSteps ?? 11) - (raw.completedSteps ?? 0),
+          pendingSteps: (raw.totalSteps ?? 12) - (raw.completedSteps ?? 0),
           overallProgress: raw.progressPercent ?? 0,
           currentStep: '',
         },
@@ -237,7 +242,7 @@ export function EpisodeWorkspace() {
         // Alias for code that references pipelineStatus.pipeline
         pipeline: raw.pipeline as Record<PipelineStepKey, PipelineStepStatus> ?? {} as Record<PipelineStepKey, PipelineStepStatus>,
         completedSteps: raw.completedSteps ?? 0,
-        totalSteps: raw.totalSteps ?? 11,
+        totalSteps: raw.totalSteps ?? 12,
         progressPercent: raw.progressPercent ?? 0,
       }
       setPipelineStatus(normalized)
@@ -297,50 +302,57 @@ export function EpisodeWorkspace() {
 
   useEffect(() => {
     api.ai.listVoices().then((result) => {
-      setVoices(result.voices)
+      setVoices(result.voices as VoiceInfo[])
       setActiveTtsProvider(result.activeProvider)
     }).catch(() => {})
   }, [])
 
-  // ── Step completion logic ──────────────────────────────────
+  // ── Pipeline step completion info (for sidebar badges) ─────
 
-  const isStepCompleted = useCallback(
-    (step: StepKey): boolean => {
-      switch (step) {
-        case 'raw':
-          return !!rawContent.trim()
-        case 'rewrite':
-          return !!scriptContent.trim()
-        case 'extract':
-          return characters.length > 0 || scenes.length > 0
-        case 'voice':
-          return characters.length > 0 && characters.some((c) => c.voiceId)
-        case 'storyboard':
-          return storyboards.length > 0
-        case 'production':
-          return storyboards.some((s) => s.composedUrl || s.videoUrl)
+  const getStepCompletionInfo = useCallback(
+    (key: PipelineStepKey): string => {
+      switch (key) {
+        case 'script:raw':
+          return rawContent.trim() ? '已完成' : '待输入'
+        case 'script:rewrite':
+          return scriptContent.trim() ? '已完成' : '待改写'
+        case 'script:extract':
+          return characters.length > 0 || scenes.length > 0 ? `${characters.length} 角色 · ${scenes.length} 场景` : '待提取'
+        case 'script:voice':
+          return characters.some((c) => c.voiceId) ? `${characters.filter((c) => c.voiceId).length}/${characters.length} 已分配` : '待分配'
+        case 'script:storyboard':
+          return storyboards.length > 0 ? `${storyboards.length} 镜头` : '待生成'
+        case 'prod:chars':
+          return characters.length > 0 ? `${characters.filter((c) => c.imageUrl).length}/${characters.length} 形象` : '待生成'
+        case 'prod:scenes':
+          return scenes.length > 0 ? `${scenes.filter((s) => s.imageUrl).length}/${scenes.length} 图片` : '待生成'
+        case 'prod:dubbing':
+          return storyboards.filter((s) => s.dialogue).length > 0 ? `${storyboards.filter((s) => s.ttsAudioUrl).length}/${storyboards.filter((s) => s.dialogue).length} 配音` : '待生成'
+        case 'prod:shots':
+          return storyboards.length > 0 ? `${storyboards.filter((s) => s.firstFrameUrl).length}/${storyboards.length} 帧图` : '待生成'
+        case 'prod:videos':
+          return storyboards.length > 0 ? `${storyboards.filter((s) => s.videoUrl).length}/${storyboards.length} 视频` : '待生成'
+        case 'prod:compose':
+          return storyboards.some((s) => s.videoUrl) ? `${storyboards.filter((s) => s.composedUrl).length}/${storyboards.filter((s) => s.videoUrl).length} 合成` : '待合成'
+        case 'export:merge':
+          return storyboards.some((s) => s.composedUrl || s.videoUrl) ? '可导出' : '待合成'
         default:
-          return false
+          return ''
       }
     },
     [rawContent, scriptContent, characters, scenes, storyboards]
   )
-
-  const completedCount = STEPS.reduce((acc, s) => {
-    if (s.subSteps) {
-      return acc + s.subSteps.filter((ss) => isStepCompleted(ss.key)).length
-    }
-    return acc + (isStepCompleted(s.key) ? 1 : 0)
-  }, 0)
-  const totalSteps = STEPS.reduce((acc, s) => acc + (s.subSteps?.length ?? 1), 0)
-  const progressPercent = Math.round((completedCount / totalSteps) * 100)
 
   // ── Pipeline step status helper ────────────────────────────
 
   const getPipelineStepStatus = useCallback(
     (key: PipelineStepKey): 'pending' | 'active' | 'completed' => {
       if (pipelineStatus?.pipeline?.[key]) {
-        return pipelineStatus.pipeline[key].status
+        const raw = pipelineStatus.pipeline[key].status as string
+        // Map server status to UI status
+        if (raw === 'done') return 'completed'
+        if (raw === 'partial') return 'active'
+        return 'pending'
       }
       return 'pending'
     },
@@ -348,15 +360,30 @@ export function EpisodeWorkspace() {
   )
 
   const pipelineCompletedCount = pipelineStatus?.completedSteps ?? 0
-  const pipelineTotalCount = pipelineStatus?.totalSteps ?? 11
+  const pipelineTotalCount = pipelineStatus?.totalSteps ?? 12
 
-  // ── Navigate to pipeline step ──────────────────────────────
+  // ── Navigate to pipeline step (3-stage aware) ───────────────
+
+  const SCRIPT_STEP_MAP: Record<string, number> = {
+    'script:raw': 0, 'script:rewrite': 1, 'script:extract': 2, 'script:voice': 3, 'script:storyboard': 4,
+  }
+  const PROD_TAB_MAP: Record<string, ProdTabKey> = {
+    'prod:chars': 'chars', 'prod:scenes': 'scenes', 'prod:dubbing': 'dubbing',
+    'prod:shots': 'shots', 'prod:videos': 'videos', 'prod:compose': 'compose',
+  }
 
   const handlePipelineStepClick = useCallback(
     (key: PipelineStepKey) => {
       setActivePipelineStep(key)
-      const legacyStep = PIPELINE_TO_STEP_MAP[key] as StepKey
-      setActiveStep(legacyStep)
+      if (key.startsWith('script:')) {
+        setActiveStage('script')
+        setScriptStep(SCRIPT_STEP_MAP[key] ?? 0)
+      } else if (key.startsWith('prod:')) {
+        setActiveStage('production')
+        setProdTab(PROD_TAB_MAP[key] ?? 'chars')
+      } else if (key === 'export:merge') {
+        setActiveStage('export')
+      }
     },
     []
   )
@@ -431,7 +458,8 @@ export function EpisodeWorkspace() {
         return
       }
       await fetchEpisode()
-      setActiveStep('rewrite')
+      setScriptStep(1)
+      setActivePipelineStep('script:rewrite')
       showResultDialog('success', '剧本改写完成', 'AI已将原始内容改写为标准剧本格式，结果已自动保存。')
     } catch (err) {
       toast({ title: '改写失败', description: String(err), variant: 'destructive' })
@@ -449,7 +477,8 @@ export function EpisodeWorkspace() {
       await api.episodes.update(selectedEpisodeId, { scriptContent: rawContent })
       toast({ title: '已使用原始内容作为剧本' })
       await fetchEpisode()
-      setActiveStep('rewrite')
+      setScriptStep(1)
+      setActivePipelineStep('script:rewrite')
     } catch (err) {
       toast({ title: '操作失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -1042,29 +1071,24 @@ export function EpisodeWorkspace() {
     await fetchEpisode()
   }
 
-  // ── AI: Generate all extract images (characters + scenes) ───
+  // ── AI: Batch generate all character images ──────────────
 
-  const handleGenerateAllExtractImages = async () => {
+  const handleGenerateAllCharImages = async () => {
     const charsPending = characters.filter((c) => !c.imageUrl)
-    const scenesPending = scenes.filter((s) => !s.imageUrl)
-    const total = charsPending.length + scenesPending.length
-
-    if (total === 0) {
-      toast({ title: '所有角色和场景都已有图片' })
+    if (charsPending.length === 0) {
+      toast({ title: '所有角色都已有图片' })
       return
     }
-
-    setBatchProgress({ current: 0, total, message: '一键生成图片中...' })
+    setBatchProgress({ current: 0, total: charsPending.length, message: '生成角色图片中...' })
     let successCount = 0
-
     for (let i = 0; i < charsPending.length; i++) {
       const char = charsPending[i]
       setGeneratingCharImg(char.id)
-      setBatchProgress({ current: i + 1, total, message: `生成角色头像 ${i + 1}/${total}...` })
+      setBatchProgress({ current: i + 1, total: charsPending.length, message: `生成角色头像 ${i + 1}/${charsPending.length}...` })
       try {
         const result = await api.ai.generateCharacterImage(char.id) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: i + 1, total, message: `角色头像 ${i + 1}/${total} 异步生成中...` })
+          setBatchProgress({ current: i + 1, total: charsPending.length, message: `角色头像 ${i + 1}/${charsPending.length} 异步生成中...` })
           await pollAsyncTask('image', result.taskId as string)
         }
         successCount++
@@ -1073,15 +1097,29 @@ export function EpisodeWorkspace() {
       }
     }
     setGeneratingCharImg(null)
+    setBatchProgress(null)
+    toast({ title: `${successCount}/${charsPending.length}个角色图片生成完毕` })
+    await fetchEpisode()
+  }
 
+  // ── AI: Batch generate all scene images ───────────────────
+
+  const handleGenerateAllSceneImages = async () => {
+    const scenesPending = scenes.filter((s) => !s.imageUrl)
+    if (scenesPending.length === 0) {
+      toast({ title: '所有场景都已有图片' })
+      return
+    }
+    setBatchProgress({ current: 0, total: scenesPending.length, message: '生成场景图片中...' })
+    let successCount = 0
     for (let i = 0; i < scenesPending.length; i++) {
       const scene = scenesPending[i]
       setGeneratingSceneImg(scene.id)
-      setBatchProgress({ current: charsPending.length + i + 1, total, message: `生成场景图 ${charsPending.length + i + 1}/${total}...` })
+      setBatchProgress({ current: i + 1, total: scenesPending.length, message: `生成场景图 ${i + 1}/${scenesPending.length}...` })
       try {
         const result = await api.ai.generateSceneImage(scene.id) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: charsPending.length + i + 1, total, message: `场景图 ${charsPending.length + i + 1}/${total} 异步生成中...` })
+          setBatchProgress({ current: i + 1, total: scenesPending.length, message: `场景图 ${i + 1}/${scenesPending.length} 异步生成中...` })
           await pollAsyncTask('image', result.taskId as string)
         }
         successCount++
@@ -1091,7 +1129,7 @@ export function EpisodeWorkspace() {
     }
     setGeneratingSceneImg(null)
     setBatchProgress(null)
-    toast({ title: `${successCount}/${total}个图片生成完毕` })
+    toast({ title: `${successCount}/${scenesPending.length}个场景图片生成完毕` })
     await fetchEpisode()
   }
 
@@ -1516,152 +1554,242 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── Determine sidebar step active state ────────────────────
-
-  const isSidebarStepActive = (step: StepDef): boolean => {
-    if (step.subSteps) {
-      return step.subSteps.some((ss) => ss.key === activeStep)
-    }
-    return step.key === activeStep
-  }
-
   // ── Render active panel ────────────────────────────────────
 
   const episode = currentEpisode
 
   const renderActivePanel = () => {
-    switch (activeStep) {
-      case 'raw':
-      case 'rewrite':
-        return (
-          <ScriptPanel
-            rawContent={rawContent}
-            setRawContent={setRawContent}
-            scriptContent={scriptContent}
-            setScriptContent={setScriptContent}
-            saving={saving}
-            aiLoading={aiLoading}
-            isRewriting={agentExec.isRunning('script_rewriter')}
-            episode={episode}
-            agentExec={agentExec}
-            activeStep={activeStep}
-            handleSaveRaw={handleSaveRaw}
-            handleSaveScript={handleSaveScript}
-            handleRewrite={handleRewrite}
-            handleSkipRewrite={handleSkipRewrite}
-          />
-        )
-      case 'extract':
-        return (
-          <ExtractPanel
-            characters={characters}
-            scenes={scenes}
-            aiLoading={aiLoading}
-            isExtracting={agentExec.isRunning('extractor')}
-            episode={episode}
-            agentExec={agentExec}
-            generatingCharImg={generatingCharImg}
-            generatingSceneImg={generatingSceneImg}
-            batchProgress={batchProgress}
-            uploadingField={uploadingField}
-            activePipelineStep={activePipelineStep}
-            handleExtract={handleExtract}
-            handleGenerateAllExtractImages={handleGenerateAllExtractImages}
-            handleGenerateCharSheet={handleGenerateCharSheet}
-            handleGenerateCharImage={handleGenerateCharImage}
-            handleGenerateSceneImage={handleGenerateSceneImage}
-            handleUpload={handleUpload}
-          />
-        )
-      case 'voice':
-        return (
-          <VoicePanel
-            characters={characters}
-            aiLoading={aiLoading}
-            agentExec={agentExec}
-            activeStep={activeStep}
-            handleVoiceAssign={handleVoiceAssign}
-            voices={voices}
-            activeTtsProvider={activeTtsProvider}
-            voiceSamples={voiceSamples}
-            generatingSample={generatingSample}
-            handleAssignVoice={handleAssignVoice}
-            handleGenerateVoiceSample={handleGenerateVoiceSample}
-            handleBatchGenerateSamples={handleBatchGenerateSamples}
-          />
-        )
-      case 'storyboard':
-        return (
-          <StoryboardPanel
-            storyboards={storyboards}
-            aiLoading={aiLoading}
-            isStoryboarding={agentExec.isRunning('storyboard_breaker')}
-            episode={episode}
-            agentExec={agentExec}
-            generatingShotImg={generatingShotImg}
-            generatingVideo={generatingVideo}
-            generatingTts={generatingTts}
-            batchProgress={batchProgress}
-            uploadingField={uploadingField}
-            copiedField={copiedField}
-            gridState={gridState}
-            activePipelineStep={activePipelineStep}
-            handleGenerateStoryboard={handleGenerateStoryboard}
-            handleEnhanceShotPrompt={handleEnhanceShotPrompt}
-            handleGenerateAllImages={handleGenerateAllImages}
-            handleGenerateAllVideos={handleGenerateAllVideos}
-            handleGenerateShotImage={handleGenerateShotImage}
-            handleGenerateVideo={handleGenerateVideo}
-            handleGenerateTts={handleGenerateTts}
-            handleUpload={handleUpload}
-            handleCopy={handleCopy}
-            handleUpdateStoryboard={handleUpdateStoryboard}
-            handleGridGenerate={handleGridGenerate}
-          />
-        )
-      case 'production':
-        return (
-          <ProductionPanel
-            storyboards={storyboards}
-            characters={characters}
-            aiLoading={aiLoading}
-            agentExec={agentExec}
-            generatingShotImg={generatingShotImg}
-            generatingVideo={generatingVideo}
-            generatingTts={generatingTts}
-            generatingAllTts={generatingAllTts}
-            composing={composing}
-            composingAll={composingAll}
-            batchProgress={batchProgress}
-            previewMode={previewMode}
-            currentPreviewShot={currentPreviewShot}
-            exporting={exporting}
-            previewVideoRef={previewVideoRef}
-            previewAudioRef={previewAudioRef}
-            perms={perms}
-            ffmpegAvailable={ffmpegAvailable}
-            merging={merging}
-            mergeStatus={mergeStatus}
-            activePipelineStep={activePipelineStep}
-            handleGenerateShotImage={handleGenerateShotImage}
-            handleGenerateVideo={handleGenerateVideo}
-            handleGenerateTts={handleGenerateTts}
-            handleGenerateAllVideos={handleGenerateAllVideos}
-            handleGenerateAllTts={handleGenerateAllTts}
-            handleComposeShot={handleComposeShot}
-            handleComposeAll={handleComposeAll}
-            handleServerMerge={handleServerMerge}
-            handleStartPreview={handleStartPreview}
-            handlePreviewEnded={handlePreviewEnded}
-            handleExport={handleExport}
-            setActiveStep={setActiveStep}
-            setPreviewMode={setPreviewMode}
-            setCurrentPreviewShot={setCurrentPreviewShot}
-          />
-        )
-      default:
-        return null
+    // ── Script stage ──
+    if (activeStage === 'script') {
+      switch (scriptStep) {
+        case 0: // raw
+        case 1: // rewrite
+          return (
+            <ScriptPanel
+              rawContent={rawContent}
+              setRawContent={setRawContent}
+              scriptContent={scriptContent}
+              setScriptContent={setScriptContent}
+              saving={saving}
+              aiLoading={aiLoading}
+              isRewriting={agentExec.isRunning('script_rewriter')}
+              episode={episode}
+              agentExec={agentExec}
+              activeStep={scriptStep === 0 ? 'raw' : 'rewrite'}
+              handleSaveRaw={handleSaveRaw}
+              handleSaveScript={handleSaveScript}
+              handleRewrite={handleRewrite}
+              handleSkipRewrite={handleSkipRewrite}
+            />
+          )
+        case 2: // extract
+          return (
+            <ExtractPanel
+              characters={characters}
+              scenes={scenes}
+              aiLoading={aiLoading}
+              isExtracting={agentExec.isRunning('extractor')}
+              episode={episode}
+              agentExec={agentExec}
+              copiedField={copiedField}
+              handleExtract={handleExtract}
+              handleCopy={handleCopy}
+            />
+          )
+        case 3: // voice
+          return (
+            <VoicePanel
+              characters={characters}
+              aiLoading={aiLoading}
+              agentExec={agentExec}
+              activeStep={'voice'}
+              handleVoiceAssign={handleVoiceAssign}
+            />
+          )
+        case 4: // storyboard
+          return (
+            <StoryboardPanel
+              storyboards={storyboards}
+              aiLoading={aiLoading}
+              isStoryboarding={agentExec.isRunning('storyboard_breaker')}
+              episode={episode}
+              agentExec={agentExec}
+              generatingShotImg={generatingShotImg}
+              generatingVideo={generatingVideo}
+              generatingTts={generatingTts}
+              batchProgress={batchProgress}
+              uploadingField={uploadingField}
+              copiedField={copiedField}
+              gridState={gridState}
+              activePipelineStep={activePipelineStep}
+              handleGenerateStoryboard={handleGenerateStoryboard}
+              handleEnhanceShotPrompt={handleEnhanceShotPrompt}
+              handleGenerateAllImages={handleGenerateAllImages}
+              handleGenerateAllVideos={handleGenerateAllVideos}
+              handleGenerateShotImage={handleGenerateShotImage}
+              handleGenerateVideo={handleGenerateVideo}
+              handleGenerateTts={handleGenerateTts}
+              handleUpload={handleUpload}
+              handleCopy={handleCopy}
+              handleUpdateStoryboard={handleUpdateStoryboard}
+              handleGridGenerate={handleGridGenerate}
+            />
+          )
+      }
     }
+
+    // ── Production stage ──
+    if (activeStage === 'production') {
+      return (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Production tab bar */}
+          <div className="flex items-center border-b border-border/50 px-4">
+            {PROD_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setProdTab(tab.key)
+                  setActivePipelineStep(`prod:${tab.key}` as PipelineStepKey)
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  prodTab === tab.key
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div className="flex-1 overflow-hidden">
+            {prodTab === 'chars' && (
+              <CharImagesPanel
+                characters={characters}
+                aiLoading={aiLoading}
+                generatingCharImg={generatingCharImg}
+                batchProgress={batchProgress}
+                uploadingField={uploadingField}
+                copiedField={copiedField}
+                handleGenerateCharSheet={handleGenerateCharSheet}
+                handleGenerateCharImage={handleGenerateCharImage}
+                handleUpload={handleUpload}
+                handleCopy={handleCopy}
+              />
+            )}
+            {prodTab === 'scenes' && (
+              <SceneImagesPanel
+                scenes={scenes}
+                aiLoading={aiLoading}
+                generatingSceneImg={generatingSceneImg}
+                batchProgress={batchProgress}
+                uploadingField={uploadingField}
+                copiedField={copiedField}
+                handleGenerateSceneImage={handleGenerateSceneImage}
+                handleUpload={handleUpload}
+                handleCopy={handleCopy}
+              />
+            )}
+            {prodTab === 'dubbing' && (
+              <DubbingPanel
+                storyboards={storyboards}
+                characters={characters}
+                aiLoading={aiLoading}
+                generatingTts={generatingTts}
+                generatingAllTts={generatingAllTts}
+                batchProgress={batchProgress}
+                uploadingField={uploadingField}
+                handleGenerateTts={handleGenerateTts}
+                handleGenerateAllTts={handleGenerateAllTts}
+                handleUpload={handleUpload}
+              />
+            )}
+            {prodTab === 'shots' && (
+              <ShotFramesPanel
+                storyboards={storyboards}
+                characters={characters}
+                scenes={scenes}
+                aiLoading={aiLoading}
+                generatingShotImg={generatingShotImg}
+                batchProgress={batchProgress}
+                uploadingField={uploadingField}
+                copiedField={copiedField}
+                handleGenerateShotImage={handleGenerateShotImage}
+                handleGenerateAllImages={handleGenerateAllImages}
+                handleUpload={handleUpload}
+                handleCopy={handleCopy}
+              />
+            )}
+            {prodTab === 'videos' && (
+              <VideoPanel
+                storyboards={storyboards}
+                aiLoading={aiLoading}
+                generatingVideo={generatingVideo}
+                batchProgress={batchProgress}
+                uploadingField={uploadingField}
+                copiedField={copiedField}
+                handleGenerateVideo={handleGenerateVideo}
+                handleGenerateAllVideos={handleGenerateAllVideos}
+                handleUpload={handleUpload}
+                handleCopy={handleCopy}
+              />
+            )}
+            {prodTab === 'compose' && (
+              <ComposePanel
+                storyboards={storyboards}
+                aiLoading={aiLoading}
+                composing={composing}
+                composingAll={composingAll}
+                batchProgress={batchProgress}
+                previewMode={previewMode}
+                currentPreviewShot={currentPreviewShot}
+                exporting={exporting}
+                previewVideoRef={previewVideoRef}
+                previewAudioRef={previewAudioRef}
+                perms={perms}
+                handleComposeShot={handleComposeShot}
+                handleComposeAll={handleComposeAll}
+                handleStartPreview={handleStartPreview}
+                handlePreviewEnded={handlePreviewEnded}
+                handleExport={handleExport}
+                setPreviewMode={setPreviewMode}
+                setCurrentPreviewShot={setCurrentPreviewShot}
+              />
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // ── Export stage ──
+    if (activeStage === 'export') {
+      return (
+        <ComposePanel
+          storyboards={storyboards}
+          aiLoading={aiLoading}
+          composing={composing}
+          composingAll={composingAll}
+          batchProgress={batchProgress}
+          previewMode={previewMode}
+          currentPreviewShot={currentPreviewShot}
+          exporting={exporting}
+          previewVideoRef={previewVideoRef}
+          previewAudioRef={previewAudioRef}
+          perms={perms}
+          handleComposeShot={handleComposeShot}
+          handleComposeAll={handleComposeAll}
+          handleStartPreview={handleStartPreview}
+          handlePreviewEnded={handlePreviewEnded}
+          handleExport={handleExport}
+          setPreviewMode={setPreviewMode}
+          setCurrentPreviewShot={setCurrentPreviewShot}
+        />
+      )
+    }
+
+    return null
   }
 
   // ── Episode info for top bar ───────────────────────────────
@@ -1835,7 +1963,7 @@ export function EpisodeWorkspace() {
 
       {/* ── Body: Sidebar + Main + Bottom Nav ──────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 11-Step Pipeline Sidebar */}
+        {/* 3-Stage Pipeline Sidebar */}
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
@@ -1846,63 +1974,83 @@ export function EpisodeWorkspace() {
               className="flex-shrink-0 border-r border-border/50 bg-card/50 overflow-hidden"
             >
               <div className="w-[240px] h-full flex flex-col">
-                {/* Pipeline steps */}
+                {/* Pipeline steps grouped by stage */}
                 <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-0.5">
-                    <div className="px-2 py-1.5 mb-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                        制作管线
-                      </h3>
-                    </div>
-                    {PIPELINE_STEPS.map((step) => {
-                      const stepStatus = getPipelineStepStatus(step.key)
-                      const isActive = activePipelineStep === step.key
+                  <div className="p-3 space-y-3">
+                    {STAGES.map((stage) => {
+                      const stageSteps = getStepsForStage(stage.key)
+                      const isStageActive = activeStage === stage.key
                       return (
-                        <button
-                          key={step.key}
-                          onClick={() => handlePipelineStepClick(step.key)}
-                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all duration-150 group ${
-                            isActive
-                              ? 'bg-primary/10 text-primary'
-                              : stepStatus === 'completed'
-                                ? 'text-emerald-600 hover:bg-emerald-500/5'
+                        <div key={stage.key}>
+                          {/* Stage header */}
+                          <button
+                            onClick={() => setActiveStage(stage.key)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+                              isStageActive
+                                ? 'bg-primary/10 text-primary'
                                 : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                          }`}
-                        >
-                          {/* Status indicator */}
-                          <div className="flex-shrink-0 size-6 rounded-full flex items-center justify-center">
-                            {stepStatus === 'completed' ? (
-                              <div className="size-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                <Check className="size-3.5 text-emerald-500" />
-                              </div>
-                            ) : stepStatus === 'active' ? (
-                              <div className="size-6 rounded-full bg-primary/20 flex items-center justify-center">
-                                <Loader2 className="size-3 text-primary animate-spin" />
-                              </div>
-                            ) : (
-                              <div className="size-6 rounded-full bg-muted flex items-center justify-center">
-                                <span className="text-[10px] font-bold text-muted-foreground">
-                                  {step.stepNumber}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                            }`}
+                          >
+                            <span className="text-sm">{stage.icon}</span>
+                            <span className="text-xs font-semibold">{stage.label}</span>
+                          </button>
 
-                          <div className="flex-1 min-w-0">
-                            <span className={`text-xs font-medium ${isActive ? 'text-primary' : ''}`}>
-                              {step.label}
-                            </span>
-                            {pipelineStatus?.pipeline?.[step.key] && step.key !== 'raw_content' && step.key !== 'script_rewrite' && step.key !== 'storyboard' && (
-                              <div className="text-[10px] text-muted-foreground mt-0.5">
-                                {pipelineStatus.pipeline[step.key].completed}/{pipelineStatus.pipeline[step.key].total}
-                              </div>
-                            )}
-                          </div>
+                          {/* Stage sub-steps */}
+                          <div className="ml-2 border-l border-border/30 pl-0.5">
+                            {stageSteps.map((step) => {
+                              const stepStatus = getPipelineStepStatus(step.key)
+                              const isActive = activePipelineStep === step.key
+                              const completionInfo = getStepCompletionInfo(step.key)
+                              return (
+                                <button
+                                  key={step.key}
+                                  onClick={() => handlePipelineStepClick(step.key)}
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-r-md text-left transition-all duration-150 group ${
+                                    isActive
+                                      ? 'bg-primary/10 text-primary'
+                                      : stepStatus === 'completed'
+                                        ? 'text-emerald-600 hover:bg-emerald-500/5'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                  }`}
+                                >
+                                  {/* Status indicator */}
+                                  <div className="flex-shrink-0 size-5 rounded-full flex items-center justify-center">
+                                    {stepStatus === 'completed' ? (
+                                      <div className="size-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                        <Check className="size-3 text-emerald-500" />
+                                      </div>
+                                    ) : stepStatus === 'active' ? (
+                                      <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center">
+                                        <Loader2 className="size-2.5 text-primary animate-spin" />
+                                      </div>
+                                    ) : (
+                                      <div className="size-5 rounded-full bg-muted flex items-center justify-center">
+                                        <span className="text-[9px] font-bold text-muted-foreground">
+                                          {step.stepNumber}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
 
-                          {isActive && (
-                            <ChevronRight className="size-3 text-primary flex-shrink-0" />
-                          )}
-                        </button>
+                                  <div className="flex-1 min-w-0">
+                                    <span className={`text-[11px] font-medium ${isActive ? 'text-primary' : ''}`}>
+                                      {step.label}
+                                    </span>
+                                    {completionInfo && !completionInfo.startsWith('待') && step.key !== 'script:raw' && step.key !== 'script:rewrite' && (
+                                      <div className="text-[9px] text-muted-foreground/70 mt-0.5 truncate">
+                                        {completionInfo}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {isActive && (
+                                    <ChevronRight className="size-2.5 text-primary flex-shrink-0" />
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
                       )
                     })}
                   </div>
@@ -1932,7 +2080,7 @@ export function EpisodeWorkspace() {
         <main className="flex-1 flex flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeStep}
+              key={`${activeStage}-${scriptStep}-${prodTab}`}
               variants={panelVariants}
               initial="initial"
               animate="animate"
@@ -1997,7 +2145,7 @@ export function EpisodeWorkspace() {
             {/* Current step label */}
             <div className="text-center mt-1">
               <span className="text-[10px] text-muted-foreground">
-                {PIPELINE_STEPS[currentPipelineIndex]?.stepNumber}/11 — {PIPELINE_STEPS[currentPipelineIndex]?.label}
+                {PIPELINE_STEPS[currentPipelineIndex]?.stepNumber}/12 — {PIPELINE_STEPS[currentPipelineIndex]?.label}
               </span>
             </div>
           </div>
