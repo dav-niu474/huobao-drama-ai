@@ -11,6 +11,7 @@ import { requireAuth } from '@/lib/auth-helpers'
 import { getActiveProviderForUser } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import { getImageAdapter } from '@/lib/adapters/image'
+import { saveMediaFile } from '@/lib/file-storage'
 
 // GET /api/ai/grid/status — Check grid generation status
 export async function GET(request: NextRequest) {
@@ -130,13 +131,24 @@ export async function GET(request: NextRequest) {
       let imageUrl = imageGeneration.imageUrl
 
       if (pollParsed.imageUrl) {
-        // Download the image and convert to base64 data URL
+        // Download the image and save to file storage
         const imgRes = await fetch(pollParsed.imageUrl)
         const buffer = Buffer.from(await imgRes.arrayBuffer())
-        const base64 = buffer.toString('base64')
-        imageUrl = `data:image/png;base64,${base64}`
+        const saveResult = await saveMediaFile(buffer, {
+          mimeType: 'image/png',
+          category: 'grid',
+          dramaId: imageGeneration.dramaId || undefined,
+          filename: `grid_${imageGeneration.id}`,
+        })
+        imageUrl = saveResult.url
       } else if (pollParsed.imageBase64) {
-        imageUrl = `data:image/png;base64,${pollParsed.imageBase64}`
+        const saveResult = await saveMediaFile(pollParsed.imageBase64, {
+          mimeType: 'image/png',
+          category: 'grid',
+          dramaId: imageGeneration.dramaId || undefined,
+          filename: `grid_${imageGeneration.id}`,
+        })
+        imageUrl = saveResult.url
       }
 
       // Update the ImageGeneration record

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import { saveMediaFile } from '@/lib/file-storage'
 
 // POST /api/ai/generate-character-sheet - Generate character sheet (三视图)
 // This is the KEY mechanism for consistency — a reference image showing the character
@@ -63,7 +64,13 @@ export async function POST(request: NextRequest) {
       referenceImages,
     })
 
-    const sheetImageUrl = `data:image/png;base64,${sheetBase64}`
+    const sheetSaveResult = await saveMediaFile(sheetBase64, {
+      mimeType: 'image/png',
+      category: 'characters',
+      dramaId: character.dramaId,
+      filename: `sheet_${characterId}_${Date.now()}`,
+    })
+    const sheetImageUrl = sheetSaveResult.url
 
     // Also generate a regular portrait using the same reference
     const portraitPrompt = [
@@ -90,7 +97,13 @@ export async function POST(request: NextRequest) {
       referenceImages: referenceImages ? [...referenceImages, sheetImageUrl] : [sheetImageUrl],
     })
 
-    const portraitImageUrl = `data:image/png;base64,${portraitBase64}`
+    const portraitSaveResult = await saveMediaFile(portraitBase64, {
+      mimeType: 'image/png',
+      category: 'characters',
+      dramaId: character.dramaId,
+      filename: `portrait_${characterId}_${Date.now()}`,
+    })
+    const portraitImageUrl = portraitSaveResult.url
 
     // Save character sheet as CharacterAppearance
     const existingCount = await db.characterAppearance.count({

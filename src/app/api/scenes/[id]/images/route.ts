@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
 import { collectSceneReferences } from '@/lib/reference-collector'
+import { saveMediaFile } from '@/lib/file-storage'
 
 // GET /api/scenes/[id]/images - List all images for a scene
 export async function GET(
@@ -85,7 +86,7 @@ export async function POST(
 
       // Filter out invalid URLs
       autoRefs = autoRefs.filter(
-        (url) => url && url.trim() && (url.startsWith('data:') || url.startsWith('http'))
+        (url) => url && url.trim() && (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/api/files/'))
       )
 
       const base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
@@ -94,7 +95,14 @@ export async function POST(
         referenceImages: autoRefs.length > 0 ? autoRefs : undefined,
       })
 
-      imageUrl = `data:image/png;base64,${base64Image}`
+      // Save to file storage instead of base64 data URL
+      const saveResult = await saveMediaFile(base64Image, {
+        mimeType: 'image/png',
+        category: 'scenes',
+        dramaId: scene.dramaId,
+        filename: `scene_${sceneId}_${Date.now()}`,
+      })
+      imageUrl = saveResult.url
       if (!finalDescription) {
         finalDescription = scenePrompt
       }

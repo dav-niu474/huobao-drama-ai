@@ -2,12 +2,16 @@
 // General File Upload API
 // POST /api/upload
 // Accepts a media file (image/video/audio) via FormData,
-// reads it as a data URL, and updates the corresponding
-// database record (Storyboard / Character / Scene).
+// saves it to file storage, and updates the corresponding
+// database record (Storyboard / Character / Scene / Prop).
+//
+// v0.7: Saves files to disk/Vercel Blob instead of base64
+// data URLs, dramatically reducing database size.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { saveMediaFile, isDataUrl, migrateDataUrlToFile } from '@/lib/file-storage'
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB (videos can be large)
 
@@ -53,18 +57,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Read file as data URL
+    // Read file buffer
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const base64 = buffer.toString('base64')
     const mimeType = file.type || (mediaType === 'image' ? 'image/png' : mediaType === 'video' ? 'video/mp4' : 'audio/mpeg')
-    const dataUrl = `data:${mimeType};base64,${base64}`
 
     // Determine which record to update based on options
     const storyboardId = formData.get('storyboardId') as string | null
     const characterId = formData.get('characterId') as string | null
     const sceneId = formData.get('sceneId') as string | null
+    const propId = formData.get('propId') as string | null
     const fieldType = formData.get('fieldType') as string | null
+
+    // Resolve dramaId for file path organization
+    let dramaId = formData.get('dramaId') as string | null
+    if (!dramaId) {
+      if (storyboardId) {
+        const sb = await db.storyboard.findUnique({ where: { id: storyboardId }, select: { episode: { select: { dramaId: true } } } })
+        if (sb) dramaId = sb.episode.dramaId
+      } else if (characterId) {
+        const ch = await db.character.findUnique({ where: { id: characterId }, select: { dramaId: true } })
+        if (ch) dramaId = ch.dramaId
+      } else if (sceneId) {
+        const sc = await db.scene.findUnique({ where: { id: sceneId }, select: { dramaId: true } })
+        if (sc) dramaId = sc.dramaId
+      } else if (propId) {
+        const pr = await db.prop.findUnique({ where: { id: propId }, select: { dramaId: true } })
+        if (pr) dramaId = pr.dramaId
+      }
+    }
+
+    // Save file to storage
+    const category = mediaType === 'video' ? 'videos' : mediaType === 'audio' ? 'audio' : 'images'
+    const saveResult = await saveMediaFile(buffer, {
+      mimeType,
+      category: 'uploads',
+      dramaId: dramaId || undefined,
+      filename: fileName.replace(/\.[^.]+$/, ''), // strip extension
+    })
+
+    const fileUrl = saveResult.url
 
     // ── Update Storyboard ─────────────────────────────────
     if (storyboardId) {
@@ -83,11 +115,11 @@ export async function POST(request: NextRequest) {
 
       const updated = await db.storyboard.update({
         where: { id: storyboardId },
-        data: { [updateField]: dataUrl },
+        data: { [updateField]: fileUrl },
       })
 
       return NextResponse.json({
-        url: dataUrl,
+        url: fileUrl,
         storyboard: updated,
         mediaType,
         fileName,
@@ -102,14 +134,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '角色不存在' }, { status: 404 })
       }
 
-      // For characters, always update imageUrl
       const updated = await db.character.update({
         where: { id: characterId },
-        data: { imageUrl: dataUrl },
+        data: { imageUrl: fileUrl },
       })
 
       return NextResponse.json({
-        url: dataUrl,
+        url: fileUrl,
         character: updated,
         mediaType,
         fileName,
@@ -124,14 +155,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '场景不存在' }, { status: 404 })
       }
 
-      // For scenes, always update imageUrl
       const updated = await db.scene.update({
         where: { id: sceneId },
-        data: { imageUrl: dataUrl },
+        data: { imageUrl: fileUrl },
       })
 
       return NextResponse.json({
-        url: dataUrl,
+        url: fileUrl,
         scene: updated,
         mediaType,
         fileName,
@@ -139,9 +169,30 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── No target specified — just return the data URL ────
+    // ── Update Prop ───────────────────────────────────────
+    if (propId) {
+      const prop = await db.prop.findUnique({ where: { id: propId } })
+      if (!prop) {
+        return NextResponse.json({ error: '道具不存在' }, { status: 404 })
+      }
+
+      const updated = await db.prop.update({
+        where: { id: propId },
+        data: { imageUrl: fileUrl },
+      })
+
+      return NextResponse.json({
+        url: fileUrl,
+        prop: updated,
+        mediaType,
+        fileName,
+        fileSize,
+      })
+    }
+
+    // ── No target specified — just return the file URL ────
     return NextResponse.json({
-      url: dataUrl,
+      url: fileUrl,
       mediaType,
       fileName,
       fileSize,

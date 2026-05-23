@@ -448,3 +448,35 @@ Stage Summary:
 - 核心架构变更：从"一次生成所有分镜"改为"分批生成+追加保存"
 - 超时机制从绝对改为不活跃检测，大幅提升长响应可靠性
 - 已推送到PR #15 (commit 817ebd5)
+
+---
+Task ID: v0.6-completion
+Agent: Main Agent
+Task: v0.6收尾 — 道具模型补齐 + 上传路由Bug修复
+
+Work Log:
+- 分析 v0.6 各功能实际完成度（代码级逐项核查）
+- 发现 README 标注45%实际已远超，大部分功能已落地
+- 识别3个待办：上传路由404 Bug、道具模型缺失、文件存储优化
+- 用户确认：道具模型优先做，文件存储推迟到v0.7
+- 创建 feat/v0.6-completion 分支
+- 修复 /api/upload 路由缺失 Bug（创建通用文件上传API）
+- 新增 Prop Prisma 模型（name/category/description/imagePrompt/imageUrl, @@unique [dramaId, name]）
+- 新增 extractor Agent 工具：save_props + read_existing_props
+- 新增执行器实现（去重合并逻辑，与 save_characters/save_scenes 一致）
+- 新增 /api/dramas/[id]/props + /api/props/[id] CRUD 路由
+- 更新 extract-panel.tsx：3列布局（角色|场景|道具），道具支持编辑/复制/图片
+- 更新 create-from-script API：接收 props 并批量入库
+- 更新 episode-workspace：传递 props 给 ExtractPanel，onUpdateProp 处理器
+- 更新 extractor 系统提示词：新增道具提取规范
+- 更新 handleExtract 提示消息：包含道具提取指令
+- 更新 api.ts / store.ts / types.ts：Prop 类型和方法
+- 更新 CHANGELOG.md：v0.6.1 记录
+- 构建验证通过（16 files, +667 -13）
+
+Stage Summary:
+- 分支：feat/v0.6-completion
+- 修复：上传按钮404 Bug（/api/upload路由缺失）
+- 新增：Prop 数据模型 + AI提取 + 提取面板UI + CRUD API
+- PR 待创建：https://github.com/dav-niu474/huobao-drama-ai/pull/new/feat/v0.6-completion
+- v0.6 实际完成度：~95%（仅文件存储优化推迟到v0.7）

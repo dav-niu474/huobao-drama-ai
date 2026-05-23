@@ -16,6 +16,7 @@ import {
   validateGridDimensions,
 } from '@/lib/grid'
 import { getImageAdapter } from '@/lib/adapters/image'
+import { saveMediaFile } from '@/lib/file-storage'
 
 // POST /api/ai/grid/generate — Generate a grid image
 export async function POST(request: NextRequest) {
@@ -181,11 +182,16 @@ export async function POST(request: NextRequest) {
 
       // Handle sync response with URL
       if (!parsed.isAsync && parsed.imageUrl) {
-        // Download the image and convert to base64
+        // Download the image and save to file storage
         const imgRes = await fetch(parsed.imageUrl)
         const buffer = Buffer.from(await imgRes.arrayBuffer())
-        const base64 = buffer.toString('base64')
-        const imageUrl = `data:image/png;base64,${base64}`
+        const saveResult = await saveMediaFile(buffer, {
+          mimeType: 'image/png',
+          category: 'grid',
+          dramaId: dramaId || undefined,
+          filename: `grid_${imageGeneration.id}`,
+        })
+        const imageUrl = saveResult.url
 
         await db.imageGeneration.update({
           where: { id: imageGeneration.id },
@@ -206,7 +212,13 @@ export async function POST(request: NextRequest) {
 
       // Handle sync response with base64
       if (!parsed.isAsync && parsed.imageBase64) {
-        const imageUrl = `data:image/png;base64,${parsed.imageBase64}`
+        const saveResult = await saveMediaFile(parsed.imageBase64, {
+          mimeType: 'image/png',
+          category: 'grid',
+          dramaId: dramaId || undefined,
+          filename: `grid_${imageGeneration.id}`,
+        })
+        const imageUrl = saveResult.url
 
         await db.imageGeneration.update({
           where: { id: imageGeneration.id },

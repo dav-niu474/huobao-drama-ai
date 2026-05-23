@@ -780,16 +780,11 @@ export const aiClient = {
     text: string,
     voiceId?: string,
     voiceStyle?: string
-  ): Promise<void> {
+  ): Promise<string> {
     const provider = await getActiveProviderForUser('tts', this._userId)
     if (!provider) {
       throw new Error('未配置语音合成供应商。请在设置中配置 API Key。')
     }
-
-    await db.storyboard.update({
-      where: { id: storyboardId },
-      data: { status: 'processing' },
-    })
 
     try {
       let audioDataUrl = ''
@@ -827,10 +822,7 @@ export const aiClient = {
         audioDataUrl = `data:audio/wav;base64,${base64}`
       }
 
-      await db.storyboard.update({
-        where: { id: storyboardId },
-        data: { ttsAudioUrl: audioDataUrl, status: 'completed' },
-      })
+      return audioDataUrl
     } catch (error) {
       await db.storyboard.update({
         where: { id: storyboardId },

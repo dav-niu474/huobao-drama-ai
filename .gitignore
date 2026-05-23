@@ -68,3 +68,6 @@ TradingAgents-CN/
 download/
 agent-ctx/
 db/
+
+# File uploads (local dev only — production uses Vercel Blob)
+data/uploads/

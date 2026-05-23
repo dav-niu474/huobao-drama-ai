@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import { saveMediaFile } from '@/lib/file-storage'
 
 // POST /api/ai/generate-character-image - AI Generate Character Portrait
 // Returns a data URL (data:image/png;base64,...) for Vercel compatibility
@@ -112,8 +113,14 @@ export async function POST(request: NextRequest) {
       throw error
     }
 
-    // Convert base64 to data URL for Vercel compatibility (no filesystem writes)
-    const imageUrl = `data:image/png;base64,${base64Image}`
+    // Save image to file storage instead of base64 data URL
+    const saveResult = await saveMediaFile(base64Image, {
+      mimeType: 'image/png',
+      category: 'characters',
+      dramaId: character.dramaId,
+      filename: `char_${characterId}_${Date.now()}`,
+    })
+    const imageUrl = saveResult.url
 
     // Use AI Vision to extract a text description from the generated image
     let visionDescription = ''

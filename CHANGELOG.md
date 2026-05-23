@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-23
+
+### Added
+- 文件存储抽象层（file-storage.ts）— 统一本地存储/Vercel Blob双后端
+- 本地文件服务路由 /api/files/[...path] — 带缓存头、路径遍历防护
+- 所有AI生成路由改用文件存储 — 图片/音频不再存base64到数据库
+- 上传API改用文件存储 — 上传文件保存到磁盘而非base64入库
+- 宫格图生成/拆分/状态查询 — 全部改用文件存储
+- 角色形象/场景图API — 改用文件存储
+
+### Changed
+- aiClient.generateTts() 返回值从 void 改为 string（audioDataUrl）
+- TTS路由自行处理文件存储保存+DB更新（不再由aiClient内部写DB）
+- 引用图过滤器支持 /api/files/ 路径（不仅限data:和http）
+
 ## [0.6.1] - 2026-05-23
 
 ### Added

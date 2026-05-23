@@ -11,6 +11,7 @@ import { requireAuth } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { splitGridImage } from '@/lib/grid.server'
 import { validateGridDimensions } from '@/lib/grid'
+import { saveMediaFile, readMediaFile, isFileStorageUrl } from '@/lib/file-storage'
 
 // POST /api/ai/grid/split — Split a grid image and assign to storyboards
 export async function POST(request: NextRequest) {
@@ -123,9 +124,19 @@ export async function POST(request: NextRequest) {
       }
       const arrayBuffer = await imgRes.arrayBuffer()
       imageBuffer = Buffer.from(arrayBuffer)
+    } else if (imageUrl.startsWith('/api/files/')) {
+      // Local file storage URL — read from disk
+      const fileBuffer = await readMediaFile(imageUrl)
+      if (!fileBuffer) {
+        return NextResponse.json(
+          { error: 'File not found in storage' },
+          { status: 400 }
+        )
+      }
+      imageBuffer = fileBuffer
     } else {
       return NextResponse.json(
-        { error: 'imageUrl must be a data URL or HTTP URL' },
+        { error: 'imageUrl must be a data URL, HTTP URL, or file storage path' },
         { status: 400 }
       )
     }
@@ -133,11 +144,18 @@ export async function POST(request: NextRequest) {
     // 2. Split the grid image into cells
     const cellBuffers = await splitGridImage(imageBuffer, rows, cols)
 
-    // 3. Convert cell buffers to data URLs
-    const cellDataUrls = cellBuffers.map((buffer) => {
-      const base64 = buffer.toString('base64')
-      return `data:image/png;base64,${base64}`
-    })
+    // 3. Save each cell buffer to file storage
+    const cellImageUrls: string[] = []
+    for (let i = 0; i < cellBuffers.length; i++) {
+      const buffer = cellBuffers[i]!
+      const saveResult = await saveMediaFile(buffer, {
+        mimeType: 'image/png',
+        category: 'storyboards',
+        dramaId: assignments[0]?.storyboardId ? (await db.storyboard.findUnique({ where: { id: assignments[0].storyboardId }, select: { episode: { select: { dramaId: true } } } }))?.episode.dramaId : undefined,
+        filename: `cell_${i}_${Date.now()}`,
+      })
+      cellImageUrls.push(saveResult.url)
+    }
 
     // 4. Assign cells to storyboards and update DB
     const cells: Array<{
@@ -149,7 +167,7 @@ export async function POST(request: NextRequest) {
     for (const assignment of assignments) {
       const { cellIndex, storyboardId, frameType } = assignment
 
-      const cellImageUrl = cellDataUrls[cellIndex]
+      const cellImageUrl = cellImageUrls[cellIndex]
       if (!cellImageUrl) {
         console.warn(`Cell index ${cellIndex} out of range, skipping`)
         continue
@@ -199,12 +217,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Also include unassigned cells in the response
-    for (let i = 0; i < cellDataUrls.length; i++) {
+    for (let i = 0; i < cellImageUrls.length; i++) {
       const isAssigned = cells.some((c) => c.index === i)
       if (!isAssigned) {
         cells.push({
           index: i,
-          imageUrl: cellDataUrls[i]!,
+          imageUrl: cellImageUrls[i]!,
           assignedTo: 'unassigned',
         })
       }
@@ -215,7 +233,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       cells,
-      totalCells: cellDataUrls.length,
+      totalCells: cellImageUrls.length,
       assignedCount: assignments.length,
       rows,
       cols,
