@@ -394,7 +394,7 @@ export function ScriptUploadDialog({
         episodes: episodes.filter(ep => ep.rawContent.trim()),
         characters: characters.length > 0 ? characters : undefined,
         scenes: scenes.length > 0 ? scenes : undefined,
-        props: parsedData?.props?.length > 0 ? parsedData.props : undefined,
+        props: props.length > 0 ? props : undefined,
         autoStartPipeline: autoPipeline,
       })
       toast({ title: '项目创建成功', description: `已创建「${title}」项目，包含${episodes.length}集内容` })
@@ -405,7 +405,7 @@ export function ScriptUploadDialog({
     } finally {
       setCreating(false)
     }
-  }, [title, genre, style, episodes, characters, scenes, autoPipeline, toast, handleClose, onSuccess])
+  }, [title, genre, style, episodes, characters, scenes, props, autoPipeline, toast, handleClose, onSuccess])
 
   // ── Drop handlers ──
   const handleDragOver = (e: React.DragEvent) => {
