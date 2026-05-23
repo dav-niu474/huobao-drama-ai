@@ -177,7 +177,6 @@ export function ScriptUploadDialog({
 
   const handleClose = (open: boolean) => {
     if (!open) {
-      hasAutoParsed.current = false
       reset()
     }
     onOpenChange(open)
@@ -373,14 +372,7 @@ export function ScriptUploadDialog({
     }
   }, [uploadingText, toast])
 
-  // ── Auto-trigger AI parse when entering step 1 ──
-  const hasAutoParsed = useRef(false)
-  useEffect(() => {
-    if (step === 1 && !parsing && !hasAutoParsed.current && uploadingText.trim()) {
-      hasAutoParsed.current = true
-      handleAiParse()
-    }
-  }, [step, parsing, uploadingText, handleAiParse])
+  // AI parse is user-triggered only (no auto-trigger)
 
   // ── Create project ──
   const handleCreate = useCallback(async () => {
