@@ -175,10 +175,10 @@ Call the \`save_parsed_script\` tool with this structure:
   // ============================================================
   // 角色场景提取器 — Extractor
   // ============================================================
-  extractor: `你是一位专业的影视剧本分析专家，擅长从剧本中精确提取角色信息和场景描述。
+  extractor: `你是一位专业的影视剧本分析专家，擅长从剧本中精确提取角色信息、场景描述和关键道具。
 
 ## 核心职责
-从给定的剧本内容中，智能提取所有角色信息和场景描述，并支持与已有数据去重合并。
+从给定的剧本内容中，智能提取所有角色信息、场景描述和关键道具，并支持与已有数据去重合并。
 
 ## 角色提取规范
 
@@ -240,11 +240,33 @@ Cinematic portrait, young Chinese woman in her 20s, delicate features with brigh
 - 不同时间段的同一地点应视为不同场景（如'咖啡馆-日'和'咖啡馆-夜'）
 - prompt字段应生成为英文，适合AI绘图使用
 
+## 道具提取规范
+
+提取的道具信息应包含以下字段：
+\`\`\`json
+{
+  "name": "道具名称，如'古董怀表'、'血色信封'",
+  "category": "日常 | 武器 | 交通 | 装饰 | 信物 | 科技 | 其他",
+  "description": "道具外观和用途描述，包含材质、颜色、特征细节等",
+  "imagePrompt": "Product shot, [道具类型], [材质], [颜色和特征], [环境/光线], [画质标签]"
+}
+\`\`\`
+
+### 道具提取原则
+- **只提取对剧情有推动作用的关键道具**，背景性道具（如桌上的杯子）不需要单独提取
+- 关键道具判断标准：在剧情中反复出现、推动情节发展、具有象征意义
+- imagePrompt必须用英文书写，格式参考：\`Product shot, vintage pocket watch, brass casing with intricate engravings, worn patina, amber glow from dial, dark velvet background, studio lighting, 8k ultra detailed\`
+
+### 道具去重逻辑
+- 如果已有同名道具，则合并信息（补充新字段，保留已有非空字段）
+- 类似功能的道具应合并为一条（如"手机"和"智能手机"）
+
 ## 提取规则
 1. **完整性**：确保提取所有出现名字或有对白的角色
 2. **准确性**：角色的性别、年龄应从剧本中推断，不要臆造
 3. **一致性**：同一角色在不同场景中的描述应保持一致
-4. **去重**：调用read_existing_characters和read_existing_scenes工具获取已有数据，避免重复创建`,
+4. **去重**：调用read_existing_characters、read_existing_scenes和read_existing_props工具获取已有数据，避免重复创建
+5. **道具精炼**：只提取关键剧情道具，不要过度提取`,
 
   // ============================================================
   // 分镜拆解专家 — Storyboard Breaker

@@ -184,6 +184,34 @@ const EXTRACTOR_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'read_existing_props',
+    description: '读取项目中已有的道具列表，用于去重判断。',
+    parameters: {},
+  },
+  {
+    name: 'save_props',
+    description: '保存提取到的道具信息。会自动与已有道具进行去重合并（按名称去重）。',
+    parameters: {
+      props: {
+        type: 'array',
+        description:
+          '要保存的道具数组（直接传入数组对象，不要字符串化）',
+        required: true,
+        items: {
+          type: 'object',
+          description: '单个道具的数据',
+          properties: {
+            name: { type: 'string', description: '道具名称', required: true },
+            category: { type: 'string', description: '道具类型：日常/武器/交通/装饰/信物/科技/其他' },
+            description: { type: 'string', description: '道具外观和用途描述' },
+            imagePrompt: { type: 'string', description: '道具AI绘图英文提示词' },
+          },
+          requiredFields: ['name'],
+        },
+      },
+    },
+  },
 ]
 
 const STORYBOARD_BREAKER_TOOLS: ToolDefinition[] = [

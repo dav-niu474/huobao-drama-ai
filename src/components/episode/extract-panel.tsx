@@ -13,6 +13,7 @@ import {
   Check,
   PencilLine,
   Info,
+  Package,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -166,6 +167,7 @@ function genderLabel(gender: string): string {
 export function ExtractPanel({
   characters,
   scenes,
+  props,
   aiLoading,
   isExtracting,
   episode,
@@ -175,9 +177,10 @@ export function ExtractPanel({
   handleCopy,
   onUpdateCharacter,
   onUpdateScene,
+  onUpdateProp,
 }: ExtractPanelProps) {
   // ── Empty state ──────────────────────────────────────────
-  if (characters.length === 0 && scenes.length === 0 && !isExtracting && !aiLoading) {
+  if (characters.length === 0 && scenes.length === 0 && props.length === 0 && !isExtracting && !aiLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <motion.div
@@ -245,7 +248,7 @@ export function ExtractPanel({
 
       {/* Results */}
       <ScrollArea className="flex-1">
-        <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* ── Characters column ────────────────────────── */}
           <div>
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -431,6 +434,90 @@ export function ExtractPanel({
               ))}
               {scenes.length === 0 && (
                 <p className="text-xs text-muted-foreground py-4 text-center">暂无场景</p>
+              )}
+            </div>
+          </div>
+
+          {/* ── Props column ────────────────────────────── */}
+          <div>
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <Package className="size-4 text-primary" />
+              道具列表
+              <Badge variant="secondary" className="text-[10px]">
+                {props.length}
+              </Badge>
+            </h3>
+            <div className="space-y-3">
+              {props.map((prop) => (
+                <Card key={prop.id} className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-4">
+                    <div className="flex flex-col gap-2.5">
+                      {/* Name + category row */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{prop.name}</span>
+                        {prop.category && prop.category !== 'other' && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            {prop.category}
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Description */}
+                      <InlineField
+                        label="描述"
+                        value={prop.description}
+                        fieldId={`prop-description-${prop.id}`}
+                        charId={prop.id}
+                        copiedField={copiedField}
+                        handleCopy={handleCopy}
+                        onUpdate={onUpdateProp}
+                        multiline
+                      />
+
+                      {/* Image Prompt — with copy button */}
+                      {prop.imagePrompt && (
+                        <div className="rounded-md bg-primary/5 border border-primary/10 px-3 py-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[10px] font-medium text-primary/70 uppercase tracking-wide block mb-0.5">
+                                道具提示词
+                              </span>
+                              <p className="text-xs text-foreground leading-relaxed">
+                                {prop.imagePrompt}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="size-7 p-0 flex-shrink-0"
+                              onClick={() => handleCopy(prop.imagePrompt!, `prop-imagePrompt-${prop.id}`)}
+                            >
+                              {copiedField === `prop-imagePrompt-${prop.id}` ? (
+                                <Check className="size-3.5 text-emerald-500" />
+                              ) : (
+                                <Copy className="size-3.5 text-muted-foreground" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Prop Image */}
+                      {prop.imageUrl && (
+                        <div className="rounded-md overflow-hidden border border-border/50">
+                          <img
+                            src={prop.imageUrl}
+                            alt={prop.name}
+                            className="w-full h-24 object-cover"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              {props.length === 0 && (
+                <p className="text-xs text-muted-foreground py-4 text-center">暂无道具</p>
               )}
             </div>
           </div>

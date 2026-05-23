@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAppStore, type EpisodeDetail, type Character, type Scene, type Storyboard, type LockedConfig } from '@/lib/store'
+import { useAppStore, type EpisodeDetail, type Character, type Scene, type Prop, type Storyboard, type LockedConfig } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -71,6 +71,7 @@ export function EpisodeWorkspace() {
   const [scriptContent, setScriptContent] = useState('')
   const [characters, setCharacters] = useState<Character[]>([])
   const [scenes, setScenes] = useState<Scene[]>([])
+  const [props, setProps] = useState<Prop[]>([])
   const [storyboards, setStoryboards] = useState<Storyboard[]>([])
   const [saving, setSaving] = useState(false)
   const [generatingCharImg, setGeneratingCharImg] = useState<string | null>(null)
@@ -204,11 +205,12 @@ export function EpisodeWorkspace() {
       // Sync local state from episode
       setRawContent(detail.rawContent ?? '')
       setScriptContent(detail.scriptContent ?? '')
-      // Fetch characters & scenes from drama
+      // Fetch characters & scenes & props from drama
       if (selectedDramaId) {
         const dramaDetail = await api.dramas.get(selectedDramaId)
         setCharacters(dramaDetail.characters ?? [])
         setScenes(dramaDetail.scenes ?? [])
+        setProps(dramaDetail.props ?? [])
       }
       setStoryboards(detail.storyboards ?? [])
     } catch (err) {
@@ -496,7 +498,7 @@ export function EpisodeWorkspace() {
         'extractor',
         selectedEpisodeId,
         selectedDramaId,
-        '请从剧本中提取所有角色和场景信息。先使用read_script_for_extraction读取剧本，再使用read_existing_characters和read_existing_scenes查看已有数据，最后用save_characters和save_scenes保存提取结果（注意去重）.',
+        '请从剧本中提取所有角色、场景和道具信息。先使用read_script_for_extraction读取剧本，再使用read_existing_characters、read_existing_scenes和read_existing_props查看已有数据，最后用save_characters、save_scenes和save_props保存提取结果（注意去重）。道具只提取对剧情有推动作用的关键道具。',
         { model: workspaceModels.llm || undefined }
       )
       // Check if agent reported an error
@@ -506,7 +508,7 @@ export function EpisodeWorkspace() {
         return
       }
       await fetchEpisode()
-      showResultDialog('success', '角色与场景提取完成', 'AI已从剧本中提取角色和场景信息，结果已自动保存。')
+      showResultDialog('success', '角色、场景与道具提取完成', 'AI已从剧本中提取角色、场景和道具信息，结果已自动保存。')
     } catch (err) {
       toast({ title: '提取失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -1587,6 +1589,7 @@ export function EpisodeWorkspace() {
             <ExtractPanel
               characters={characters}
               scenes={scenes}
+              props={props}
               aiLoading={aiLoading}
               isExtracting={agentExec.isRunning('extractor')}
               episode={episode}
@@ -1594,6 +1597,16 @@ export function EpisodeWorkspace() {
               copiedField={copiedField}
               handleExtract={handleExtract}
               handleCopy={handleCopy}
+              onUpdateProp={async (id, field, value) => {
+                try {
+                  await api.props.update(id, { [field]: value })
+                  setProps((prev) =>
+                    prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+                  )
+                } catch (err) {
+                  toast({ title: '更新道具失败', description: String(err), variant: 'destructive' })
+                }
+              }}
             />
           )
         case 3: // voice

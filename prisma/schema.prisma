@@ -43,6 +43,7 @@ model Drama {
   episodes   Episode[]
   characters Character[]
   scenes     Scene[]
+  props      Prop[]
   generationCosts GenerationCost[]
 }
 
@@ -269,6 +270,23 @@ model VideoGeneration {
   costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 5s standard video)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// ============ Prop (道具) ============
+model Prop {
+  id          String   @id @default(cuid())
+  dramaId     String
+  name        String
+  category    String   @default("other")  // 日常/武器/交通/装饰/信物/科技/其他
+  description String   @default("")
+  imagePrompt String?                      // AI绘图英文提示词
+  imageUrl    String?                      // 道具图片
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+
+  @@unique([dramaId, name])
 }
 
 // ============ Generation Cost Tracking ============

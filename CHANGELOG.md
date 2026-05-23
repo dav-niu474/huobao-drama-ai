@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-23
+
+### Added
+- 道具(Prop)数据模型 — Prisma Prop模型 + 道具CRUD API + 提取面板道具列
+- 道具AI自动提取 — extractor Agent新增save_props/read_existing_props工具
+- 道具提示词生成 — 提取时自动生成英文imagePrompt
+- 创建项目支持道具 — create-from-script API接收props并批量入库
+- 通用文件上传API — 修复/api/upload路由缺失导致上传按钮404
+
+### Fixed
+- 修复全平台"上传图片/视频/音频"按钮404错误（缺少/api/upload路由）
+
 ## [0.6.0] - 2026-05-19
 
 ### Added

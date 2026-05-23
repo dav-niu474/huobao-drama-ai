@@ -5,6 +5,7 @@ import type {
   EpisodeDetail,
   Character,
   Scene,
+  Prop,
   Storyboard,
 } from './store'
 
@@ -300,6 +301,33 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+      }),
+  },
+
+  // ---- Props ----
+  props: {
+    list: (dramaId: string) =>
+      request<{ props: Prop[] }>(`/api/dramas/${dramaId}/props`).then(
+        (r) => r.props
+      ),
+
+    create: (dramaId: string, data: Partial<Prop>) =>
+      request<Prop>(`/api/dramas/${dramaId}/props`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (propId: string, data: Partial<Prop>) =>
+      request<Prop>(`/api/props/${propId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (propId: string) =>
+      fetch(`/api/props/${propId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete prop failed: ${r.status}`)
       }),
   },
 
@@ -946,6 +974,7 @@ export const api = {
     episodes: Array<{ title: string; rawContent: string }>
     characters?: Array<{ name: string; role?: string; gender?: string; description?: string }>
     scenes?: Array<{ location: string; timeOfDay?: string; description?: string }>
+    props?: Array<{ name: string; category?: string; description?: string }>
     autoStartPipeline?: boolean
   }) =>
     request<{
@@ -953,6 +982,7 @@ export const api = {
       episodes: Episode[]
       characters: Character[]
       scenes: Scene[]
+      props: Prop[]
       pipelineStarted: boolean
     }>('/api/dramas/create-from-script', {
       method: 'POST',

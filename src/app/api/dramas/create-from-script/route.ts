@@ -35,6 +35,12 @@ interface SceneInput {
   description?: string
 }
 
+interface PropInput {
+  name: string
+  category?: string
+  description?: string
+}
+
 interface CreateFromScriptBody {
   title: string
   genre: string
@@ -42,6 +48,7 @@ interface CreateFromScriptBody {
   episodes: EpisodeInput[]
   characters?: CharacterInput[]
   scenes?: SceneInput[]
+  props?: PropInput[]
   autoStartPipeline?: boolean
 }
 
@@ -68,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: CreateFromScriptBody = await request.json()
-    const { title, genre, style, episodes, characters, scenes, autoStartPipeline } = body
+    const { title, genre, style, episodes, characters, scenes, props, autoStartPipeline } = body
 
     // Validate required fields
     if (!title) {
@@ -100,7 +107,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[create-from-script] Creating drama "${title}" with ${episodes.length} episodes, ${characters?.length || 0} characters, ${scenes?.length || 0} scenes`)
+    console.log(`[create-from-script] Creating drama "${title}" with ${episodes.length} episodes, ${characters?.length || 0} characters, ${scenes?.length || 0} scenes, ${props?.length || 0} props`)
 
     // Create Drama + Episodes + Characters + Scenes in a transaction
     // Use 30s timeout (default is 5s which is too short for multiple writes)
@@ -176,7 +183,25 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        return { drama, episodes: createdEpisodes, characters: createdCharacters, scenes: createdScenes }
+        // 5. Create Props (if provided) — use createMany for batch
+        let createdProps: any[] = []
+        if (props && Array.isArray(props) && props.length > 0) {
+          const validProps = props.filter(p => p.name)
+          if (validProps.length > 0) {
+            const propData = validProps.map(prop => ({
+              dramaId: drama.id,
+              name: prop.name,
+              category: prop.category || 'other',
+              description: prop.description || '',
+            }))
+            await tx.prop.createMany({ data: propData })
+            createdProps = await tx.prop.findMany({
+              where: { dramaId: drama.id },
+            })
+          }
+        }
+
+        return { drama, episodes: createdEpisodes, characters: createdCharacters, scenes: createdScenes, props: createdProps }
       },
       {
         maxWait: 10000,   // max time to wait for transaction to start (10s)
@@ -200,6 +225,7 @@ export async function POST(request: NextRequest) {
         episodes: result.episodes,
         characters: result.characters,
         scenes: result.scenes,
+        props: result.props,
         pipelineStarted,
       },
       { status: 201 }

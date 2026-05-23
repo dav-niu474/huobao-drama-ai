@@ -1,4 +1,4 @@
-import type { EpisodeDetail, Character, Scene, Storyboard } from '@/lib/store'
+import type { EpisodeDetail, Character, Scene, Prop, Storyboard } from '@/lib/store'
 import type { UserPermissions } from '@/hooks/use-permissions'
 
 // ── Stage types (3-stage pipeline) ─────────────────────────────
@@ -167,6 +167,7 @@ export interface ScriptPanelProps {
 export interface ExtractPanelProps {
   characters: Character[]
   scenes: Scene[]
+  props: Prop[]
   aiLoading: boolean
   isExtracting: boolean
   episode: EpisodeDetail | null
@@ -176,6 +177,7 @@ export interface ExtractPanelProps {
   handleCopy: (text: string, fieldId: string) => Promise<void>
   onUpdateCharacter?: (id: string, field: string, value: string) => void
   onUpdateScene?: (id: string, field: string, value: string) => void
+  onUpdateProp?: (id: string, field: string, value: string) => void
 }
 
 export interface VoicePanelProps {

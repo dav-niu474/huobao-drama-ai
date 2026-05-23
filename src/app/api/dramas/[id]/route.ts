@@ -46,6 +46,7 @@ export async function GET(
         },
         characters: { orderBy: { createdAt: 'asc' } },
         scenes: { orderBy: { createdAt: 'asc' } },
+        props: { orderBy: { createdAt: 'asc' } },
       },
     });
 

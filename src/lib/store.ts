@@ -19,10 +19,23 @@ export interface Drama {
   _count?: { episodes: number; characters: number; scenes: number }
 }
 
+export interface Prop {
+  id: string
+  dramaId: string
+  name: string
+  category: string
+  description: string
+  imagePrompt: string | null
+  imageUrl: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DramaDetail extends Drama {
   episodes: Episode[]
   characters: Character[]
   scenes: Scene[]
+  props: Prop[]
 }
 
 export interface LockedConfig {

@@ -499,6 +499,87 @@ const saveScenes: ToolExecutor = async (params, context) => {
 }
 
 // ============================================================
+// Prop Tools
+// ============================================================
+
+const readExistingProps: ToolExecutor = async (_params, context) => {
+  const props = await db.prop.findMany({
+    where: { dramaId: context.dramaId },
+    orderBy: { createdAt: 'asc' },
+  })
+  return props.map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    description: p.description,
+    imagePrompt: p.imagePrompt,
+  }))
+}
+
+const saveProps: ToolExecutor = async (params, context) => {
+  const props = params.props as Array<{
+    name: string
+    category?: string
+    description?: string
+    imagePrompt?: string
+  }>
+
+  if (!Array.isArray(props)) {
+    throw new Error('props must be an array')
+  }
+
+  // Get existing props for dedup
+  const existing = await db.prop.findMany({
+    where: { dramaId: context.dramaId },
+  })
+
+  const results: Array<{ name: string; action: string }> = []
+
+  for (const prop of props) {
+    // Check for existing prop with same name (case-insensitive)
+    const existingProp = existing.find(
+      (e) => e.name.toLowerCase() === prop.name.toLowerCase()
+    )
+
+    if (existingProp) {
+      // Merge: update empty fields with new data
+      const updateData: Record<string, string> = {}
+      if (!existingProp.category && prop.category) updateData.category = prop.category
+      if (!existingProp.description && prop.description) updateData.description = prop.description
+      if (!existingProp.imagePrompt && prop.imagePrompt) updateData.imagePrompt = prop.imagePrompt
+      // Also update if new description is richer
+      if (prop.description && prop.description.length > existingProp.description.length) {
+        updateData.description = prop.description
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await db.prop.update({
+          where: { id: existingProp.id },
+          data: updateData,
+        })
+        results.push({ name: prop.name, action: 'merged' })
+      } else {
+        results.push({ name: prop.name, action: 'no_change' })
+      }
+    } else {
+      // Create new prop
+      await db.prop.create({
+        data: {
+          dramaId: context.dramaId,
+          name: prop.name,
+          category: prop.category || 'other',
+          description: prop.description || '',
+          imagePrompt: prop.imagePrompt || null,
+        },
+      })
+      results.push({ name: prop.name, action: 'created' })
+    }
+  }
+
+  return { success: true, results }
+}
+
+// ============================================================
 // Storyboard Breaker Tools
 // ============================================================
 
@@ -1073,6 +1154,8 @@ export const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
   read_existing_scenes: readExistingScenes,
   save_characters: saveCharacters,
   save_scenes: saveScenes,
+  read_existing_props: readExistingProps,
+  save_props: saveProps,
 
   // Storyboard Breaker
   read_storyboard_context: readStoryboardContext,
@@ -1127,6 +1210,8 @@ const AGENT_TOOL_NAMES: Record<string, Record<string, string>> = {
     read_existing_scenes: 'read_existing_scenes',
     save_characters: 'save_characters',
     save_scenes: 'save_scenes',
+    read_existing_props: 'read_existing_props',
+    save_props: 'save_props',
   },
   storyboard_breaker: {
     read_storyboard_context: 'read_storyboard_context',
