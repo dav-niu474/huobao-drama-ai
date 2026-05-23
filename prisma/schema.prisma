@@ -41,11 +41,14 @@ model Drama {
   updatedAt           DateTime @updatedAt
 
   user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  episodes   Episode[]
-  characters Character[]
-  scenes     Scene[]
-  props      Prop[]
-  generationCosts GenerationCost[]
+  episodes         Episode[]
+  characters       Character[]
+  scenes           Scene[]
+  props            Prop[]
+  generationCosts  GenerationCost[]
+  imageGenerations ImageGeneration[]
+  videoGenerations VideoGeneration[]
+  videoMerges      VideoMerge[]
 }
 
 // ============ Episode ============
@@ -204,6 +207,8 @@ model ImageGeneration {
   costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 1 standard image)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }
 
 // ============ AI Provider Configuration ============
@@ -277,6 +282,8 @@ model VideoGeneration {
   costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 5s standard video)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  drama           Drama?   @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }
 
 // ============ Prop (道具) ============
@@ -313,7 +320,7 @@ model GenerationCost {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  drama       Drama    @relation(fields: [dramaId], references: [id])
+  drama       Drama    @relation(fields: [dramaId], references: [id], onDelete: Cascade)
 }
 
 // ============ Global Asset Library ============
@@ -351,4 +358,6 @@ model VideoMerge {
   errorMsg    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }

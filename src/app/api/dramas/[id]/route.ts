@@ -109,7 +109,7 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/dramas/[id] - Delete drama
+// DELETE /api/dramas/[id] - Delete drama and all related records
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -125,8 +125,79 @@ export async function DELETE(
     if (access.notFound) return NextResponse.json({ error: 'Drama not found' }, { status: 404 });
     if (access.forbidden) return NextResponse.json({ error: access.error }, { status: 403 });
 
-    await db.drama.delete({
-      where: { id },
+    // Use a transaction to safely delete drama and all related records
+    await db.$transaction(async (tx) => {
+      // 1. Get all episode IDs for this drama
+      const episodes = await tx.episode.findMany({
+        where: { dramaId: id },
+        select: { id: true },
+      });
+      const episodeIds = episodes.map(e => e.id);
+
+      // 2. Get all character IDs for this drama
+      const characters = await tx.character.findMany({
+        where: { dramaId: id },
+        select: { id: true },
+      });
+      const characterIds = characters.map(c => c.id);
+
+      // 3. Get all scene IDs for this drama
+      const scenes = await tx.scene.findMany({
+        where: { dramaId: id },
+        select: { id: true },
+      });
+      const sceneIds = scenes.map(s => s.id);
+
+      // 4. Delete storyboards (under episodes)
+      if (episodeIds.length > 0) {
+        await tx.storyboard.deleteMany({ where: { episodeId: { in: episodeIds } } });
+      }
+
+      // 5. Delete character appearances
+      if (characterIds.length > 0) {
+        await tx.characterAppearance.deleteMany({ where: { characterId: { in: characterIds } } });
+      }
+
+      // 6. Delete scene images
+      if (sceneIds.length > 0) {
+        await tx.sceneImage.deleteMany({ where: { sceneId: { in: sceneIds } } });
+      }
+
+      // 7. Delete episodes
+      await tx.episode.deleteMany({ where: { dramaId: id } });
+
+      // 8. Delete characters
+      await tx.character.deleteMany({ where: { dramaId: id } });
+
+      // 9. Delete scenes
+      await tx.scene.deleteMany({ where: { dramaId: id } });
+
+      // 10. Delete props
+      await tx.prop.deleteMany({ where: { dramaId: id } });
+
+      // 11. Delete generation costs
+      await tx.generationCost.deleteMany({ where: { dramaId: id } });
+
+      // 12. Nullify references in ImageGeneration
+      await tx.imageGeneration.updateMany({
+        where: { dramaId: id },
+        data: { dramaId: null },
+      });
+
+      // 13. Nullify references in VideoGeneration
+      await tx.videoGeneration.updateMany({
+        where: { dramaId: id },
+        data: { dramaId: null },
+      });
+
+      // 14. Nullify references in VideoMerge
+      await tx.videoMerge.updateMany({
+        where: { dramaId: id },
+        data: { dramaId: null },
+      });
+
+      // 15. Finally delete the drama itself
+      await tx.drama.delete({ where: { id } });
     });
 
     return NextResponse.json({ success: true });
