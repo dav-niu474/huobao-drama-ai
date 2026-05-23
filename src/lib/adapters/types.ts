@@ -12,11 +12,23 @@ export interface ProviderRequest {
   body: unknown
 }
 
+/** Pre-fetched reference image data for providers that need base64 inline data */
+export interface ReferenceImageData {
+  base64: string
+  mimeType: string
+}
+
 /** Image generation adapter interface */
 export interface ImageProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
+    params: {
+      prompt: string
+      size?: string
+      negativePrompt?: string
+      referenceImages?: string[]
+      referenceImagesData?: ReferenceImageData[]
+    }
   ): ProviderRequest
 
   parseGenerateResponse(result: unknown): {

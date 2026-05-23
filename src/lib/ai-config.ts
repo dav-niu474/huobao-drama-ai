@@ -16,6 +16,50 @@ export { PROVIDER_PRESETS } from '@/lib/provider-presets'
 import { PROVIDER_PRESETS, type AiCategory, type ProviderPreset } from '@/lib/provider-presets'
 
 // ============================================================
+// Reference Image Pre-fetching (for providers needing base64 inline data)
+// ============================================================
+
+/**
+ * Fetch reference image URLs and convert them to base64 data.
+ * Handles data: URLs, HTTP URLs, and internal /api/files/ paths.
+ * Used by adapters like Gemini that need base64 inlineData in the request.
+ */
+async function fetchReferenceImagesAsBase64(
+  urls: string[]
+): Promise<Array<{ base64: string; mimeType: string }>> {
+  const results: Array<{ base64: string; mimeType: string }> = []
+
+  for (const url of urls.slice(0, 3)) { // Limit to 3 reference images max
+    try {
+      if (url.startsWith('data:')) {
+        // Data URL: extract base64 and mime type directly
+        const match = url.match(/^data:(image\/[^;]+);base64,(.+)$/)
+        if (match) {
+          results.push({ base64: match[2], mimeType: match[1] })
+        }
+      } else {
+        // HTTP URL or /api/files/ path — fetch and convert
+        const fetchUrl = url.startsWith('/api/files/')
+          ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${url}`
+          : url
+        const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(10000) })
+        if (!res.ok) continue
+        const contentType = res.headers.get('content-type') || 'image/png'
+        const buffer = Buffer.from(await res.arrayBuffer())
+        results.push({
+          base64: buffer.toString('base64'),
+          mimeType: contentType.split(';')[0],
+        })
+      }
+    } catch (err) {
+      console.warn('Failed to fetch reference image:', url, err)
+    }
+  }
+
+  return results
+}
+
+// ============================================================
 // DB-backed provider config
 // ============================================================
 
@@ -489,7 +533,19 @@ export const aiClient = {
     const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
     const size = options?.size ?? '1024x1024'
 
-    const req = adapter.buildGenerateRequest(config, { prompt, size, negativePrompt, referenceImages: options?.referenceImages })
+    // Pre-fetch reference images as base64 for providers that need inline data (e.g., Gemini)
+    let referenceImagesData: Array<{ base64: string; mimeType: string }> | undefined
+    if (options?.referenceImages?.length && provider.provider === 'gemini') {
+      referenceImagesData = await fetchReferenceImagesAsBase64(options.referenceImages)
+    }
+
+    const req = adapter.buildGenerateRequest(config, {
+      prompt,
+      size,
+      negativePrompt,
+      referenceImages: options?.referenceImages,
+      referenceImagesData,
+    })
     const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
 
     if (!res.ok) {

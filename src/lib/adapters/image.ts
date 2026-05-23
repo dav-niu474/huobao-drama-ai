@@ -4,7 +4,7 @@
 // OpenAI/Chatfire, Gemini, MiniMax, VolcEngine, Ali
 // ============================================================
 
-import type { ImageProviderAdapter, ProviderRequest } from './types'
+import type { ImageProviderAdapter, ProviderRequest, ReferenceImageData } from './types'
 
 import { joinProviderUrl } from './url'
 
@@ -59,7 +59,7 @@ function parseSize(size?: string): { width: number; height: number } {
 export class OpenAIImageAdapter implements ImageProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
+    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[]; referenceImagesData?: ReferenceImageData[] }
   ): ProviderRequest {
     const url = joinProviderUrl(config.baseUrl, '/v1', '/images/generations')
 
@@ -69,6 +69,12 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
       size: params.size || '1024x1024',
       n: 1,
       response_format: 'url',
+    }
+
+    // OpenAI GPT-Image-1 supports reference images via the image field
+    // Also works with Chatfire and other OpenAI-compatible providers
+    if (params.referenceImages?.length) {
+      body.image = params.referenceImages[0]
     }
 
     return {
@@ -153,7 +159,7 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
 export class GeminiImageAdapter implements ImageProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
+    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[]; referenceImagesData?: ReferenceImageData[] }
   ): ProviderRequest {
     const model = config.model || 'gemini-2.0-flash-exp-image-generation'
     const base = config.baseUrl.replace(/\/$/, '')
@@ -163,8 +169,23 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
 
     const aspectRatio = sizeToAspectRatio(params.size)
 
+    // Build parts array — text prompt + optional reference images as inlineData
+    const parts: Array<Record<string, unknown>> = [{ text: params.prompt }]
+
+    // Gemini supports reference images via inlineData parts in the contents array
+    if (params.referenceImagesData?.length) {
+      for (const refData of params.referenceImagesData) {
+        parts.push({
+          inlineData: {
+            mimeType: refData.mimeType,
+            data: refData.base64,
+          },
+        })
+      }
+    }
+
     const body: Record<string, unknown> = {
-      contents: [{ parts: [{ text: params.prompt }] }],
+      contents: [{ parts }],
       generationConfig: {
         responseModalities: ['IMAGE', 'TEXT'],
         imageConfig: {
@@ -237,7 +258,7 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
 export class MiniMaxImageAdapter implements ImageProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
+    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[]; referenceImagesData?: ReferenceImageData[] }
   ): ProviderRequest {
     const url = joinProviderUrl(config.baseUrl, '/v1', '/image_generation')
 
@@ -341,7 +362,7 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
 export class VolcEngineImageAdapter implements ImageProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
+    params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[]; referenceImagesData?: ReferenceImageData[] }
   ): ProviderRequest {
     const url = joinProviderUrl(config.baseUrl, '/api/v3', '/images/generations')
 
@@ -353,6 +374,12 @@ export class VolcEngineImageAdapter implements ImageProviderAdapter {
       prompt: params.prompt,
       width,
       height,
+    }
+
+    // VolcEngine Seedream supports reference image via ref_img parameter
+    if (params.referenceImages?.length) {
+      body.ref_img = params.referenceImages[0]
+      body.ref_img_weight = 0.5  // Balance between reference and prompt
     }
 
     return {
@@ -449,13 +476,23 @@ export class AliImageAdapter implements ImageProviderAdapter {
       aliSize = '1280*1280'
     }
 
+    // Build content parts — text prompt + optional reference image
+    const contentParts: Array<Record<string, unknown>> = [{ text: params.prompt }]
+
+    // Ali Wanxiang supports reference image via image field in content
+    if (params.referenceImages?.length) {
+      contentParts.push({
+        image: params.referenceImages[0],
+      })
+    }
+
     const body = {
       model,
       input: {
         messages: [
           {
             role: 'user',
-            content: [{ text: params.prompt }],
+            content: contentParts,
           },
         ],
       },

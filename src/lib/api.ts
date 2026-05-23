@@ -629,6 +629,56 @@ export const api = {
         body: JSON.stringify({ category, taskId }),
       }),
 
+    // Lock character style for consistency
+    lockCharacterStyle: (characterId: string, appearanceIndex?: number) =>
+      request<{
+        success: boolean
+        character: {
+          id: string
+          name: string
+          styleLock: boolean
+          lockedReferenceImage: string | null
+          visualFingerprint: Record<string, string>
+        }
+      }>('/api/ai/lock-character-style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId, appearanceIndex }),
+      }),
+
+    // Unlock character style
+    unlockCharacterStyle: (characterId: string) =>
+      request<{
+        success: boolean
+        character: { id: string; name: string; styleLock: boolean }
+      }>('/api/ai/lock-character-style', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId }),
+      }),
+
+    // Lock scene style for consistency
+    lockSceneStyle: (sceneId: string) =>
+      request<{
+        success: boolean
+        scene: { id: string; location: string; styleLock: boolean; lockedReferenceImage: string | null }
+      }>('/api/ai/lock-scene-style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sceneId }),
+      }),
+
+    // Unlock scene style
+    unlockSceneStyle: (sceneId: string) =>
+      request<{
+        success: boolean
+        scene: { id: string; location: string; styleLock: boolean }
+      }>('/api/ai/lock-scene-style', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sceneId }),
+      }),
+
     testConnection: (category?: AiCategory, model?: string, providerOpts?: {
       provider?: string
       apiKey?: string

@@ -14,6 +14,7 @@ export interface Drama {
   totalEpisodes: number
   status: string
   defaultLockedConfig: string | null
+  styleTemplate: string
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }
@@ -83,6 +84,10 @@ export interface Character {
   imagePrompt: string | null
   imageUrl: string | null
   assetId: string | null
+  // Consistency fields
+  styleLock: boolean
+  lockedReferenceImage: string | null
+  visualFingerprint: string  // JSON string
   createdAt: string
   updatedAt: string
 }
@@ -96,6 +101,9 @@ export interface Scene {
   prompt: string
   imageUrl: string | null
   assetId: string | null
+  // Consistency fields
+  styleLock: boolean
+  lockedReferenceImage: string | null
   createdAt: string
   updatedAt: string
 }

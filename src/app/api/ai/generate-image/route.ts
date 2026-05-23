@@ -5,6 +5,7 @@ import { getActiveProviderForUser } from '@/lib/ai-config'
 import {
   collectStoryboardReferences,
   buildEnhancedPrompt,
+  buildConsistencyPrompt,
   collectCharacterReferences,
   collectSceneReferences,
 } from '@/lib/reference-collector'
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Resolve dramaId from storyboard/character/scene
+    let dramaStyleTemplate = ''
     try {
       if (storyboardId) {
         const { db } = await import('@/lib/db')
@@ -75,6 +77,12 @@ export async function POST(request: NextRequest) {
         const { db } = await import('@/lib/db')
         const sc = await db.scene.findUnique({ where: { id: sceneId }, select: { dramaId: true } })
         if (sc) dramaId = sc.dramaId
+      }
+      // Fetch drama-level style template for consistency
+      if (dramaId) {
+        const { db } = await import('@/lib/db')
+        const drama = await db.drama.findUnique({ where: { id: dramaId }, select: { styleTemplate: true } })
+        dramaStyleTemplate = drama?.styleTemplate || ''
       }
     } catch {
       // non-critical
@@ -93,9 +101,12 @@ export async function POST(request: NextRequest) {
       )
       referenceImages = refs.allImageUrls
 
-      // Build enhanced prompt with text descriptions from references
-      // (helps even for providers that support reference images natively)
-      if (storyboardId || atmosphere) {
+      // Use buildConsistencyPrompt when style locks are active (stronger consistency),
+      // otherwise fall back to buildEnhancedPrompt (lighter touch)
+      const hasStyleLocks = refs.characterImages.some(c => c.styleLock) || refs.sceneImages.some(s => s.styleLock)
+      if (hasStyleLocks) {
+        enhancedPrompt = buildConsistencyPrompt(prompt, refs, dramaStyleTemplate)
+      } else if (storyboardId || atmosphere) {
         enhancedPrompt = buildEnhancedPrompt(prompt, refs)
       }
     } else if (characterId) {

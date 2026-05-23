@@ -16,6 +16,9 @@ import {
   Package,
   BookmarkPlus,
   Loader2,
+  Lock,
+  Unlock,
+  Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -185,6 +188,7 @@ export function ExtractPanel({
 }: ExtractPanelProps) {
   const { toast } = useToast()
   const [savingToLibrary, setSavingToLibrary] = useState<string | null>(null)
+  const [lockingStyle, setLockingStyle] = useState<string | null>(null)
 
   // Save entity to asset library
   const handleSaveToLibrary = async (type: 'character' | 'scene' | 'prop', id: string, name: string) => {
@@ -202,6 +206,55 @@ export function ExtractPanel({
       toast({ title: '保存失败', description: err.message, variant: 'destructive' })
     } finally {
       setSavingToLibrary(null)
+    }
+  }
+
+  // Toggle character style lock
+  const handleToggleCharacterStyleLock = async (char: any) => {
+    setLockingStyle(char.id)
+    try {
+      if (char.styleLock) {
+        await api.ai.unlockCharacterStyle(char.id)
+        toast({ title: '风格已解锁', description: `「${char.name}」的形象风格不再锁定` })
+      } else {
+        const result = await api.ai.lockCharacterStyle(char.id)
+        toast({
+          title: '风格已锁定',
+          description: `「${char.name}」的形象已锁定，后续生成将保持一致性`,
+        })
+      }
+      // Refresh data if callback available
+      if (onUpdateCharacter) {
+        onUpdateCharacter(char.id, 'styleLock', String(!char.styleLock))
+      }
+    } catch (err: any) {
+      toast({ title: '操作失败', description: err.message, variant: 'destructive' })
+    } finally {
+      setLockingStyle(null)
+    }
+  }
+
+  // Toggle scene style lock
+  const handleToggleSceneStyleLock = async (scene: any) => {
+    setLockingStyle(scene.id)
+    try {
+      if (scene.styleLock) {
+        await api.ai.unlockSceneStyle(scene.id)
+        toast({ title: '场景风格已解锁', description: `「${scene.location}」的场景风格不再锁定` })
+      } else {
+        await api.ai.lockSceneStyle(scene.id)
+        toast({
+          title: '场景风格已锁定',
+          description: `「${scene.location}」的场景已锁定，后续生成将保持一致性`,
+        })
+      }
+      if (onUpdateScene) {
+        onUpdateScene(scene.id, 'styleLock', String(!scene.styleLock))
+      }
+    } catch (err: any) {
+      toast({ title: '操作失败', description: err.message, variant: 'destructive' })
+    } finally {
+      setLockingStyle(null)
     }
   }
   // ── Empty state ──────────────────────────────────────────
@@ -288,7 +341,7 @@ export function ExtractPanel({
                 <Card key={char.id} className="border-border/50 py-0 gap-0">
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-2.5">
-                      {/* Name + badges row */}
+                      {/* Name + badges + style lock row */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm">{char.name}</span>
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
@@ -299,6 +352,23 @@ export function ExtractPanel({
                             {genderLabel(char.gender)}
                           </Badge>
                         )}
+                        {/* Style Lock Button */}
+                        <Button
+                          size="sm"
+                          variant={char.styleLock ? 'default' : 'ghost'}
+                          className={`size-6 p-0 ${char.styleLock ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'text-muted-foreground hover:text-amber-500'}`}
+                          disabled={lockingStyle === char.id}
+                          onClick={() => handleToggleCharacterStyleLock(char)}
+                          title={char.styleLock ? '解锁风格 — 角色形象将不再强制一致' : '锁定风格 — 后续生成将保持角色形象一致'}
+                        >
+                          {lockingStyle === char.id ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : char.styleLock ? (
+                            <Lock className="size-3" />
+                          ) : (
+                            <Unlock className="size-3" />
+                          )}
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -314,6 +384,29 @@ export function ExtractPanel({
                           )}
                         </Button>
                       </div>
+
+                      {/* Visual fingerprint summary when locked */}
+                      {char.styleLock && char.visualFingerprint && (() => {
+                        try {
+                          const fp = typeof char.visualFingerprint === 'string' ? JSON.parse(char.visualFingerprint) : char.visualFingerprint
+                          if (fp && Object.keys(fp).length > 0) {
+                            return (
+                              <div className="rounded-md bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 px-2.5 py-1.5">
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <Eye className="size-3 text-amber-600 dark:text-amber-400" />
+                                  <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300 uppercase tracking-wide">
+                                    视觉指纹
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-amber-800/80 dark:text-amber-400/70 leading-relaxed">
+                                  {fp.overall || [fp.hair, fp.eyes, fp.face, fp.clothing].filter(Boolean).join(' · ')}
+                                </p>
+                              </div>
+                            )
+                          }
+                        } catch {}
+                        return null
+                      })()}
 
                       {/* Appearance — with copy button prominently visible */}
                       {char.appearance && (
@@ -417,7 +510,7 @@ export function ExtractPanel({
                 <Card key={scene.id} className="border-border/50 py-0 gap-0">
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-2.5">
-                      {/* Location + timeOfDay row */}
+                      {/* Location + timeOfDay + style lock row */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm">{scene.location}</span>
                         {scene.timeOfDay && (
@@ -426,6 +519,23 @@ export function ExtractPanel({
                             {scene.timeOfDay}
                           </Badge>
                         )}
+                        {/* Style Lock Button */}
+                        <Button
+                          size="sm"
+                          variant={scene.styleLock ? 'default' : 'ghost'}
+                          className={`size-6 p-0 ${scene.styleLock ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'text-muted-foreground hover:text-amber-500'}`}
+                          disabled={lockingStyle === scene.id}
+                          onClick={() => handleToggleSceneStyleLock(scene)}
+                          title={scene.styleLock ? '解锁场景风格 — 场景将不再强制一致' : '锁定场景风格 — 后续生成将保持场景风格一致'}
+                        >
+                          {lockingStyle === scene.id ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : scene.styleLock ? (
+                            <Lock className="size-3" />
+                          ) : (
+                            <Unlock className="size-3" />
+                          )}
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"

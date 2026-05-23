@@ -37,6 +37,7 @@ model Drama {
   status        String   @default("draft")
   userId              String?                    // nullable for backward compat
   defaultLockedConfig String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
+  styleTemplate       String   @default("")     // Persistent style prefix for all generations (e.g., "cinematic, warm tones")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -94,6 +95,11 @@ model Character {
 
   assetId     String?               // Reference to Asset if derived from library
 
+  // --- Character Consistency Fields ---
+  styleLock            Boolean  @default(false)    // Lock appearance consistency
+  lockedReferenceImage String?                     // Canonical reference image URL for consistency
+  visualFingerprint    String   @default("{}")    // JSON: extracted visual features for consistency prompts
+
   drama       Drama                @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   appearances CharacterAppearance[]
   asset       Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
@@ -112,6 +118,10 @@ model Scene {
   updatedAt   DateTime @updatedAt
 
   assetId String?                 // Reference to Asset if derived from library
+
+  // --- Scene Consistency Fields ---
+  styleLock            Boolean  @default(false)    // Lock scene style consistency
+  lockedReferenceImage String?                     // Canonical reference image URL for consistency
 
   drama  Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   images SceneImage[]
