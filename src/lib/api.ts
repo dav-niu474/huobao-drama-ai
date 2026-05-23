@@ -128,8 +128,15 @@ export const api = {
       }),
 
     delete: (id: string) =>
-      fetch(`/api/dramas/${id}`, { method: 'DELETE' }).then((r) => {
-        if (!r.ok) throw new Error(`Delete drama failed: ${r.status}`)
+      fetch(`/api/dramas/${id}`, { method: 'DELETE' }).then(async (r) => {
+        if (!r.ok) {
+          let detail = `Delete drama failed: ${r.status}`
+          try {
+            const body = await r.json()
+            if (body.error) detail = body.error
+          } catch {}
+          throw new Error(detail)
+        }
       }),
 
     getCostStats: (id: string) =>

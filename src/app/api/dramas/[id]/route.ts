@@ -126,6 +126,8 @@ export async function DELETE(
     if (access.forbidden) return NextResponse.json({ error: access.error }, { status: 403 });
 
     // Use a transaction to safely delete drama and all related records
+    // We do manual cascade instead of relying on onDelete because
+    // prisma db push may not always sync FK constraints on Vercel
     await db.$transaction(async (tx) => {
       // 1. Get all episode IDs for this drama
       const episodes = await tx.episode.findMany({
@@ -148,6 +150,8 @@ export async function DELETE(
       });
       const sceneIds = scenes.map(s => s.id);
 
+      // ── Delete leaf-level records first (depth-first) ──
+
       // 4. Delete storyboards (under episodes)
       if (episodeIds.length > 0) {
         await tx.storyboard.deleteMany({ where: { episodeId: { in: episodeIds } } });
@@ -163,46 +167,59 @@ export async function DELETE(
         await tx.sceneImage.deleteMany({ where: { sceneId: { in: sceneIds } } });
       }
 
-      // 7. Delete episodes
+      // 7. Delete video merges (reference episodes of this drama)
+      if (episodeIds.length > 0) {
+        await tx.videoMerge.deleteMany({ where: { episodeId: { in: episodeIds } } });
+      }
+
+      // ── Delete mid-level records ──
+
+      // 8. Delete episodes
       await tx.episode.deleteMany({ where: { dramaId: id } });
 
-      // 8. Delete characters
+      // 9. Delete characters
       await tx.character.deleteMany({ where: { dramaId: id } });
 
-      // 9. Delete scenes
+      // 10. Delete scenes
       await tx.scene.deleteMany({ where: { dramaId: id } });
 
-      // 10. Delete props
+      // 11. Delete props
       await tx.prop.deleteMany({ where: { dramaId: id } });
 
-      // 11. Delete generation costs
+      // ── Delete/nullify top-level references ──
+
+      // 12. Delete generation costs
       await tx.generationCost.deleteMany({ where: { dramaId: id } });
 
-      // 12. Nullify references in ImageGeneration
-      await tx.imageGeneration.updateMany({
-        where: { dramaId: id },
-        data: { dramaId: null },
-      });
+      // 13. Nullify references in ImageGeneration (keep records for analytics)
+      try {
+        await tx.imageGeneration.updateMany({
+          where: { dramaId: id },
+          data: { dramaId: null },
+        });
+      } catch {
+        // Column might not exist in older DB — safe to ignore
+      }
 
-      // 13. Nullify references in VideoGeneration
-      await tx.videoGeneration.updateMany({
-        where: { dramaId: id },
-        data: { dramaId: null },
-      });
-
-      // 14. Nullify references in VideoMerge
-      await tx.videoMerge.updateMany({
-        where: { dramaId: id },
-        data: { dramaId: null },
-      });
+      // 14. Nullify references in VideoGeneration
+      try {
+        await tx.videoGeneration.updateMany({
+          where: { dramaId: id },
+          data: { dramaId: null },
+        });
+      } catch {
+        // Column might not exist in older DB — safe to ignore
+      }
 
       // 15. Finally delete the drama itself
       await tx.drama.delete({ where: { id } });
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to delete drama:', error);
-    return NextResponse.json({ error: 'Failed to delete drama' }, { status: 500 });
+    // Return more detailed error info for debugging
+    const detail = error?.meta?.cause || error?.message || String(error);
+    return NextResponse.json({ error: `Delete failed: ${detail}` }, { status: 500 });
   }
 }
