@@ -22,6 +22,7 @@ model User {
 
   dramas Drama[]
   userProviders UserProvider[]
+  assets Asset[]
 }
 
 // ============ Drama Project ============
@@ -88,8 +89,11 @@ model Character {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  assetId     String?               // Reference to Asset if derived from library
+
   drama       Drama                @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   appearances CharacterAppearance[]
+  asset       Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
 }
 
 // ============ Scene ============
@@ -104,8 +108,11 @@ model Scene {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  assetId String?                 // Reference to Asset if derived from library
+
   drama  Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   images SceneImage[]
+  asset  Asset?      @relation(fields: [assetId], references: [id], onDelete: SetNull)
 }
 
 // ============ Storyboard (Shot) ============
@@ -284,7 +291,10 @@ model Prop {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  assetId String?                     // Reference to Asset if derived from library
+
   drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@unique([dramaId, name])
 }
@@ -304,6 +314,30 @@ model GenerationCost {
   updatedAt   DateTime @updatedAt
 
   drama       Drama    @relation(fields: [dramaId], references: [id])
+}
+
+// ============ Global Asset Library ============
+model Asset {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   // "character" | "scene" | "prop"
+  subcategory String?  // Character.role / Prop.category / Scene.timeOfDay
+  tags        String   @default("[]")  // JSON array of tags
+  thumbnail   String?  // Preview image URL
+  userId      String?
+  isPublic    Boolean  @default(true)
+  usageCount  Int      @default(0)
+  description String   @default("")
+  imagePrompt String?
+  imageUrls   String   @default("[]")  // JSON array of image URLs
+  data        String   @default("{}")  // Category-specific fields as JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  characters Character[]
+  scenes     Scene[]
+  props      Prop[]
 }
 
 // ============ Video Merge Tracking ============

@@ -17,7 +17,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
@@ -174,6 +174,14 @@ export function ProjectDetailView() {
 
   // Cost stats dialog
   const [costStatsOpen, setCostStatsOpen] = useState(false)
+
+  // Import from library dialog
+  const [importOpen, setImportOpen] = useState(false)
+  const [importAssets, setImportAssets] = useState<any[]>([])
+  const [importLoading, setImportLoading] = useState(false)
+  const [importCategory, setImportCategory] = useState<string>('all')
+  const [importSearch, setImportSearch] = useState('')
+  const [applyingAssetId, setApplyingAssetId] = useState<string | null>(null)
 
   // Fetch drama detail
   const fetchDrama = useCallback(async () => {
@@ -408,6 +416,15 @@ export function ProjectDetailView() {
                 >
                   <Settings2 className="size-3.5" />
                   <span className="hidden sm:inline">AI锁定</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setImportOpen(true)}
+                  className="text-xs gap-1"
+                >
+                  <Library className="size-3.5" />
+                  <span className="hidden sm:inline">从资产库导入</span>
                 </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
                   <Plus className="size-4" />
@@ -657,6 +674,157 @@ export function ProjectDetailView() {
             </Button>
             <Button onClick={handleSaveDefaultLockConfig} disabled={savingLockConfig}>
               {savingLockConfig ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Import from Library Dialog ────────────────────── */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Library className="size-5 text-primary" />
+              从资产库导入
+            </DialogTitle>
+            <DialogDescription>
+              选择资产导入到当前项目「{drama?.title}」
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {/* Filters */}
+            <div className="flex items-center gap-2">
+              <Select value={importCategory} onValueChange={setImportCategory}>
+                <SelectTrigger className="w-28 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="character">角色</SelectItem>
+                  <SelectItem value="scene">场景</SelectItem>
+                  <SelectItem value="prop">道具</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="搜索资产..."
+                value={importSearch}
+                onChange={(e) => setImportSearch(e.target.value)}
+                className="h-8 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setImportLoading(true)
+                    api.assets.list({
+                      category: importCategory !== 'all' ? importCategory : undefined,
+                      search: importSearch || undefined,
+                      limit: 50,
+                    }).then((res) => {
+                      setImportAssets(res.assets)
+                    }).finally(() => setImportLoading(false))
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => {
+                  setImportLoading(true)
+                  api.assets.list({
+                    category: importCategory !== 'all' ? importCategory : undefined,
+                    search: importSearch || undefined,
+                    limit: 50,
+                  }).then((res) => {
+                    setImportAssets(res.assets)
+                  }).finally(() => setImportLoading(false))
+                }}
+              >
+                搜索
+              </Button>
+            </div>
+
+            {/* Asset list */}
+            <div className="max-h-[50vh] overflow-y-auto space-y-2">
+              {importLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : importAssets.length === 0 ? (
+                <p className="text-center py-8 text-sm text-muted-foreground">
+                  暂无资产，请先在资产库中创建
+                </p>
+              ) : (
+                importAssets.map((asset) => (
+                  <div
+                    key={asset.id}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border/50 hover:border-primary/40 transition-colors"
+                  >
+                    {/* Thumbnail */}
+                    <div className="size-12 rounded-md overflow-hidden bg-muted/40 flex-shrink-0">
+                      {asset.thumbnail ? (
+                        <img src={asset.thumbnail} alt={asset.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          {asset.category === 'character' ? (
+                            <Users className="size-5 text-muted-foreground/40" />
+                          ) : asset.category === 'scene' ? (
+                            <MapPin className="size-5 text-muted-foreground/40" />
+                          ) : (
+                            <Package className="size-5 text-muted-foreground/40" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{asset.name}</span>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {asset.category === 'character' ? '角色' : asset.category === 'scene' ? '场景' : '道具'}
+                        </Badge>
+                      </div>
+                      {asset.description && (
+                        <p className="text-xs text-muted-foreground truncate">{asset.description}</p>
+                      )}
+                    </div>
+                    {/* Apply button */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 flex-shrink-0"
+                      disabled={applyingAssetId === asset.id}
+                      onClick={async () => {
+                        setApplyingAssetId(asset.id)
+                        try {
+                          const result = await api.assets.apply(asset.id, drama!.id)
+                          toast({
+                            title: '导入成功',
+                            description: `已将「${result.assetName}」添加到项目`,
+                          })
+                          fetchDrama()
+                        } catch (err: any) {
+                          toast({ title: '导入失败', description: err.message, variant: 'destructive' })
+                        } finally {
+                          setApplyingAssetId(null)
+                        }
+                      }}
+                    >
+                      {applyingAssetId === asset.id ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Download className="size-3" />
+                      )}
+                      导入
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>
+              关闭
             </Button>
           </DialogFooter>
         </DialogContent>

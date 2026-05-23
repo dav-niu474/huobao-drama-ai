@@ -27,6 +27,7 @@ export interface Prop {
   description: string
   imagePrompt: string | null
   imageUrl: string | null
+  assetId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -81,6 +82,7 @@ export interface Character {
   voiceId: string | null
   imagePrompt: string | null
   imageUrl: string | null
+  assetId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -93,6 +95,7 @@ export interface Scene {
   description: string
   prompt: string
   imageUrl: string | null
+  assetId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -130,7 +133,30 @@ export interface Storyboard {
 // View type for client-side navigation
 // ============================================================
 
-export type AppView = 'projects' | 'project-detail' | 'episode-workspace' | 'settings'
+// ============================================================
+// Asset Library types
+// ============================================================
+
+export interface Asset {
+  id: string
+  name: string
+  category: string // "character" | "scene" | "prop"
+  subcategory: string | null
+  tags: string // JSON array
+  thumbnail: string | null
+  userId: string | null
+  isPublic: boolean
+  usageCount: number
+  description: string
+  imagePrompt: string | null
+  imageUrls: string // JSON array
+  data: string // JSON
+  createdAt: string
+  updatedAt: string
+  user?: { id: string; name: string } | null
+}
+
+export type AppView = 'projects' | 'project-detail' | 'episode-workspace' | 'settings' | 'asset-library'
 
 // ============================================================
 // Store interface
@@ -154,6 +180,7 @@ interface AppStore {
   navigateToProject: (dramaId: string) => void
   navigateToEpisode: (dramaId: string, episodeId: string) => void
   navigateToSettings: () => void
+  navigateToAssetLibrary: () => void
 
   // Drama data cache
   dramas: Drama[]
@@ -231,6 +258,13 @@ export const useAppStore = create<AppStore>((set) => ({
     set({
       view: 'settings',
       selectedDramaId: null,
+      selectedEpisodeId: null,
+      episodeLockedConfig: null,
+    }),
+
+  navigateToAssetLibrary: () =>
+    set({
+      view: 'asset-library',
       selectedEpisodeId: null,
       episodeLockedConfig: null,
     }),

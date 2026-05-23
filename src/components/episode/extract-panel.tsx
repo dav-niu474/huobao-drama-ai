@@ -14,6 +14,8 @@ import {
   PencilLine,
   Info,
   Package,
+  BookmarkPlus,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -21,6 +23,8 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
 import { statusBadge } from './helpers'
+import { api } from '@/lib/api'
+import { useToast } from '@/hooks/use-toast'
 import type { ExtractPanelProps } from './types'
 
 // ── Inline editable field ────────────────────────────────────
@@ -179,6 +183,27 @@ export function ExtractPanel({
   onUpdateScene,
   onUpdateProp,
 }: ExtractPanelProps) {
+  const { toast } = useToast()
+  const [savingToLibrary, setSavingToLibrary] = useState<string | null>(null)
+
+  // Save entity to asset library
+  const handleSaveToLibrary = async (type: 'character' | 'scene' | 'prop', id: string, name: string) => {
+    const key = `${type}-${id}`
+    setSavingToLibrary(key)
+    try {
+      await api.assets.create({
+        name,
+        category: type,
+        sourceType: type,
+        sourceId: id,
+      })
+      toast({ title: '已保存到资产库', description: `「${name}」已添加为可复用模板` })
+    } catch (err: any) {
+      toast({ title: '保存失败', description: err.message, variant: 'destructive' })
+    } finally {
+      setSavingToLibrary(null)
+    }
+  }
   // ── Empty state ──────────────────────────────────────────
   if (characters.length === 0 && scenes.length === 0 && props.length === 0 && !isExtracting && !aiLoading) {
     return (
@@ -274,6 +299,20 @@ export function ExtractPanel({
                             {genderLabel(char.gender)}
                           </Badge>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="size-6 p-0 ml-auto text-muted-foreground hover:text-primary"
+                          disabled={savingToLibrary === `character-${char.id}`}
+                          onClick={() => handleSaveToLibrary('character', char.id, char.name)}
+                          title="保存到资产库"
+                        >
+                          {savingToLibrary === `character-${char.id}` ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <BookmarkPlus className="size-3" />
+                          )}
+                        </Button>
                       </div>
 
                       {/* Appearance — with copy button prominently visible */}
@@ -387,6 +426,20 @@ export function ExtractPanel({
                             {scene.timeOfDay}
                           </Badge>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="size-6 p-0 ml-auto text-muted-foreground hover:text-primary"
+                          disabled={savingToLibrary === `scene-${scene.id}`}
+                          onClick={() => handleSaveToLibrary('scene', scene.id, scene.location)}
+                          title="保存到资产库"
+                        >
+                          {savingToLibrary === `scene-${scene.id}` ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <BookmarkPlus className="size-3" />
+                          )}
+                        </Button>
                       </div>
 
                       {/* Description */}
@@ -460,6 +513,20 @@ export function ExtractPanel({
                             {prop.category}
                           </Badge>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="size-6 p-0 ml-auto text-muted-foreground hover:text-primary"
+                          disabled={savingToLibrary === `prop-${prop.id}`}
+                          onClick={() => handleSaveToLibrary('prop', prop.id, prop.name)}
+                          title="保存到资产库"
+                        >
+                          {savingToLibrary === `prop-${prop.id}` ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <BookmarkPlus className="size-3" />
+                          )}
+                        </Button>
                       </div>
 
                       {/* Description */}

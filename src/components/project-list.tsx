@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload } from 'lucide-react'
+import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ScriptUploadDialog } from '@/components/script-upload-dialog'
 
@@ -195,7 +195,7 @@ function ProjectCard({
 // ── main component ───────────────────────────────────────────
 
 export function ProjectListView() {
-  const { dramas, setDramas, navigateToProject, navigateToSettings, setLoading, loading } = useAppStore()
+  const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAssetLibrary, setLoading, loading } = useAppStore()
   const { toast } = useToast()
   const perms = usePermissions()
 
@@ -300,6 +300,9 @@ export function ProjectListView() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={navigateToAssetLibrary} title="资产库">
+              <Library className="size-4" />
+            </Button>
             <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
               <Settings className="size-4" />
             </Button>

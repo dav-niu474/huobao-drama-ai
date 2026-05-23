@@ -7,6 +7,7 @@ import type {
   Scene,
   Prop,
   Storyboard,
+  Asset,
 } from './store'
 
 // ============================================================
@@ -989,4 +990,86 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
+
+  // ---- Asset Library ----
+  assets: {
+    list: (params?: {
+      category?: string
+      search?: string
+      tag?: string
+      page?: number
+      limit?: number
+    }) => {
+      const qs = new URLSearchParams()
+      if (params?.category) qs.set('category', params.category)
+      if (params?.search) qs.set('search', params.search)
+      if (params?.tag) qs.set('tag', params.tag)
+      if (params?.page) qs.set('page', String(params.page))
+      if (params?.limit) qs.set('limit', String(params.limit))
+      const query = qs.toString()
+      return request<{
+        assets: Asset[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(`/api/assets${query ? `?${query}` : ''}`)
+    },
+
+    get: (id: string) =>
+      request<{ asset: Asset & { characters?: any[]; scenes?: any[]; props?: any[] } }>(`/api/assets/${id}`),
+
+    create: (data: {
+      name: string
+      category: string
+      subcategory?: string
+      tags?: string[]
+      thumbnail?: string
+      isPublic?: boolean
+      description?: string
+      imagePrompt?: string
+      imageUrls?: string[]
+      data?: Record<string, any>
+      sourceType?: string
+      sourceId?: string
+    }) =>
+      request<{ asset: Asset }>('/api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (id: string, data: {
+      name?: string
+      subcategory?: string
+      tags?: string[]
+      thumbnail?: string
+      isPublic?: boolean
+      description?: string
+      imagePrompt?: string
+      imageUrls?: string[]
+      data?: Record<string, any> | string
+    }) =>
+      request<{ asset: Asset }>(`/api/assets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: string) =>
+      fetch(`/api/assets/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete asset failed: ${r.status}`)
+      }),
+
+    apply: (assetId: string, dramaId: string) =>
+      request<{
+        result: any
+        assetName: string
+        assetCategory: string
+      }>(`/api/assets/${assetId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dramaId }),
+      }),
+  },
 }

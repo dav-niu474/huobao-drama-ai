@@ -8,6 +8,7 @@ import { ProjectListView } from '@/components/project-list'
 import { ProjectDetailView } from '@/components/project-detail'
 import { EpisodeWorkspace } from '@/components/episode-workspace'
 import { SettingsView } from '@/components/settings-view'
+import { AssetLibraryView } from '@/components/asset-library-view'
 import { Loader2 } from 'lucide-react'
 
 const pageVariants = {
@@ -39,6 +40,7 @@ function ViewRouter() {
         {view === 'project-detail' && <ProjectDetailView />}
         {view === 'episode-workspace' && <EpisodeWorkspace />}
         {view === 'settings' && <SettingsView />}
+        {view === 'asset-library' && <AssetLibraryView />}
       </motion.div>
     </AnimatePresence>
   )
