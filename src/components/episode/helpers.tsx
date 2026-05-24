@@ -1,4 +1,4 @@
-import { FileText, Users, Mic, Clapperboard, Image, Video, Layers, Download, MapPin } from 'lucide-react'
+import { FileText, Users, Mic, Clapperboard, Image as ImageIcon, Video, Layers, Download, MapPin } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { PipelineStepDef, PipelineStepKey, StageKey, StageDef, ProdTabKey } from './types'
 
@@ -36,7 +36,7 @@ export const PROD_TABS: { key: ProdTabKey; label: string; stepNumber: number; ic
   { key: 'chars',   label: '角色形象', stepNumber: 6,  icon: <Users className="size-3.5" /> },
   { key: 'scenes',  label: '场景图片', stepNumber: 7,  icon: <MapPin className="size-3.5" /> },
   { key: 'dubbing', label: '配音生成', stepNumber: 8,  icon: <Mic className="size-3.5" /> },
-  { key: 'shots',   label: '镜头图片', stepNumber: 9,  icon: <Image className="size-3.5" /> },
+  { key: 'shots',   label: '镜头图片', stepNumber: 9,  icon: <ImageIcon className="size-3.5" /> },
   { key: 'videos',  label: '视频生成', stepNumber: 10, icon: <Video className="size-3.5" /> },
   { key: 'compose', label: '视频合成', stepNumber: 11, icon: <Layers className="size-3.5" /> },
 ]

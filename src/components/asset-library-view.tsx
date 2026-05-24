@@ -248,17 +248,21 @@ function AssetDetailDialog({
 }) {
   if (!asset) return null
 
-  const Icon = categoryIcon(asset.category)
   const tags = JSON.parse(asset.tags || '[]') as string[]
   const imageUrls = JSON.parse(asset.imageUrls || '[]') as string[]
   const data = JSON.parse(asset.data || '{}') as Record<string, any>
+  const catConfig = CATEGORIES.find((c) => c.value === asset.category)
+  const CatIcon = catConfig?.icon ?? Package
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Icon className="size-5 text-primary" />
+            {asset.category === 'character' && <UserCircle className="size-5 text-primary" />}
+            {asset.category === 'scene' && <MapPin className="size-5 text-primary" />}
+            {asset.category === 'prop' && <Package className="size-5 text-primary" />}
+            {!['character', 'scene', 'prop'].includes(asset.category) && <Package className="size-5 text-primary" />}
             {asset.name}
             <Badge variant="secondary" className="text-[10px]">
               {categoryLabel(asset.category)}

@@ -49,21 +49,23 @@ export function VoicePanel({
   const [expandedChar, setExpandedChar] = useState<string | null>(null)
   const [voiceFilter, setVoiceFilter] = useState<'all' | 'male' | 'female'>('all')
 
-  // Load voice catalog
+  // Load voice catalog when characters are available
   useEffect(() => {
-    if (characters.length > 0) {
-      setVoicesLoading(true)
-      api.ai.listVoices(undefined, 'zh')
-        .then((result) => {
-          setVoices(result.voices)
-        })
-        .catch((err) => {
-          console.error('Failed to load voices:', err)
-        })
-        .finally(() => {
-          setVoicesLoading(false)
-        })
+    if (characters.length === 0) return
+    let cancelled = false
+    const loadVoices = async () => {
+      try {
+        const result = await api.ai.listVoices(undefined, 'zh')
+        if (!cancelled) setVoices(result.voices)
+      } catch (err) {
+        if (!cancelled) console.error('Failed to load voices:', err)
+      } finally {
+        if (!cancelled) setVoicesLoading(false)
+      }
     }
+    setVoicesLoading(true)
+    loadVoices()
+    return () => { cancelled = true }
   }, [characters.length])
 
   // Filter voices by gender
