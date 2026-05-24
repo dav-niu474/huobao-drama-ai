@@ -273,6 +273,48 @@ export const api = {
           body: JSON.stringify({ artStyle, overwriteExisting }),
         }
       ),
+
+    // ---- Batch Pipeline Orchestration (v0.8 PR-G) ----
+    startBatchPipeline: (dramaId: string, episodeIds?: string[]) =>
+      request<{ batchId: string; totalEpisodes: number; status: string }>(
+        `/api/dramas/${dramaId}/batch-pipeline`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeIds }),
+        }
+      ),
+
+    getBatchStatus: (dramaId: string) =>
+      request<{
+        batchId: string
+        status: 'running' | 'completed' | 'paused' | 'failed'
+        totalEpisodes: number
+        completedEpisodes: number
+        currentEpisode: number
+        currentStep: string
+        progressPercent: number
+        episodes: Array<{
+          episodeId: string
+          episodeNumber: number
+          title: string
+          status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+          completedSteps: number
+          totalSteps: number
+          currentStep: string | null
+          error?: string
+        }>
+      }>(`/api/dramas/${dramaId}/batch-status`),
+
+    pauseBatchPipeline: (dramaId: string) =>
+      request<{ status: string }>(`/api/dramas/${dramaId}/batch-pipeline/pause`, {
+        method: 'POST',
+      }),
+
+    resumeBatchPipeline: (dramaId: string) =>
+      request<{ status: string }>(`/api/dramas/${dramaId}/batch-pipeline/resume`, {
+        method: 'POST',
+      }),
   },
 
   // ---- Episodes ----

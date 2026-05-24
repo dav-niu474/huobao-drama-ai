@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
@@ -182,6 +182,30 @@ export function ProjectDetailView() {
   // Cost stats dialog
   const [costStatsOpen, setCostStatsOpen] = useState(false)
 
+  // Batch pipeline state
+  const [batchStatus, setBatchStatus] = useState<{
+    batchId: string
+    status: 'running' | 'completed' | 'paused' | 'failed'
+    totalEpisodes: number
+    completedEpisodes: number
+    currentEpisode: number
+    currentStep: string
+    progressPercent: number
+    episodes: Array<{
+      episodeId: string
+      episodeNumber: number
+      title: string
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+      completedSteps: number
+      totalSteps: number
+      currentStep: string | null
+      error?: string
+    }>
+  } | null>(null)
+  const [batchLoading, setBatchLoading] = useState(false)
+  const [batchExpanded, setBatchExpanded] = useState(false)
+  const [batchPolling, setBatchPolling] = useState(false)
+
   // Import from library dialog
   const [importOpen, setImportOpen] = useState(false)
   const [importAssets, setImportAssets] = useState<any[]>([])
@@ -318,6 +342,85 @@ export function ProjectDetailView() {
     setLockSettingsOpen(true)
   }
 
+  // ── Batch Pipeline handlers ───────────────────────────────
+  const fetchBatchStatus = useCallback(async () => {
+    if (!selectedDramaId) return
+    try {
+      const status = await api.dramas.getBatchStatus(selectedDramaId)
+      setBatchStatus(status)
+    } catch {
+      // No batch found — that's fine
+      setBatchStatus(null)
+    }
+  }, [selectedDramaId])
+
+  useEffect(() => {
+    fetchBatchStatus()
+  }, [fetchBatchStatus])
+
+  // Poll batch status when running
+  useEffect(() => {
+    if (!batchPolling || batchStatus?.status !== 'running') {
+      setBatchPolling(false)
+      return
+    }
+    const interval = setInterval(() => {
+      fetchBatchStatus()
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [batchPolling, batchStatus?.status, fetchBatchStatus])
+
+  // Auto-stop polling when batch completes
+  useEffect(() => {
+    if (batchStatus?.status && batchStatus.status !== 'running') {
+      setBatchPolling(false)
+    }
+  }, [batchStatus?.status])
+
+  const handleStartBatch = async () => {
+    if (!selectedDramaId) return
+    setBatchLoading(true)
+    try {
+      await api.dramas.startBatchPipeline(selectedDramaId)
+      toast({ title: '批量管线已启动' })
+      setBatchPolling(true)
+      fetchBatchStatus()
+    } catch (err) {
+      toast({ title: '启动失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
+  const handlePauseBatch = async () => {
+    if (!selectedDramaId) return
+    setBatchLoading(true)
+    try {
+      await api.dramas.pauseBatchPipeline(selectedDramaId)
+      toast({ title: '批量管线已暂停' })
+      fetchBatchStatus()
+    } catch (err) {
+      toast({ title: '暂停失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
+  const handleResumeBatch = async () => {
+    if (!selectedDramaId) return
+    setBatchLoading(true)
+    try {
+      await api.dramas.resumeBatchPipeline(selectedDramaId)
+      toast({ title: '批量管线已恢复' })
+      setBatchPolling(true)
+      fetchBatchStatus()
+    } catch (err) {
+      toast({ title: '恢复失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
   const handleSaveDefaultLockConfig = async () => {
     if (!drama) return
     setSavingLockConfig(true)
@@ -409,6 +512,18 @@ export function ProjectDetailView() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => {
+                    const { navigateToScriptWorkbench } = useAppStore.getState()
+                    navigateToScriptWorkbench(drama.id)
+                  }}
+                  className="text-xs gap-1"
+                >
+                  <Film className="size-3.5" />
+                  <span className="hidden sm:inline">剧本工坊</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setCostStatsOpen(true)}
                   className="text-xs gap-1"
                 >
@@ -432,6 +547,20 @@ export function ProjectDetailView() {
                 >
                   <Library className="size-3.5" />
                   <span className="hidden sm:inline">从资产库导入</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleStartBatch}
+                  disabled={batchLoading || batchStatus?.status === 'running'}
+                  className="text-xs gap-1"
+                >
+                  {batchStatus?.status === 'running' ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Clapperboard className="size-3.5" />
+                  )}
+                  <span className="hidden sm:inline">批量生产</span>
                 </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
                   <Plus className="size-4" />
@@ -506,6 +635,151 @@ export function ProjectDetailView() {
                 </Button>
               </div>
             </div>
+
+            {/* ── Batch Pipeline Card ── */}
+            {batchStatus && (
+              <Card className="border-primary/20 bg-primary/5 py-0 gap-0">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Clapperboard className="size-4 text-primary" />
+                        <h3 className="text-sm font-medium">批量管线</h3>
+                        <Badge
+                          variant={batchStatus.status === 'running' ? 'default' : batchStatus.status === 'completed' ? 'secondary' : batchStatus.status === 'paused' ? 'outline' : 'destructive'}
+                          className="text-[10px] px-1.5 py-0"
+                        >
+                          {batchStatus.status === 'running' ? '运行中' : batchStatus.status === 'completed' ? '已完成' : batchStatus.status === 'paused' ? '已暂停' : '失败'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {batchStatus.completedEpisodes}/{batchStatus.totalEpisodes} 集完成 ({batchStatus.progressPercent}%)
+                        {batchStatus.status === 'running' && ` — 当前: 第${batchStatus.currentEpisode}集 ${batchStatus.currentStep}`}
+                      </p>
+                      {/* Progress bar */}
+                      <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full transition-all duration-500"
+                          style={{ width: `${batchStatus.progressPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {batchStatus.status === 'running' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={handlePauseBatch}
+                          disabled={batchLoading}
+                        >
+                          <Pause className="size-3" />
+                          暂停
+                        </Button>
+                      )}
+                      {batchStatus.status === 'paused' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={handleResumeBatch}
+                          disabled={batchLoading}
+                        >
+                          <Play className="size-3" />
+                          恢复
+                        </Button>
+                      )}
+                      {batchStatus.status === 'completed' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={handleStartBatch}
+                          disabled={batchLoading}
+                        >
+                          <RefreshCw className="size-3" />
+                          重新执行
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-0.5"
+                        onClick={() => setBatchExpanded(!batchExpanded)}
+                      >
+                        {batchExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                        详情
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Episode grid (expandable) */}
+                  {batchExpanded && batchStatus.episodes.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border/50">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
+                        {batchStatus.episodes.map((ep) => (
+                          <div
+                            key={ep.episodeId}
+                            className={`p-2 rounded-lg border text-xs ${
+                              ep.status === 'completed'
+                                ? 'border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20'
+                                : ep.status === 'running'
+                                ? 'border-primary/30 bg-primary/5'
+                                : ep.status === 'failed'
+                                ? 'border-red-500/30 bg-red-50/50 dark:bg-red-950/20'
+                                : 'border-border/50 bg-muted/30'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="font-medium truncate">
+                                E{String(ep.episodeNumber).padStart(2, '0')}
+                              </span>
+                              <Badge
+                                variant={
+                                  ep.status === 'completed' ? 'secondary' :
+                                  ep.status === 'running' ? 'default' :
+                                  ep.status === 'failed' ? 'destructive' : 'outline'
+                                }
+                                className="text-[9px] px-1 py-0 h-4"
+                              >
+                                {ep.status === 'completed' ? '完成' :
+                                 ep.status === 'running' ? '运行' :
+                                 ep.status === 'failed' ? '失败' :
+                                 ep.status === 'skipped' ? '跳过' : '等待'}
+                              </Badge>
+                            </div>
+                            <p className="text-muted-foreground truncate mb-1">
+                              {ep.title}
+                            </p>
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">
+                                {ep.completedSteps}/{ep.totalSteps}步
+                              </span>
+                              <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${
+                                    ep.status === 'completed' ? 'bg-emerald-500' :
+                                    ep.status === 'running' ? 'bg-primary' :
+                                    ep.status === 'failed' ? 'bg-red-500' : 'bg-muted-foreground/30'
+                                  }`}
+                                  style={{ width: `${ep.totalSteps > 0 ? (ep.completedSteps / ep.totalSteps) * 100 : 0}%` }}
+                                />
+                              </div>
+                            </div>
+                            {ep.currentStep && (
+                              <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                                → {ep.currentStep}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {drama.episodes
               .sort((a, b) => a.episodeNumber - b.episodeNumber)
               .map((ep) => (
