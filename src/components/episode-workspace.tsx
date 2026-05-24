@@ -26,6 +26,8 @@ import {
   PanelLeftOpen,
   Lock,
   LockOpen,
+  Download,
+  Globe,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ResultDialog, EMPTY_RESULT_DIALOG, type ResultDialogState } from '@/components/episode/result-dialog'
@@ -82,6 +84,9 @@ export function EpisodeWorkspace() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
   const [resultDialog, setResultDialog] = useState<ResultDialogState>(EMPTY_RESULT_DIALOG)
+
+  // PR-F: Global asset import state
+  const [importingAssets, setImportingAssets] = useState(false)
 
   // Helper to show result dialog for major AI flow completions
   const showResultDialog = (status: ResultDialogState['status'], title: string, description: string, details?: string[]) => {
@@ -1148,6 +1153,43 @@ export function EpisodeWorkspace() {
     }
   }
 
+  // ── PR-F: Import global assets ──────────────────────────────
+
+  const handleImportGlobalAssets = async () => {
+    if (!selectedEpisodeId) return
+    setImportingAssets(true)
+    try {
+      const result = await api.episodes.importAssets(selectedEpisodeId, true)
+      toast({
+        title: '全局素材导入完成',
+        description: `已导入 ${result.imported.characters} 角色、${result.imported.scenes} 场景、${result.imported.props} 道具`,
+      })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '导入全局素材失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setImportingAssets(false)
+    }
+  }
+
+  // ── PR-F: Import from Script Workbench (fill rawContent) ────
+
+  const handleImportFromScriptWorkbench = async () => {
+    if (!selectedEpisodeId || !episode) return
+    setImportingAssets(true)
+    try {
+      // The import-assets API will fill rawContent from novel chapters
+      await api.episodes.importAssets(selectedEpisodeId, false)
+      // Reload episode to get the filled rawContent
+      await fetchEpisode()
+      toast({ title: '已从剧本工作台导入内容', description: '原始内容已自动填充' })
+    } catch (err) {
+      toast({ title: '导入失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setImportingAssets(false)
+    }
+  }
+
   // ── Upload local file ──────────────────────────────────────
 
   const handleUpload = async (
@@ -1582,6 +1624,12 @@ export function EpisodeWorkspace() {
               handleSaveScript={handleSaveScript}
               handleRewrite={handleRewrite}
               handleSkipRewrite={handleSkipRewrite}
+              // PR-F: Global asset import props
+              hasGlobalAssets={(characters.length + scenes.length + props.length) > 0}
+              globalAssetsImported={episode?.globalAssetsImported ?? false}
+              importingAssets={importingAssets}
+              onImportGlobalAssets={handleImportGlobalAssets}
+              onImportFromScriptWorkbench={handleImportFromScriptWorkbench}
             />
           )
         case 2: // extract
@@ -1607,6 +1655,10 @@ export function EpisodeWorkspace() {
                   toast({ title: '更新道具失败', description: String(err), variant: 'destructive' })
                 }
               }}
+              // PR-F: Global asset import props
+              globalAssetsImported={episode?.globalAssetsImported ?? false}
+              importingAssets={importingAssets}
+              onReimportGlobalAssets={handleImportGlobalAssets}
             />
           )
         case 3: // voice
@@ -1914,6 +1966,25 @@ export function EpisodeWorkspace() {
           </div>
 
           <div className="ml-auto flex items-center gap-1">
+            {/* PR-F: Import Global Assets button in header */}
+            {(characters.length + scenes.length + props.length) > 0 && !episode?.globalAssetsImported && selectedEpisodeId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden sm:flex items-center gap-1.5 text-xs h-7 px-2.5 text-primary border-primary/30 hover:bg-primary/5"
+                onClick={handleImportGlobalAssets}
+                disabled={importingAssets}
+              >
+                {importingAssets ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                导入全局素材
+              </Button>
+            )}
+            {episode?.globalAssetsImported && (
+              <Badge variant="secondary" className="hidden sm:flex text-[10px] gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                <Globe className="size-3" />
+                全局素材已导入
+              </Badge>
+            )}
             {/* Mobile sidebar toggle */}
             <Button
               variant="ghost"

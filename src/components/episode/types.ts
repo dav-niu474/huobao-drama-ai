@@ -162,6 +162,12 @@ export interface ScriptPanelProps {
   handleSaveScript: () => Promise<void>
   handleRewrite: () => Promise<void>
   handleSkipRewrite: () => Promise<void>
+  // PR-F: Global asset import support
+  hasGlobalAssets?: boolean
+  globalAssetsImported?: boolean
+  importingAssets?: boolean
+  onImportGlobalAssets?: () => Promise<void>
+  onImportFromScriptWorkbench?: () => Promise<void>
 }
 
 export interface ExtractPanelProps {
@@ -178,6 +184,10 @@ export interface ExtractPanelProps {
   onUpdateCharacter?: (id: string, field: string, value: string) => void
   onUpdateScene?: (id: string, field: string, value: string) => void
   onUpdateProp?: (id: string, field: string, value: string) => void
+  // PR-F: Global asset import support
+  globalAssetsImported?: boolean
+  importingAssets?: boolean
+  onReimportGlobalAssets?: () => Promise<void>
 }
 
 export interface VoicePanelProps {

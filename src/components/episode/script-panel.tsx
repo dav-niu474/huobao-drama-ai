@@ -1,8 +1,9 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Loader2, Sparkles, RefreshCw } from 'lucide-react'
+import { Loader2, Sparkles, RefreshCw, Download, BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
 import { statusBadge } from './helpers'
@@ -23,7 +24,23 @@ export function ScriptPanel({
   handleSaveScript,
   handleRewrite,
   handleSkipRewrite,
+  // PR-F: Global asset import props
+  hasGlobalAssets,
+  globalAssetsImported,
+  importingAssets,
+  onImportGlobalAssets,
+  onImportFromScriptWorkbench,
 }: ScriptPanelProps) {
+  // ── Determine source info ──
+  const hasSourceChapterIds = (() => {
+    try {
+      const ids = JSON.parse(episode?.sourceChapterIds || '[]')
+      return Array.isArray(ids) && ids.length > 0
+    } catch {
+      return false
+    }
+  })()
+
   // ── Raw content panel ──────────────────────────────────────
 
   if (activeStep === 'raw') {
@@ -34,8 +51,46 @@ export function ScriptPanel({
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-primary/80">01</span>
             <h2 className="text-sm font-semibold">原始内容</h2>
+            {/* Source info badge */}
+            {hasSourceChapterIds && (
+              <Badge variant="secondary" className="text-[10px] gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                <BookOpen className="size-3" />
+                来自剧本工作台
+              </Badge>
+            )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Import from Script Workbench button */}
+            {hasSourceChapterIds && !rawContent.trim() && onImportFromScriptWorkbench && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onImportFromScriptWorkbench}
+                disabled={importingAssets}
+                className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/30"
+              >
+                {importingAssets ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                从剧本工作台导入
+              </Button>
+            )}
+            {/* Import Global Assets button */}
+            {hasGlobalAssets && !globalAssetsImported && onImportGlobalAssets && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onImportGlobalAssets}
+                disabled={importingAssets}
+                className="text-primary border-primary/30 hover:bg-primary/5"
+              >
+                {importingAssets ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                导入全局素材
+              </Button>
+            )}
+            {globalAssetsImported && (
+              <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary">
+                全局素材已导入
+              </Badge>
+            )}
             <span className="text-xs text-muted-foreground">{rawContent.length} 字</span>
             <Button size="sm" onClick={handleSaveRaw} disabled={saving || !rawContent.trim()}>
               {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}

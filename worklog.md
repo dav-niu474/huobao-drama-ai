@@ -480,3 +480,31 @@ Stage Summary:
 - 新增：Prop 数据模型 + AI提取 + 提取面板UI + CRUD API
 - PR 待创建：https://github.com/dav-niu474/huobao-drama-ai/pull/new/feat/v0.6-completion
 - v0.6 实际完成度：~95%（仅文件存储优化推迟到v0.7）
+
+---
+Task ID: 5
+Agent: PR-E Agent
+Task: Implement Asset Management Workbench UI
+
+Work Log:
+- Explored project structure: understood store.ts types, api.ts client, art-prompt-loader.ts, set-style route, script-workbench.tsx styling
+- Created feature branch feat/v0.8-asset-workbench from main
+- Replaced placeholder asset-workbench.tsx with full two-column layout implementation
+- Left panel (w-80, collapsible): Extract Actions, Type Filter, Style Selector, Batch Generate
+- Right panel (flex-1): Search bar, View toggle (Grid/List), Sort dropdown, Add Manual button, Asset Card Grid
+- Implemented AssetCard (grid) and AssetListItem (list) sub-components with type-colored badges
+- Implemented Asset Detail Dialog with image preview, description, episode tags, editable image prompt
+- Implemented Add Manual Dialog for adding characters/scenes/props manually
+- Added batch image generation with concurrency limit of 2 (worker pool pattern)
+- Added batchGenerateImages convenience method to api.ts
+- Used existing API routes: extract-assets, set-style, polish-prompts, generate-character-image, generate-scene-image, generate-image
+- Color scheme: character=blue, scene=emerald, prop=orange, active filter=amber
+- Build verification passed (npx next build succeeded)
+- Git committed and pushed to feat/v0.8-asset-workbench
+- Created PR #34 via GitHub API
+
+Stage Summary:
+- PR #34: https://github.com/dav-niu474/huobao-drama-ai/pull/34
+- 2 files changed, 1308 insertions, 27 deletions
+- Key files: src/components/asset-workbench.tsx (full replacement), src/lib/api.ts (batchGenerateImages method)
+- Build passes successfully

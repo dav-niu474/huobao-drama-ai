@@ -367,6 +367,30 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storyboardId, composedUrl }),
       }),
+
+    // Preview what global assets will be imported into this episode
+    previewImportAssets: (episodeId: string) =>
+      request<{
+        available: { characters: number; scenes: number; props: number }
+        alreadyImported: { characters: number; scenes: number; props: number }
+        globalAssetsImported: boolean
+        items: {
+          characters: Array<{ id: string; name: string; role: string; gender: string; alreadyImported: boolean }>
+          scenes: Array<{ id: string; location: string; timeOfDay: string; alreadyImported: boolean }>
+          props: Array<{ id: string; name: string; category: string }>
+        }
+      }>(`/api/episodes/${episodeId}/import-assets`),
+
+    // Import global assets into this episode
+    importAssets: (episodeId: string, overwrite?: boolean) =>
+      request<{ imported: { characters: number; scenes: number; props: number }; globalAssetsImported: boolean }>(
+        `/api/episodes/${episodeId}/import-assets`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ overwrite }),
+        }
+      ),
   },
 
   // ---- Characters ----

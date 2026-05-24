@@ -19,6 +19,8 @@ import {
   Lock,
   Unlock,
   Eye,
+  Download,
+  Globe,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -185,6 +187,10 @@ export function ExtractPanel({
   onUpdateCharacter,
   onUpdateScene,
   onUpdateProp,
+  // PR-F: Global asset import props
+  globalAssetsImported,
+  importingAssets,
+  onReimportGlobalAssets,
 }: ExtractPanelProps) {
   const { toast } = useToast()
   const [savingToLibrary, setSavingToLibrary] = useState<string | null>(null)
@@ -273,6 +279,21 @@ export function ExtractPanel({
           <p className="text-sm text-muted-foreground mb-6">
             AI将从剧本中提取角色信息和场景描述，用于后续分镜制作
           </p>
+          {/* PR-F: Import global assets button if available */}
+          {globalAssetsImported === false && onReimportGlobalAssets && (
+            <div className="mb-4">
+              <Button
+                variant="outline"
+                onClick={onReimportGlobalAssets}
+                disabled={importingAssets}
+                className="text-primary border-primary/30 hover:bg-primary/5"
+              >
+                {importingAssets ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                导入全局素材
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2">从素材工作台导入已有的角色和场景</p>
+            </div>
+          )}
           <Button
             onClick={handleExtract}
             disabled={aiLoading}
@@ -312,16 +333,53 @@ export function ExtractPanel({
           <span className="text-xs font-mono text-primary/80">03</span>
           <h2 className="text-sm font-semibold">提取角色与场景</h2>
           {episode?.extractStatus && statusBadge(episode.extractStatus)}
+          {/* PR-F: Global assets imported badge */}
+          {globalAssetsImported && (
+            <Badge variant="secondary" className="text-[10px] gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              <Globe className="size-3" />
+              使用全局素材
+            </Badge>
+          )}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExtract}
-          disabled={aiLoading || isExtracting}
-        >
-          <RefreshCw className="size-3.5" />
-          重新提取
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* PR-F: Re-import Global Assets button */}
+          {onReimportGlobalAssets && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onReimportGlobalAssets}
+              disabled={importingAssets}
+              className="text-primary border-primary/30 hover:bg-primary/5"
+            >
+              {importingAssets ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+              重新导入全局
+            </Button>
+          )}
+          {/* PR-F: Supplement with AI button */}
+          {globalAssetsImported && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExtract}
+              disabled={aiLoading || isExtracting}
+              className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950/30"
+            >
+              <Sparkles className="size-3.5" />
+              AI补充提取
+            </Button>
+          )}
+          {!globalAssetsImported && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExtract}
+              disabled={aiLoading || isExtracting}
+            >
+              <RefreshCw className="size-3.5" />
+              重新提取
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Results */}
