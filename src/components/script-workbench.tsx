@@ -17,7 +17,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   ArrowLeft,
   BookOpen,
-  Upload,
+  RefreshCw,
   FileText,
   Loader2,
   Check,
@@ -33,8 +33,6 @@ import {
   BarChart3,
   Clock,
   AlertCircle,
-  FileUp,
-  RefreshCw,
   Layers,
   Zap,
 } from 'lucide-react'
@@ -90,11 +88,9 @@ export function ScriptWorkbench() {
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
 
-  // Upload state
-  const [uploading, setUploading] = useState(false)
+  // Parse progress (novel uploaded at project creation)
   const [parsing, setParsing] = useState(false)
   const [parseProgress, setParseProgress] = useState({ current: 0, total: 0, message: '' })
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Editable content states
   const [skeletonEdit, setSkeletonEdit] = useState('')
@@ -211,41 +207,6 @@ export function ScriptWorkbench() {
   }, [parsing, novel, loadNovelData, toast])
 
   // ── Handlers ──
-
-  const handleFileUpload = async (file: File) => {
-    if (!selectedDramaId) return
-    setUploading(true)
-    try {
-      const result = await api.novels.uploadForDrama(selectedDramaId, file)
-      setNovel(result.novel)
-      setChapters(result.chapters || [])
-      toast({ title: '小说上传成功' })
-
-      // Auto-trigger parsing
-      setParsing(true)
-      setParseProgress({ current: 0, total: 1, message: '开始解析...' })
-      await api.novels.parse(result.novel.id)
-    } catch (err: any) {
-      toast({
-        title: '上传失败',
-        description: err.message || '请检查文件格式（支持.txt和.docx）',
-        variant: 'destructive',
-      })
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file) await handleFileUpload(file)
-  }
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) await handleFileUpload(file)
-  }
 
   const handleGenerateSkeleton = async () => {
     if (!selectedDramaId) return
@@ -508,36 +469,14 @@ export function ScriptWorkbench() {
                     )}
                   </div>
                 ) : (
-                  /* 上传区域 */
-                  <div
-                    className="p-4"
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                  >
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                      <p className="text-xs font-medium">
-                        上传小说文件
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        支持 .txt 和 .docx 格式
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        拖拽文件或点击选择
-                      </p>
-                      {uploading && (
-                        <Loader2 className="size-4 mx-auto mt-2 animate-spin text-amber-500" />
-                      )}
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".txt,.docx"
-                      className="hidden"
-                      onChange={handleFileSelect}
-                    />
+                  <div className="p-4 text-center space-y-2">
+                    <Loader2 className="size-5 animate-spin mx-auto text-amber-500" />
+                    <p className="text-xs text-muted-foreground">
+                      正在加载小说数据...
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      小说已在项目创建时解析
+                    </p>
                   </div>
                 )}
               </ScrollArea>
@@ -692,14 +631,10 @@ export function ScriptWorkbench() {
                     )}
                   </div>
                 ) : (
-                  <div className="p-4" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                      <p className="text-xs font-medium">上传小说文件</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
-                    </div>
+                  <div className="p-4 text-center space-y-2">
+                    <Loader2 className="size-5 animate-spin mx-auto text-amber-500" />
+                    <p className="text-xs text-muted-foreground">正在加载小说数据...</p>
+                    <p className="text-[10px] text-muted-foreground">小说已在项目创建时解析</p>
                   </div>
                 )}
               </ScrollArea>
@@ -1193,18 +1128,12 @@ export function ScriptWorkbench() {
             <div className="space-y-3">
               <StepItem
                 number={1}
-                title="上传小说"
-                done={!!novel}
+                title="加载小说"
+                done={!!novel && novel.parseStatus === 'parsed'}
                 active={!novel}
               />
               <StepItem
                 number={2}
-                title="解析小说"
-                done={novel?.parseStatus === 'parsed'}
-                active={!!novel && novel?.parseStatus !== 'parsed'}
-              />
-              <StepItem
-                number={3}
                 title="提取故事骨架"
                 done={!!parsedContent.skeleton}
                 active={
@@ -1212,7 +1141,7 @@ export function ScriptWorkbench() {
                 }
               />
               <StepItem
-                number={4}
+                number={3}
                 title="制定改编策略"
                 done={!!parsedContent.strategy}
                 active={
@@ -1220,7 +1149,7 @@ export function ScriptWorkbench() {
                 }
               />
               <StepItem
-                number={5}
+                number={4}
                 title="生成剧本"
                 done={completedEpisodes > 0}
                 active={
