@@ -188,6 +188,61 @@ export const api = {
           createdAt: string
         }>
       }>(`/api/dramas/${id}/cost-stats`),
+
+    // ---- Script Generation Workbench (v0.8 PR-C) ----
+    generateSkeleton: (dramaId: string) =>
+      request<{ skeleton: string; novelId: string }>(
+        `/api/dramas/${dramaId}/generate-skeleton`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      ),
+
+    generateStrategy: (dramaId: string, skeletonContent: string) =>
+      request<{ strategy: string; novelId: string }>(
+        `/api/dramas/${dramaId}/generate-strategy`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skeletonContent }),
+        }
+      ),
+
+    generateScripts: (
+      dramaId: string,
+      data: {
+        skeletonContent: string
+        strategyContent: string
+        episodeRange?: [number, number]
+      }
+    ) =>
+      request<{
+        episodes: Array<{
+          id: string
+          episodeNumber: number
+          title: string
+          scriptStatus: string
+        }>
+        totalGenerated: number
+      }>(`/api/dramas/${dramaId}/generate-scripts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    getScriptStatus: (dramaId: string) =>
+      request<{
+        dramaId: string
+        totalEpisodes: number
+        episodes: Array<{
+          id: string
+          episodeNumber: number
+          title: string
+          scriptStatus: string
+          sourceChapterIds: string
+        }>
+      }>(`/api/dramas/${dramaId}/script-status`),
   },
 
   // ---- Episodes ----
@@ -1135,6 +1190,28 @@ export const api = {
         message: string
         parsedContent?: string
       }>(`/api/novels/${id}/parse-status`),
+
+    // Get novel by drama ID (convenience method for script workbench)
+    getByDramaId: async (dramaId: string) => {
+      // First find the novel linked to this drama
+      const drama = await api.dramas.get(dramaId)
+      // The novel is linked via dramaId in the Novel table
+      // We need to find it through the novels endpoint
+      // Since Novel has a unique dramaId, we can query directly
+      const res = await fetch(`/api/novels?dramaId=${dramaId}`)
+      if (!res.ok) {
+        // Fallback: try to get novel from drama detail's novel relation
+        return null as any
+      }
+      return res.json() as Promise<Novel & {
+        chapters: Array<{ index: number; title: string; content: string }>
+      } | null>
+    },
+
+    // Upload novel for drama (convenience for script workbench drag-drop)
+    uploadForDrama: async (dramaId: string, file: File) => {
+      return api.novels.upload(file, dramaId)
+    },
   },
 
   // ---- Drama Art Style ----

@@ -1,12 +1,57 @@
 // ============================================================
 // POST /api/novels — Upload novel file, create Novel record
-// Accepts FormData with file + dramaId
+// GET /api/novels?dramaId=xxx — Get novel by drama ID
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { parseNovelFile, splitChapters } from '@/lib/novel-parser'
+
+// GET /api/novels?dramaId=xxx — Get novel by drama ID
+export async function GET(request: NextRequest) {
+  try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
+
+    const dramaId = request.nextUrl.searchParams.get('dramaId')
+
+    if (!dramaId) {
+      return NextResponse.json({ error: '缺少 dramaId 参数' }, { status: 400 })
+    }
+
+    const novel = await db.novel.findUnique({
+      where: { dramaId },
+      include: { drama: { select: { userId: true } } },
+    })
+
+    if (!novel) {
+      return NextResponse.json({ error: 'Novel not found' }, { status: 404 })
+    }
+
+    // Check access
+    if (
+      novel.drama.userId &&
+      novel.drama.userId !== auth.userId &&
+      auth.role !== 'admin'
+    ) {
+      return NextResponse.json({ error: '无权访问' }, { status: 403 })
+    }
+
+    // Parse chapters from JSON for convenience
+    const chapters = JSON.parse(novel.chapters)
+
+    return NextResponse.json({
+      ...novel,
+      chapters,
+    })
+  } catch (error) {
+    console.error('[novels] GET failed:', error)
+    return NextResponse.json({ error: 'Failed to get novel' }, { status: 500 })
+  }
+}
+
+// POST /api/novels — Upload novel file, create Novel record
 
 export async function POST(request: NextRequest) {
   try {
