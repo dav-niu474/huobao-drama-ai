@@ -1263,6 +1263,63 @@ export const api = {
       }),
   },
 
+  // ---- Batch Image Generation (v0.8 PR-E) ----
+  batchGenerateImages: async (
+    dramaId: string,
+    assetIds: string[],
+    assetType: 'character' | 'scene' | 'prop',
+    style?: string
+  ): Promise<{ results: Array<{ id: string; imageUrl?: string; error?: string }> }> => {
+    const results: Array<{ id: string; imageUrl?: string; error?: string }> = []
+    const concurrencyLimit = 2
+    let index = 0
+
+    const processNext = async (): Promise<void> => {
+      while (index < assetIds.length) {
+        const currentIndex = index++
+        const assetId = assetIds[currentIndex]
+        try {
+          let result: { imageUrl?: string }
+          if (assetType === 'character') {
+            const res = await request<{ character: Character; imageUrl: string }>(
+              '/api/ai/generate-character-image',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ characterId: assetId, style }),
+              }
+            )
+            result = { imageUrl: res.imageUrl }
+          } else if (assetType === 'scene') {
+            const res = await request<{ scene: Scene; imageUrl: string }>(
+              '/api/ai/generate-scene-image',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sceneId: assetId, style }),
+              }
+            )
+            result = { imageUrl: res.imageUrl }
+          } else {
+            // For props, we need a prompt — skip if not available
+            result = { imageUrl: undefined }
+          }
+          results[currentIndex] = { id: assetId, imageUrl: result.imageUrl }
+        } catch (err: any) {
+          results[currentIndex] = { id: assetId, error: err.message || 'Generation failed' }
+        }
+      }
+    }
+
+    const workers = []
+    for (let i = 0; i < concurrencyLimit; i++) {
+      workers.push(processNext())
+    }
+    await Promise.all(workers)
+
+    return { results: results.filter(Boolean) }
+  },
+
   // ---- Asset Library ----
   assets: {
     list: (params?: {
