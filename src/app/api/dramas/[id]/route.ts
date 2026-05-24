@@ -47,6 +47,7 @@ export async function GET(
         characters: { orderBy: { createdAt: 'asc' } },
         scenes: { orderBy: { createdAt: 'asc' } },
         props: { orderBy: { createdAt: 'asc' } },
+        novel: true,
       },
     });
 
@@ -163,6 +164,9 @@ export async function DELETE(
       `;
 
       // ── Delete mid-level records ──
+
+      // 4b. Delete associated novel (if exists)
+      await tx.novel.deleteMany({ where: { dramaId: id } });
 
       // 5. Delete episodes
       await tx.episode.deleteMany({ where: { dramaId: id } });

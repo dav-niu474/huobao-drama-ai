@@ -27,6 +27,36 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 // Provider config types
 // ============================================================
 
+// ============================================================
+// Novel types
+// ============================================================
+
+export interface Novel {
+  id: string
+  dramaId: string
+  title: string
+  chapters: string  // JSON: [{ index, title, content }]
+  parsedContent: string  // JSON: parsed events/skeleton data
+  parseStatus: string  // pending | parsing | parsed | failed
+  fileSize: number
+  fileName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ArtStyleInfo {
+  key: string
+  name: string
+  description: string
+  thumbnailUrl: string | null
+}
+
+export interface StorySkillInfo {
+  key: string
+  name: string
+  description: string
+}
+
 export type AiCategory = 'llm' | 'image' | 'video' | 'tts'
 
 export interface ProviderConfig {
@@ -1047,6 +1077,84 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
+
+  // ---- Novels ----
+  novels: {
+    upload: async (file: File, dramaId: string) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('dramaId', dramaId)
+
+      const res = await fetch('/api/novels', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
+        throw new Error(`Upload novel failed: ${text}`)
+      }
+
+      return res.json() as Promise<{
+        novel: Novel
+        chapters: Array<{ index: number; title: string; content: string }>
+      }>
+    },
+
+    get: (id: string) =>
+      request<Novel & {
+        chapters: Array<{ index: number; title: string; content: string }>
+      }>(`/api/novels/${id}`),
+
+    delete: (id: string) =>
+      fetch(`/api/novels/${id}`, { method: 'DELETE' }).then(async (r) => {
+        if (!r.ok) {
+          let detail = `Delete novel failed: ${r.status}`
+          try {
+            const body = await r.json()
+            if (body.error) detail = body.error
+          } catch {}
+          throw new Error(detail)
+        }
+      }),
+
+    parse: (id: string) =>
+      request<{
+        novelId: string
+        status: string
+        message: string
+      }>(`/api/novels/${id}/parse`, {
+        method: 'POST',
+      }),
+
+    parseStatus: (id: string) =>
+      request<{
+        status: string
+        current: number
+        total: number
+        message: string
+        parsedContent?: string
+      }>(`/api/novels/${id}/parse-status`),
+  },
+
+  // ---- Drama Art Style ----
+  artStyle: {
+    list: (dramaId: string) =>
+      request<{
+        styles: ArtStyleInfo[]
+        storySkills: StorySkillInfo[]
+      }>(`/api/dramas/${dramaId}/set-style`),
+
+    set: (dramaId: string, artStyle: string) =>
+      request<{
+        drama: Drama
+        artStyle: string
+      }>(`/api/dramas/${dramaId}/set-style`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artStyle }),
+      }),
+  },
 
   // ---- Asset Library ----
   assets: {
