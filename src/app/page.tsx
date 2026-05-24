@@ -9,6 +9,8 @@ import { ProjectDetailView } from '@/components/project-detail'
 import { EpisodeWorkspace } from '@/components/episode-workspace'
 import { SettingsView } from '@/components/settings-view'
 import { AssetLibraryView } from '@/components/asset-library-view'
+import { ScriptWorkbench } from '@/components/script-workbench'
+import { AssetWorkbench } from '@/components/asset-workbench'
 import { Loader2 } from 'lucide-react'
 
 const pageVariants = {
@@ -38,6 +40,8 @@ function ViewRouter() {
       >
         {view === 'projects' && <ProjectListView />}
         {view === 'project-detail' && <ProjectDetailView />}
+        {view === 'script-workbench' && <ScriptWorkbench />}
+        {view === 'asset-workbench' && <AssetWorkbench />}
         {view === 'episode-workspace' && <EpisodeWorkspace />}
         {view === 'settings' && <SettingsView />}
         {view === 'asset-library' && <AssetLibraryView />}

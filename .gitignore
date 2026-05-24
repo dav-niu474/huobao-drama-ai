@@ -71,3 +71,6 @@ db/
 
 # File uploads (local dev only — production uses Vercel Blob)
 data/uploads/
+# Ignore reference project and database
+Toonflow-app/
+db/

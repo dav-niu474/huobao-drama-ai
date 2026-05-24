@@ -11,6 +11,9 @@ export type AgentType =
   | 'storyboard_breaker'
   | 'voice_assigner'
   | 'grid_prompt_generator' // deprecated: merged into storyboard_breaker
+  | 'story_skeleton'
+  | 'adaptation_strategy'
+  | 'script_generator'
 
 export interface ToolParameter {
   type: 'string' | 'number' | 'boolean' | 'array' | 'object'
@@ -68,6 +71,9 @@ export const AGENT_NAMES: Record<AgentType, string> = {
   storyboard_breaker: '分镜拆解+提示词专家',
   voice_assigner: '音色分配师',
   grid_prompt_generator: '提示词增强(已合并)',
+  story_skeleton: '故事骨架提取器',
+  adaptation_strategy: '改编策略制定器',
+  script_generator: '剧本批量生成器',
 }
 
 export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
@@ -83,6 +89,12 @@ export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
     '为角色自动分配合适的TTS音色',
   grid_prompt_generator:
     '已合并到分镜拆解专家，单条提示词增强可直接使用分镜Agent',
+  story_skeleton:
+    '从小说中提取故事骨架：核心设定、关键删除决策、改编增强建议',
+  adaptation_strategy:
+    '根据故事骨架制定改编策略：核心原则（正面指导+负面边界）、删除决策',
+  script_generator:
+    '基于故事骨架和改编策略，批量生成每集剧本',
 }
 
 export const ALL_AGENT_TYPES: AgentType[] = [
@@ -91,5 +103,8 @@ export const ALL_AGENT_TYPES: AgentType[] = [
   'extractor',
   'storyboard_breaker',
   'voice_assigner',
+  'story_skeleton',
+  'adaptation_strategy',
+  'script_generator',
   // grid_prompt_generator merged into storyboard_breaker
 ]

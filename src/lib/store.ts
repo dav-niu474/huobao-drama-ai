@@ -15,6 +15,10 @@ export interface Drama {
   status: string
   defaultLockedConfig: string | null
   styleTemplate: string
+  novelSource: string | null
+  novelParsed: boolean
+  artStyle: string | null
+  assetStatus: string
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }
@@ -59,6 +63,8 @@ export interface Episode {
   storyboardStatus: string
   status: string
   lockedConfig: string | null
+  sourceChapterIds: string   // JSON array of chapter indices
+  globalAssetsImported: boolean
   videoUrl: string | null
   duration: number
   createdAt: string
@@ -88,6 +94,7 @@ export interface Character {
   styleLock: boolean
   lockedReferenceImage: string | null
   visualFingerprint: string  // JSON string
+  episodeIds: string         // JSON array of episode IDs
   createdAt: string
   updatedAt: string
 }
@@ -104,6 +111,7 @@ export interface Scene {
   // Consistency fields
   styleLock: boolean
   lockedReferenceImage: string | null
+  episodeIds: string         // JSON array of episode IDs
   createdAt: string
   updatedAt: string
 }
@@ -164,7 +172,7 @@ export interface Asset {
   user?: { id: string; name: string } | null
 }
 
-export type AppView = 'projects' | 'project-detail' | 'episode-workspace' | 'settings' | 'asset-library'
+export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library'
 
 // ============================================================
 // Store interface
@@ -189,6 +197,8 @@ interface AppStore {
   navigateToEpisode: (dramaId: string, episodeId: string) => void
   navigateToSettings: () => void
   navigateToAssetLibrary: () => void
+  navigateToScriptWorkbench: (dramaId: string) => void
+  navigateToAssetWorkbench: (dramaId: string) => void
 
   // Drama data cache
   dramas: Drama[]
@@ -273,6 +283,22 @@ export const useAppStore = create<AppStore>((set) => ({
   navigateToAssetLibrary: () =>
     set({
       view: 'asset-library',
+      selectedEpisodeId: null,
+      episodeLockedConfig: null,
+    }),
+
+  navigateToScriptWorkbench: (dramaId: string) =>
+    set({
+      view: 'script-workbench',
+      selectedDramaId: dramaId,
+      selectedEpisodeId: null,
+      episodeLockedConfig: null,
+    }),
+
+  navigateToAssetWorkbench: (dramaId: string) =>
+    set({
+      view: 'asset-workbench',
+      selectedDramaId: dramaId,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
     }),

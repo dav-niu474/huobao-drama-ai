@@ -38,10 +38,15 @@ model Drama {
   userId              String?                    // nullable for backward compat
   defaultLockedConfig String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
   styleTemplate       String   @default("")     // Persistent style prefix for all generations (e.g., "cinematic, warm tones")
+  novelSource         String?                    // Novel file path or reference
+  novelParsed         Boolean  @default(false)   // Whether novel has been parsed
+  artStyle            String?                    // Selected art style key (e.g., "realpeople_ancient_chinese")
+  assetStatus         String   @default("pending") // pending | extracting | ready | partial
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel     Novel?
   episodes         Episode[]
   characters       Character[]
   scenes           Scene[]
@@ -64,7 +69,9 @@ model Episode {
   extractStatus String   @default("pending")
   storyboardStatus String @default("pending")
   status        String   @default("draft")
-  lockedConfig  String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no lock
+  lockedConfig       String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no lock
+  sourceChapterIds   String   @default("[]")    // JSON: array of chapter indices from novel that feed this episode
+  globalAssetsImported Boolean @default(false)  // Whether global assets have been imported into this episode
   videoUrl      String?
   duration      Int      @default(0)
   createdAt     DateTime @default(now())
@@ -99,6 +106,7 @@ model Character {
   styleLock            Boolean  @default(false)    // Lock appearance consistency
   lockedReferenceImage String?                     // Canonical reference image URL for consistency
   visualFingerprint    String   @default("{}")    // JSON: extracted visual features for consistency prompts
+  episodeIds           String   @default("[]")     // JSON: array of episode IDs where this character appears
 
   drama       Drama                @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   appearances CharacterAppearance[]
@@ -122,6 +130,7 @@ model Scene {
   // --- Scene Consistency Fields ---
   styleLock            Boolean  @default(false)    // Lock scene style consistency
   lockedReferenceImage String?                     // Canonical reference image URL for consistency
+  episodeIds           String   @default("[]")     // JSON: array of episode IDs where this scene appears
 
   drama  Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   images SceneImage[]
@@ -355,6 +364,22 @@ model Asset {
   characters Character[]
   scenes     Scene[]
   props      Prop[]
+}
+
+// ============ Novel (小说源文件) ============
+model Novel {
+  id            String   @id @default(cuid())
+  dramaId       String   @unique
+  title         String   @default("")
+  chapters      String   @default("[]")    // JSON: [{ index, title, content }]
+  parsedContent String   @default("{}")    // JSON: parsed events/skeleton data
+  parseStatus   String   @default("pending") // pending | parsing | parsed | failed
+  fileSize      Int      @default(0)
+  fileName      String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
 }
 
 // ============ Video Merge Tracking ============
