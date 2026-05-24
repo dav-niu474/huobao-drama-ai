@@ -243,6 +243,36 @@ export const api = {
           sourceChapterIds: string
         }>
       }>(`/api/dramas/${dramaId}/script-status`),
+
+    // ---- Asset Extraction + Style Polishing (v0.8 PR-D) ----
+    extractAssets: (dramaId: string, episodeIds?: string[]) =>
+      request<{ characters: number; scenes: number; props: number; dramaId: string }>(
+        `/api/dramas/${dramaId}/extract-assets`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeIds }),
+        }
+      ),
+
+    getExtractStatus: (dramaId: string) =>
+      request<{
+        assetStatus: string
+        totalCharacters: number
+        totalScenes: number
+        totalProps: number
+        lastExtractionAt?: string
+      }>(`/api/dramas/${dramaId}/extract-status`),
+
+    polishPrompts: (dramaId: string, artStyle?: string, overwriteExisting?: boolean) =>
+      request<{ polished: number; skipped: number }>(
+        `/api/dramas/${dramaId}/polish-prompts`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artStyle, overwriteExisting }),
+        }
+      ),
   },
 
   // ---- Episodes ----
