@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
@@ -144,6 +144,183 @@ function EpisodeCard({
         </CardContent>
       </Card>
     </motion.div>
+  )
+}
+
+// ── Three-Stage Progress ────────────────────────────────────
+
+type StageStatus = 'completed' | 'in-progress' | 'pending'
+
+interface StageInfo {
+  key: 'script' | 'assets' | 'production'
+  icon: typeof BookOpen
+  label: string
+  status: StageStatus
+  stats: string
+  onClick: () => void
+}
+
+function ThreeStageProgress({ drama }: { drama: DramaDetail }) {
+  const navigateToScriptWorkbench = useAppStore((s) => s.navigateToScriptWorkbench)
+  const navigateToAssetWorkbench = useAppStore((s) => s.navigateToAssetWorkbench)
+  const navigateToEpisode = useAppStore((s) => s.navigateToEpisode)
+
+  // Determine script stage status
+  const episodesWithScript = drama.episodes?.filter((ep) => ep.scriptContent).length ?? 0
+  const totalEpisodes = drama.episodes?.length ?? 0
+  const scriptStage: StageStatus =
+    totalEpisodes > 0 && episodesWithScript === totalEpisodes
+      ? 'completed'
+      : episodesWithScript > 0 || drama.novelParsed
+      ? 'in-progress'
+      : 'pending'
+
+  // Determine asset stage status
+  const charCount = drama.characters?.length ?? 0
+  const sceneCount = drama.scenes?.length ?? 0
+  const propCount = drama.props?.length ?? 0
+  const hasAssets = charCount > 0 || sceneCount > 0 || propCount > 0
+  const assetStage: StageStatus =
+    drama.assetStatus === 'ready'
+      ? 'completed'
+      : drama.assetStatus === 'partial' || drama.assetStatus === 'extracting' || hasAssets
+      ? 'in-progress'
+      : 'pending'
+
+  // Determine production stage status
+  const completedEpisodes = drama.episodes?.filter(
+    (ep) => ep.status === 'completed' || (ep.videoUrl && ep.duration > 0)
+  ).length ?? 0
+  const productionStage: StageStatus =
+    totalEpisodes > 0 && completedEpisodes === totalEpisodes
+      ? 'completed'
+      : completedEpisodes > 0
+      ? 'in-progress'
+      : 'pending'
+
+  // Navigate to first uncompleted episode
+  const handleNavigateToProduction = () => {
+    const uncompleted = drama.episodes?.find(
+      (ep) => ep.status !== 'completed'
+    )
+    if (uncompleted) {
+      navigateToEpisode(drama.id, uncompleted.id)
+    } else if (drama.episodes && drama.episodes.length > 0) {
+      navigateToEpisode(drama.id, drama.episodes[0].id)
+    }
+  }
+
+  const stages: StageInfo[] = [
+    {
+      key: 'script',
+      icon: BookOpen,
+      label: '剧本生成',
+      status: scriptStage,
+      stats: totalEpisodes > 0
+        ? `${episodesWithScript}/${totalEpisodes} 集已生成`
+        : '尚未开始',
+      onClick: () => navigateToScriptWorkbench(drama.id),
+    },
+    {
+      key: 'assets',
+      icon: Palette,
+      label: '素材管理',
+      status: assetStage,
+      stats: hasAssets
+        ? `${charCount} 角色, ${sceneCount} 场景, ${propCount} 道具`
+        : '尚未提取',
+      onClick: () => navigateToAssetWorkbench(drama.id),
+    },
+    {
+      key: 'production',
+      icon: Film,
+      label: '管线生产',
+      status: productionStage,
+      stats: totalEpisodes > 0
+        ? `${completedEpisodes}/${totalEpisodes} 集已完成`
+        : '尚未开始',
+      onClick: handleNavigateToProduction,
+    },
+  ]
+
+  const statusColors: Record<StageStatus, { bg: string; text: string; border: string; dot: string; glow: string }> = {
+    completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30', dot: 'bg-emerald-500', glow: '' },
+    'in-progress': { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30', dot: 'bg-amber-500', glow: 'shadow-[0_0_20px_rgba(245,158,11,0.15)]' },
+    pending: { bg: 'bg-muted/30', text: 'text-muted-foreground', border: 'border-border/50', dot: 'bg-zinc-500', glow: '' },
+  }
+
+  const statusLabels: Record<StageStatus, string> = {
+    completed: '已完成',
+    'in-progress': '进行中',
+    pending: '待开始',
+  }
+
+  return (
+    <div className="flex items-center gap-2 sm:gap-0">
+      {stages.map((stage, idx) => {
+        const colors = statusColors[stage.status]
+        const Icon = stage.icon
+        return (
+          <div key={stage.key} className="flex items-center gap-2 sm:gap-0 flex-1">
+            {/* Stage Card */}
+            <button
+              onClick={stage.onClick}
+              className={`
+                group relative flex-1 rounded-xl border p-3 sm:p-4 text-left transition-all duration-200
+                hover:border-primary/40 hover:shadow-md cursor-pointer
+                ${colors.bg} ${colors.border} ${colors.glow}
+              `}
+            >
+              {/* Active stage amber gradient overlay */}
+              {stage.status === 'in-progress' && (
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-amber-500/5 to-amber-500/10 pointer-events-none" />
+              )}
+              <div className="relative flex items-start gap-2 sm:gap-3">
+                <div className={`shrink-0 size-8 sm:size-9 rounded-lg flex items-center justify-center ${
+                  stage.status === 'in-progress' ? 'bg-amber-500/20' :
+                  stage.status === 'completed' ? 'bg-emerald-500/20' : 'bg-muted/60'
+                }`}>
+                  <Icon className={`size-4 sm:size-4.5 ${
+                    stage.status === 'in-progress' ? 'text-amber-500' :
+                    stage.status === 'completed' ? 'text-emerald-500' : 'text-muted-foreground'
+                  }`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-xs sm:text-sm font-medium truncate">{stage.label}</span>
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] sm:text-[10px] px-1.5 py-0 h-4 shrink-0 ${colors.text} ${colors.border}`}
+                    >
+                      <span className={`size-1.5 rounded-full ${colors.dot} mr-1`} />
+                      {statusLabels[stage.status]}
+                    </Badge>
+                  </div>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{stage.stats}</p>
+                </div>
+                <ChevronRight className="size-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0 mt-1" />
+              </div>
+
+              {/* Film strip decoration for active stage */}
+              {stage.status === 'in-progress' && (
+                <div className="absolute bottom-0 left-2 right-2 h-1 rounded-b-xl bg-gradient-to-r from-amber-500/20 via-amber-500/40 to-amber-500/20"
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 6px, rgba(245,158,11,0.15) 6px, rgba(245,158,11,0.15) 8px)',
+                  }}
+                />
+              )}
+            </button>
+
+            {/* Arrow connector */}
+            {idx < stages.length - 1 && (
+              <div className="hidden sm:flex items-center px-1">
+                <ArrowRight className="size-4 text-muted-foreground/40" />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -582,6 +759,15 @@ export function ProjectDetailView() {
           )}
         </div>
       </header>
+
+      {/* Three-Stage Progress */}
+      {drama && (
+        <div className="border-b border-border/50 bg-muted/20">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
+            <ThreeStageProgress drama={drama} />
+          </div>
+        </div>
+      )}
 
       {/* Episodes list */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">

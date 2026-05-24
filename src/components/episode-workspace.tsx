@@ -1871,20 +1871,16 @@ export function EpisodeWorkspace() {
       {/* ── Top Bar ────────────────────────────────────────── */}
       <header className="flex-shrink-0 border-b border-border/50 bg-background/80 backdrop-blur-md z-10">
         <div className="flex items-center gap-3 px-4 py-2.5">
-          <Button
-            variant="ghost"
-            size="sm"
+          {/* Breadcrumb: 项目名 > 管线生产 > 第N集 */}
+          <button
             onClick={() => navigateToProject(selectedDramaId!)}
-            className="text-muted-foreground hover:text-foreground -ml-2"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-28"
           >
-            <ArrowLeft className="size-4" />
-            <span className="hidden sm:inline">返回</span>
-          </Button>
-
-          <Separator orientation="vertical" className="h-5" />
-
-          <h1 className="text-sm font-semibold truncate">{dramaTitle}</h1>
-
+            {dramaTitle}
+          </button>
+          <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
+          <span className="text-sm text-muted-foreground">管线生产</span>
+          <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
           <Badge variant="secondary" className="text-xs flex-shrink-0">
             {episodeTitle}
           </Badge>

@@ -371,27 +371,26 @@ export function ScriptWorkbench() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      {/* 顶部导航 */}
-      <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            selectedDramaId && navigateToProject(selectedDramaId)
-          }
+      {/* 顶部导航 + 面包屑 */}
+      <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0"
+        style={{
+          backgroundImage: 'linear-gradient(to right, transparent, transparent 4px, rgba(245,158,11,0.03) 4px, rgba(245,158,11,0.03) 8px)',
+          backgroundSize: '8px 100%',
+          backgroundPosition: 'bottom',
+          backgroundRepeat: 'repeat-x',
+        }}
+      >
+        {/* Breadcrumb: 项目名 > 剧本生成工作台 */}
+        <button
+          onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-32"
         >
-          <ArrowLeft className="size-4 mr-1" />
-          返回项目
-        </Button>
-        <div className="h-4 w-px bg-border" />
-        <div className="flex items-center gap-2">
+          {currentDrama?.title || '项目'}
+        </button>
+        <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
+        <div className="flex items-center gap-1.5">
           <BookOpen className="size-4 text-amber-500" />
           <span className="text-sm font-medium">剧本生成工作台</span>
-          {currentDrama && (
-            <span className="text-sm text-muted-foreground">
-              — {currentDrama.title}
-            </span>
-          )}
         </div>
         {isGenerating && (
           <Badge
@@ -402,15 +401,27 @@ export function ScriptWorkbench() {
             生成中...
           </Badge>
         )}
+        {!isGenerating && (
+          <div className="ml-auto" />
+        )}
+        {/* Mobile drawer toggle */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="size-8 p-0 lg:hidden"
+          onClick={() => setLeftCollapsed(!leftCollapsed)}
+        >
+          {leftCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+        </Button>
       </div>
 
       {/* 主体三栏布局 */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── 左栏：章节导航 + 生成配置 ── */}
+        {/* ── 左栏：章节导航 + 生成配置 (slide-out drawer on < lg) ── */}
         <div
           className={`shrink-0 border-r border-border flex flex-col transition-all duration-200 ${
             leftCollapsed ? 'w-10' : 'w-72'
-          }`}
+          } hidden lg:flex`}
         >
           {leftCollapsed ? (
             <div className="flex flex-col items-center py-2">
@@ -626,6 +637,111 @@ export function ScriptWorkbench() {
             </>
           )}
         </div>
+
+        {/* ── Mobile drawer for left panel (< lg) ── */}
+        {!leftCollapsed && (
+          <div className="lg:hidden fixed inset-0 z-50 flex">
+            <div className="flex-1 bg-black/50" onClick={() => setLeftCollapsed(true)} />
+            <div className="w-72 bg-background border-l border-border flex flex-col overflow-y-auto">
+              {/* Chapter navigation + generation config - same content as left panel */}
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground">
+                  章节导航 ({chapters.length})
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-6 p-0"
+                  onClick={() => setLeftCollapsed(true)}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+              <ScrollArea className="flex-1">
+                {chapters.length > 0 ? (
+                  <div className="p-2 space-y-1">
+                    {chapters.map((ch, idx) => (
+                      <button
+                        key={ch.index}
+                        className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
+                          selectedChapterIdx === idx
+                            ? 'bg-primary/10 text-primary'
+                            : 'hover:bg-muted/50 text-foreground'
+                        }`}
+                        onClick={() => { setSelectedChapterIdx(idx); setLeftCollapsed(true) }}
+                      >
+                        <span className="size-4 rounded flex items-center justify-center text-[10px] font-mono bg-muted/60 shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate flex-1">{ch.title}</span>
+                        {novel?.parseStatus === 'parsed' && (
+                          <Check className="size-3 text-emerald-500 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : novel ? (
+                  <div className="p-4 text-center">
+                    {parsing ? (
+                      <div className="space-y-2">
+                        <Loader2 className="size-5 animate-spin mx-auto text-amber-500" />
+                        <p className="text-xs text-muted-foreground">正在解析...</p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">暂无章节数据</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-4" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
+                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
+                      <p className="text-xs font-medium">上传小说文件</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
+                    </div>
+                  </div>
+                )}
+              </ScrollArea>
+              <div className="border-t border-border p-3 space-y-3">
+                <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Zap className="size-3 text-amber-500" />
+                  生成配置
+                </div>
+                <div className="space-y-1.5">
+                  <Button
+                    size="sm"
+                    className="w-full h-7 text-xs gap-1.5"
+                    onClick={handleGenerateSkeleton}
+                    disabled={!novel || generatingSkeleton || isGenerating}
+                  >
+                    {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
+                    生成故事骨架
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="w-full h-7 text-xs gap-1.5"
+                    variant="outline"
+                    onClick={handleGenerateStrategy}
+                    disabled={!parsedContent.skeleton || generatingStrategy || isGenerating}
+                  >
+                    {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                    生成改编策略
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="w-full h-7 text-xs gap-1.5 amber-glow"
+                    onClick={handleGenerateScripts}
+                    disabled={!parsedContent.strategy || generatingScripts || isGenerating}
+                  >
+                    {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+                    批量生成剧本
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── 中栏：三个Tab ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -959,8 +1075,8 @@ export function ScriptWorkbench() {
           </Tabs>
         </div>
 
-        {/* ── 右栏：生成概览 ── */}
-        <div className="shrink-0 w-80 border-l border-border flex flex-col overflow-hidden">
+        {/* ── 右栏：生成概览 (hidden on mobile) ── */}
+        <div className="hidden lg:flex shrink-0 w-80 border-l border-border flex-col overflow-hidden">
           {/* 进度环 */}
           <div className="p-4 border-b border-border">
             <div className="flex items-center justify-center">

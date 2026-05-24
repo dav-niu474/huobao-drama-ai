@@ -534,48 +534,62 @@ export function AssetWorkbench() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      {/* 顶部导航 */}
+      {/* 顶部导航 + 面包屑 */}
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => selectedDramaId && navigateToScriptWorkbench(selectedDramaId)}
+        {/* Breadcrumb: 项目名 > 剧本生成工作台 > 素材管理工作台 */}
+        <button
+          onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-28"
         >
-          <ArrowLeft className="size-4 mr-1" />
-          剧本工作台
-        </Button>
-        <div className="h-4 w-px bg-border" />
-        <div className="flex items-center gap-2">
+          {currentDrama?.title || '项目'}
+        </button>
+        <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
+        <button
+          onClick={() => selectedDramaId && navigateToScriptWorkbench(selectedDramaId)}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          剧本生成
+        </button>
+        <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
+        <div className="flex items-center gap-1.5">
           <Palette className="size-4 text-amber-500" />
           <span className="text-sm font-medium">素材管理工作台</span>
-          {currentDrama && (
-            <span className="text-sm text-muted-foreground">— {currentDrama.title}</span>
-          )}
         </div>
         {(extracting || polishing || batchProgress.active) && (
-          <Badge variant="outline" className="ml-auto text-[10px] px-2 py-0 text-amber-600 border-amber-300">
+          <Badge variant="outline" className="text-[10px] px-2 py-0 text-amber-600 border-amber-300">
             <Loader2 className="size-3 mr-1 animate-spin" />
             处理中...
           </Badge>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
-          >
-            进入管线 →
-          </Button>
-        </div>
+        {!extracting && !polishing && !batchProgress.active && (
+          <div className="ml-auto" />
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="hidden sm:inline-flex text-xs gap-1"
+          onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
+        >
+          进入管线 →
+        </Button>
+        {/* Mobile drawer toggle */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="size-8 p-0 lg:hidden"
+          onClick={() => setLeftCollapsed(!leftCollapsed)}
+        >
+          {leftCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+        </Button>
       </div>
 
       {/* 主体两栏布局 */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── 左工具面板 ── */}
+        {/* ── 左工具面板 (slide-out drawer on < lg) ── */}
         <div
           className={`shrink-0 border-r border-border flex flex-col transition-all duration-200 ${
             leftCollapsed ? 'w-10' : 'w-80'
-          }`}
+          } hidden lg:flex`}
         >
           {leftCollapsed ? (
             <div className="flex flex-col items-center py-2 gap-2">
@@ -817,6 +831,76 @@ export function AssetWorkbench() {
           )}
         </div>
 
+        {/* ── Mobile drawer for left tool panel (< lg) ── */}
+        {!leftCollapsed && (
+          <div className="lg:hidden fixed inset-0 z-50 flex">
+            <div className="flex-1 bg-black/50" onClick={() => setLeftCollapsed(true)} />
+            <div className="w-80 bg-background border-l border-border flex flex-col overflow-y-auto">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Zap className="size-3 text-amber-500" />
+                  工具面板
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-6 p-0"
+                  onClick={() => setLeftCollapsed(true)}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="p-3 space-y-4">
+                  <section>
+                    <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <FolderOpen className="size-3" />
+                      素材提取
+                      {getExtractStatusBadge()}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Button
+                        size="sm"
+                        className="w-full h-7 text-xs gap-1.5"
+                        onClick={() => { handleExtractAll(); setLeftCollapsed(true) }}
+                        disabled={extracting}
+                      >
+                        {extracting ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+                        提取全部素材
+                      </Button>
+                    </div>
+                  </section>
+                  <Separator />
+                  <section>
+                    <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <Filter className="size-3" />
+                      类型筛选
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(['all', 'character', 'scene', 'prop'] as TypeFilter[]).map((type) => {
+                        const count = type === 'all' ? counts.all : counts[type]
+                        const isActive = typeFilter === type
+                        const label = type === 'all' ? '全部' : TYPE_LABELS[type]
+                        return (
+                          <button
+                            key={type}
+                            className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors border ${
+                              isActive ? 'bg-amber-500/15 text-amber-600 border-amber-500/30' : 'bg-muted/50 text-muted-foreground border-transparent hover:bg-muted'
+                            }`}
+                            onClick={() => { setTypeFilter(type); setLeftCollapsed(true) }}
+                          >
+                            {label} ({count})
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+        )}
+
         {/* ── 右素材面板 ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header bar */}
@@ -881,7 +965,7 @@ export function AssetWorkbench() {
           <ScrollArea className="flex-1">
             {filteredAssets.length > 0 ? (
               viewMode === 'grid' ? (
-                <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {filteredAssets.map((asset) => (
                     <AssetCard
                       key={`${asset.type}-${asset.id}`}
