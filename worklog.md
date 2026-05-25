@@ -623,3 +623,23 @@ Stage Summary:
   - 左栏默认状态响应式 (桌面展开/移动折叠)
   - 集数范围健壮同步 (useRef)
 - PR #42 已更新，Vercel Preview 会自动部署
+---
+Task ID: 1
+Agent: Main Agent
+Task: 修复剧本工作台所有问题（章节解析不完整+无标题+右侧重叠+MiMo URL）
+
+Work Log:
+- 深度审查了 script-workbench.tsx (1431行)、novel-parser.ts、generate-skeleton/route.ts、generate-scripts/route.ts、novels/route.ts、parse/route.ts、provider-presets.ts
+- 定位到根本原因：splitChapters的正则表达式使用[\s\S]*$在multiline模式下会跨行贪婪匹配，导致matchAll只返回1个结果，回退到5000字符切块逻辑
+- 修复1：将[\s\S]*$改为.*$，并增加(\s.*)?约束避免误匹配正文
+- 修复2：parse路由从覆盖parsedContent改为合并(merge)
+- 修复3：右栏布局改为进度环固定+ScrollArea统一滚动
+- 修复4：MiMo base URL改回token-plan-sgp.xiaomimimo.com
+- 本地构建通过，120章测试全部正确识别
+- 推送到feat/add-mimo-provider分支 (commit 4fcfb86)
+
+Stage Summary:
+- 4个文件修改：novel-parser.ts, parse/route.ts, script-workbench.tsx, provider-presets.ts
+- 正则修复前：120章小说→约50个片段(无标题)
+- 正则修复后：120章小说→120个章节(完整标题)
+- 等待Vercel Preview部署验证
