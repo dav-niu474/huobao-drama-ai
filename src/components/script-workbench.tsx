@@ -76,7 +76,10 @@ export function ScriptWorkbench() {
   const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [parsedContent, setParsedContent] = useState<ParsedContent>({})
   const [episodes, setEpisodes] = useState<EpisodeStatus[]>([])
-  const [leftCollapsed, setLeftCollapsed] = useState(false)
+  // Desktop: left panel visible by default; Mobile: collapsed by default
+  const [leftCollapsed, setLeftCollapsed] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
+  )
   const [activeTab, setActiveTab] = useState('skeleton')
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number | null>(null)
 
@@ -91,11 +94,15 @@ export function ScriptWorkbench() {
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
 
   // Auto-sync episode range when chapters load
+  // When chapters are available and user hasn't manually adjusted,
+  // sync the end range to the chapter count
+  const episodeRangeAdjusted = useRef(false)
   useEffect(() => {
-    if (chapters.length > 0 && episodeRangeEnd === 10) {
+    if (chapters.length > 0 && !episodeRangeAdjusted.current) {
       setEpisodeRangeEnd(chapters.length)
+      episodeRangeAdjusted.current = true
     }
-  }, [chapters.length, episodeRangeEnd])
+  }, [chapters.length])
 
   // Upload state
   const [uploading, setUploading] = useState(false)
