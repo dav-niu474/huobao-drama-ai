@@ -508,3 +508,30 @@ Stage Summary:
 - 2 files changed, 1308 insertions, 27 deletions
 - Key files: src/components/asset-workbench.tsx (full replacement), src/lib/api.ts (batchGenerateImages method)
 - Build passes successfully
+
+---
+Task ID: mimo-tts-production-deploy
+Agent: Main Agent
+Task: 修复 MiMo TTS 连接测试 400 错误 — 推送到 production 并验证
+
+Work Log:
+- 诊断发现之前所有修复都在 feat/add-mimo-provider 分支，但用户在 production (main) 上测试
+- Vercel production 只部署 main 分支，PR #41 的修复从未合入 main
+- 将 feat/add-mimo-provider 合入本地 main 并推送到远端
+- Vercel production 自动部署完成 (commit 7557b2a)
+- 用 curl 测试确认新请求格式：API 返回 401 (Invalid Key) 而非 400 (Param Incorrect)
+- 移除临时调试日志，确认代码干净
+
+MiMoTTSAdapter 修复要点（commit 7557b2a）:
+1. assistant 消息内容改为要合成的文本 params.text（之前为空字符串）
+2. user 消息内容改为风格指令（之前放了合成文本）
+3. 添加必需的 audio 对象 { format: 'wav', voice: 'mimo_default' }
+4. 认证头改为 api-key（MiMo 官方规范，之前用 Authorization: Bearer）
+5. parseResponse 正确解析 choices[0].message.audio.data
+6. 默认 voiceId 改为 mimo_default
+
+Stage Summary:
+- main 分支已更新到 7557b2a
+- Vercel production 已部署
+- 用户需要在 production 上用真实 MiMo API key 测试
+- 需要用户提供 MIMO_API_KEY 才能做完整的端到端验证
