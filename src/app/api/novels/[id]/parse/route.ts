@@ -86,12 +86,19 @@ export async function POST(
 
     // Run extraction in background (don't await — return immediately)
     extractChapterEvents(chapters, 'story_skeleton', novel.dramaId, emitter)
-      .then(async (parsedContent) => {
-        // Store parsed content
+      .then(async (extractionResult) => {
+        // Merge extraction results into existing parsedContent (preserve skeleton/strategy if already generated)
+        let existingParsed: Record<string, unknown> = {}
+        try {
+          existingParsed = JSON.parse(novel.parsedContent || '{}')
+        } catch { /* ignore */ }
+        const mergedParsed = { ...existingParsed, extractionResult }
+
+        // Store merged parsed content
         await db.novel.update({
           where: { id },
           data: {
-            parsedContent: JSON.stringify(parsedContent),
+            parsedContent: JSON.stringify(mergedParsed),
             parseStatus: 'parsed',
           },
         })

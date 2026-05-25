@@ -1126,8 +1126,8 @@ export function ScriptWorkbench() {
 
         {/* ── 右栏：生成概览 (hidden on mobile) ── */}
         <div className="hidden lg:flex shrink-0 w-80 border-l border-border flex-col overflow-hidden">
-          {/* 进度环 */}
-          <div className="p-4 border-b border-border">
+          {/* 进度环 — 固定在顶部 */}
+          <div className="shrink-0 p-4 border-b border-border">
             <div className="flex items-center justify-center">
               <div className="relative">
                 <svg className="size-24 -rotate-90">
@@ -1167,18 +1167,19 @@ export function ScriptWorkbench() {
             </div>
           </div>
 
-          {/* 剧集状态列表 */}
-          <div className="border-b border-border">
-            <div className="px-4 py-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">
-                剧集状态
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {completedEpisodes}/{totalEpisodes}
-              </span>
-            </div>
-            <ScrollArea className="max-h-48">
-              <div className="px-4 pb-2 space-y-1">
+          {/* 可滚动区域：剧集状态 + 统计 + 工作流程 */}
+          <ScrollArea className="flex-1 min-h-0">
+            {/* 剧集状态列表 */}
+            <div className="border-b border-border">
+              <div className="px-4 py-2 flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  剧集状态
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {completedEpisodes}/{totalEpisodes}
+                </span>
+              </div>
+              <div className="px-4 pb-2 space-y-1 max-h-64 overflow-y-auto">
                 {episodes.length > 0 ? (
                   episodes.map((ep) => (
                     <div
@@ -1186,7 +1187,7 @@ export function ScriptWorkbench() {
                       className="flex items-center gap-2 text-xs"
                     >
                       <StatusDot status={ep.scriptStatus} />
-                      <span className="text-muted-foreground font-mono w-6">
+                      <span className="text-muted-foreground font-mono w-6 shrink-0">
                         E{String(ep.episodeNumber).padStart(2, '0')}
                       </span>
                       <span className="flex-1 truncate">
@@ -1200,84 +1201,84 @@ export function ScriptWorkbench() {
                   </p>
                 )}
               </div>
-            </ScrollArea>
-          </div>
+            </div>
 
-          {/* 统计信息 */}
-          <div className="p-4 border-b border-border">
-            <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-              <BarChart3 className="size-3" />
-              统计信息
+            {/* 统计信息 */}
+            <div className="p-4 border-b border-border">
+              <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                <BarChart3 className="size-3" />
+                统计信息
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard
+                  label="总章节"
+                  value={String(chapters.length)}
+                  icon={<ListChecks className="size-3" />}
+                />
+                <StatCard
+                  label="总集数"
+                  value={String(totalEpisodes || '—')}
+                  icon={<Layers className="size-3" />}
+                />
+                <StatCard
+                  label="已完成"
+                  value={String(completedEpisodes)}
+                  icon={<Check className="size-3" />}
+                />
+                <StatCard
+                  label="预计时长"
+                  value={`${totalEpisodes * 2}min`}
+                  icon={<Clock className="size-3" />}
+                />
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <StatCard
-                label="总章节"
-                value={String(chapters.length)}
-                icon={<ListChecks className="size-3" />}
-              />
-              <StatCard
-                label="总集数"
-                value={String(totalEpisodes || '—')}
-                icon={<Layers className="size-3" />}
-              />
-              <StatCard
-                label="已完成"
-                value={String(completedEpisodes)}
-                icon={<Check className="size-3" />}
-              />
-              <StatCard
-                label="预计时长"
-                value={`${totalEpisodes * 2}min`}
-                icon={<Clock className="size-3" />}
-              />
-            </div>
-          </div>
 
-          {/* 生成步骤指引 */}
-          <div className="flex-1 p-4 overflow-y-auto">
-            <div className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
-              <Zap className="size-3 text-amber-500" />
-              工作流程
+            {/* 生成步骤指引 */}
+            <div className="p-4">
+              <div className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Zap className="size-3 text-amber-500" />
+                工作流程
+              </div>
+              <div className="space-y-3">
+                <StepItem
+                  number={1}
+                  title="上传小说"
+                  done={!!novel}
+                  active={!novel}
+                />
+                <StepItem
+                  number={2}
+                  title="解析小说"
+                  done={novel?.parseStatus === 'parsed'}
+                  active={!!novel && novel?.parseStatus !== 'parsed'}
+                />
+                <StepItem
+                  number={3}
+                  title="提取故事骨架"
+                  done={!!parsedContent.skeleton}
+                  active={
+                    !parsedContent.skeleton && novel?.parseStatus === 'parsed'
+                  }
+                />
+                <StepItem
+                  number={4}
+                  title="制定改编策略"
+                  done={!!parsedContent.strategy}
+                  active={
+                    !!parsedContent.skeleton && !parsedContent.strategy
+                  }
+                />
+                <StepItem
+                  number={5}
+                  title="生成剧本"
+                  done={completedEpisodes > 0}
+                  active={
+                    !!parsedContent.strategy && completedEpisodes === 0
+                  }
+                />
+              </div>
             </div>
-            <div className="space-y-3">
-              <StepItem
-                number={1}
-                title="上传小说"
-                done={!!novel}
-                active={!novel}
-              />
-              <StepItem
-                number={2}
-                title="解析小说"
-                done={novel?.parseStatus === 'parsed'}
-                active={!!novel && novel?.parseStatus !== 'parsed'}
-              />
-              <StepItem
-                number={3}
-                title="提取故事骨架"
-                done={!!parsedContent.skeleton}
-                active={
-                  !parsedContent.skeleton && novel?.parseStatus === 'parsed'
-                }
-              />
-              <StepItem
-                number={4}
-                title="制定改编策略"
-                done={!!parsedContent.strategy}
-                active={
-                  !!parsedContent.skeleton && !parsedContent.strategy
-                }
-              />
-              <StepItem
-                number={5}
-                title="生成剧本"
-                done={completedEpisodes > 0}
-                active={
-                  !!parsedContent.strategy && completedEpisodes === 0
-                }
-              />
-            </div>
-          </div>
+          </ScrollArea>
         </div>
       </div>
     </div>

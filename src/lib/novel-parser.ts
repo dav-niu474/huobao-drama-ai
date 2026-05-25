@@ -54,12 +54,18 @@ export async function parseNovelFile(
 // ============================================================
 
 // Chinese chapter patterns (ordered by specificity)
+// IMPORTANT:
+// 1. Use .*$ instead of [\s\S]*$ — with `m` flag, [\s\S]*$ matches
+//    across newlines and consumes the entire rest of the text, causing matchAll
+//    to return only 1 match. .*$ correctly matches within a single line.
+// 2. Require whitespace after chapter marker (e.g. "第一章 标题" not "第一章内容")
+//    to avoid matching content lines that mention chapter numbers.
 const CHAPTER_PATTERNS = [
-  /^[\s]*第[零一二三四五六七八九十百千万\d]+[章回节卷卷][\s\S]*$/gm,  // 第X章/第X回/第X节/第X卷
-  /^[\s]*Chapter\s+\d+[\s\S]*$/gim,                                     // Chapter X (English)
-  /^[\s]*CHAPTER\s+\d+[\s\S]*$/gm,                                      // CHAPTER X
-  /^[\s]*卷[零一二三四五六七八九十百千万\d]+[\s\S]*$/gm,                  // 卷X
-  /^[\s]*\d+[\.\、][\s\S]*$/gm,                                         // 1. / 1、 numbered
+  /^[\s]*第[零一二三四五六七八九十百千万\d]+[章回节卷](\s.*)?$/gm,   // 第X章/第X回/第X节/第X卷
+  /^[\s]*Chapter\s+\d+.*$/gim,                                          // Chapter X (English)
+  /^[\s]*CHAPTER\s+\d+.*$/gm,                                           // CHAPTER X
+  /^[\s]*卷[零一二三四五六七八九十百千万\d]+(\s.*)?$/gm,               // 卷X
+  /^[\s]*\d+[\.\、]\s.*$/gm,                                            // 1. / 1、 numbered (require space after delimiter)
 ]
 
 export function splitChapters(text: string): Chapter[] {

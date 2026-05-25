@@ -128,7 +128,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'mimo',
       name: 'MiMo',
-      defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+      defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
       defaultModel: 'mimo-v2.5-pro',
       description: 'MiMo 大模型 — 1T 参数旗舰对话，1M 超长上下文，含思维链推理，OpenAI 兼容接口',
       envKey: 'MIMO_API_KEY',
@@ -441,7 +441,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'mimo',
       name: 'MiMo TTS',
-      defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+      defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
       defaultModel: 'mimo-v2.5-tts',
       description: 'MiMo 语音合成 — V2.5 TTS，支持声音克隆和声音设计，OpenAI 兼容接口',
       envKey: 'MIMO_API_KEY',
