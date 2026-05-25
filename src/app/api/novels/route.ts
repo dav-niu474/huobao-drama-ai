@@ -39,10 +39,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Parse chapters from JSON for convenience
-    const chapters = JSON.parse(novel.chapters)
+    // Note: novel.chapters is a JSON string in DB; we spread the novel first
+    // and then overwrite with parsed chapters array to ensure correct type
+    const { chapters: chaptersRaw, ...novelRest } = novel
+    const chapters = JSON.parse(chaptersRaw)
 
     return NextResponse.json({
-      ...novel,
+      ...novelRest,
       chapters,
     })
   } catch (error) {

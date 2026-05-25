@@ -80,6 +80,18 @@ export function ScriptWorkbench() {
   const [leftCollapsed, setLeftCollapsed] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   )
+
+  // Helper: safely parse chapters from API response (may be string or array)
+  const parseChapters = (raw: unknown): ChapterInfo[] => {
+    if (Array.isArray(raw)) return raw
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+      } catch { return [] }
+    }
+    return []
+  }
   const [activeTab, setActiveTab] = useState('skeleton')
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number | null>(null)
 
@@ -129,7 +141,8 @@ export function ScriptWorkbench() {
         const novelData = await novelRes.json()
         if (novelData) {
           setNovel(novelData)
-          setChapters(novelData.chapters || [])
+          // API may return chapters as parsed array or as JSON string
+          setChapters(parseChapters(novelData.chapters))
           try {
             const pc = JSON.parse(novelData.parsedContent || '{}')
             setParsedContent(pc)
@@ -168,7 +181,7 @@ export function ScriptWorkbench() {
           const novelData = await novelRes.json()
           if (novelData) {
             setNovel(novelData)
-            setChapters(novelData.chapters || [])
+            setChapters(parseChapters(novelData.chapters))
             try {
               const pc = JSON.parse(novelData.parsedContent || '{}')
               setParsedContent(pc)
@@ -232,7 +245,7 @@ export function ScriptWorkbench() {
     try {
       const result = await api.novels.uploadForDrama(selectedDramaId, file)
       setNovel(result.novel)
-      setChapters(result.chapters || [])
+      setChapters(parseChapters(result.chapters))
       toast({ title: '小说上传成功' })
 
       // Auto-trigger parsing
@@ -1179,7 +1192,7 @@ export function ScriptWorkbench() {
                   {completedEpisodes}/{totalEpisodes}
                 </span>
               </div>
-              <div className="px-4 pb-2 space-y-1 max-h-64 overflow-y-auto">
+              <div className="px-4 pb-2 space-y-1">
                 {episodes.length > 0 ? (
                   episodes.map((ep) => (
                     <div

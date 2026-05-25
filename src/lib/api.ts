@@ -35,7 +35,7 @@ export interface Novel {
   id: string
   dramaId: string
   title: string
-  chapters: string  // JSON: [{ index, title, content }]
+  chapters: Array<{ index: number; title: string; content: string }> | string  // Parsed array from API, or JSON string from DB
   parsedContent: string  // JSON: parsed events/skeleton data
   parseStatus: string  // pending | parsing | parsed | failed
   fileSize: number
