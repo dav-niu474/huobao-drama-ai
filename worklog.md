@@ -643,3 +643,41 @@ Stage Summary:
 - 正则修复前：120章小说→约50个片段(无标题)
 - 正则修复后：120章小说→120个章节(完整标题)
 - 等待Vercel Preview部署验证
+---
+Task ID: fix-script-workbench-chapters
+Agent: Main Agent
+Task: 修复剧本工作台章节解析不完整、无标题、右侧重叠问题
+
+Work Log:
+- 分析根本原因：novel-parser.ts 的 splitChapters 函数正则模式覆盖不足
+- 发现旧模式只支持5种格式，漏匹配大量常见章节格式(部/篇/集/〇等)
+- 旧回退逻辑使用5000字符切块+标题"片段 N"，完全丢失章节标题信息
+- API返回时 {...novel, chapters} 导致字符串chapters覆盖已解析的数组
+- 右侧面板 max-h-64 限制导致内容溢出重叠
+
+- 重写 novel-parser.ts 的 splitChapters：
+  - 分层匹配策略：主要→次要→三级→启发式→字符数回退
+  - 新增 部/篇/集/〇 字符支持
+  - 添加 isValidChapterMatch 验证函数(avgLen + spread check)
+  - 新增 tryHeuristicHeadingSplit 启发式标题检测
+  - 新增 extractTitleFromContent 智能标题提取
+  - 回退块大小从5000→3000，更细粒度
+
+- 修复 script-workbench.tsx：
+  - 添加 parseChapters 辅助函数处理 string/array 类型
+  - 移除右侧 max-h-64 限制
+
+- 修复 api/novels/route.ts：
+  - 使用解构 { chapters: chaptersRaw, ...novelRest } 避免覆盖
+
+- 修复 api.ts：
+  - Novel.chapters 类型改为 Array | string 联合类型
+
+- 本地测试：120章小说全部正确识别，标题完整
+- 构建通过，代码已推送
+
+Stage Summary:
+- 修改4个文件，新增243行，删除36行
+- PR #42 已更新描述
+- Vercel Preview 将自动部署
+- 等待用户验证章节显示是否正常
