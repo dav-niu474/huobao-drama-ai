@@ -282,38 +282,63 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     params: { text: string; voiceId?: string; speed?: number }
   ): ProviderRequest {
     const model = config.model || 'mimo-v2.5-tts'
-    const voiceId = params.voiceId || 'mimo_default'
+
+    // ── Voice ID resolution ──
+    // V2.5 preset voices: 茉莉, 冰糖, 苏打, 白桦, Mia, Chloe, Milo, Dean
+    // V2 legacy voices: mimo_default, default_zh, default_en
+    // V2.5-voiceclone: "data:audio/mpeg;base64,..." (Data URL with audio sample)
+    // V2.5-voicedesign: no voice field needed
+    const isV2Model = model.startsWith('mimo-v2-') && !model.startsWith('mimo-v2.5')
+    const isVoiceDesign = model.includes('voicedesign')
+    const isVoiceClone = model.includes('voiceclone')
+
+    // Default voice: V2.5 uses 茉莉, V2 uses mimo_default
+    let voiceId = params.voiceId || (isV2Model ? 'mimo_default' : '茉莉')
 
     // MiMo TTS uses chat/completions interface with a special convention:
     // - assistant message content = the text to be synthesized (REQUIRED)
-    // - user message content = style/direction instructions (optional)
-    // - audio object with format + voice is REQUIRED
-    // - Authentication uses `api-key` header (not Authorization: Bearer)
+    // - user message content = style/direction instructions (optional for preset, required for voicedesign)
+    // - audio object with format is REQUIRED; voice field depends on model type
+    // - Authentication: `api-key` header (preferred) or `Authorization: Bearer`
     //
-    // Reference: https://platform.xiaomimimo.com/static/docs/usage-guide/speech-synthesis-v2.5.md
+    // Reference: https://platform.xiaomimimo.com/docs/usage-guide/speech-synthesis-v2.5
 
     const messages: Array<{ role: string; content: string }> = []
 
-    // Add user message for style instructions (optional, improves quality)
-    messages.push({ role: 'user', content: '请用自然、清晰的语速朗读。' })
+    if (isVoiceDesign) {
+      // Voice Design: user message = voice description (REQUIRED)
+      // voiceId is treated as the voice description text
+      messages.push({ role: 'user', content: voiceId || '温柔的女声，语速适中' })
+      messages.push({ role: 'assistant', content: params.text })
+    } else {
+      // Preset voice / Voice clone: user message = style instructions (optional)
+      messages.push({ role: 'user', content: '请用自然、清晰的语速朗读。' })
+      messages.push({ role: 'assistant', content: params.text })
+    }
 
-    // The assistant message contains the actual text to synthesize — this is what gets spoken
-    messages.push({ role: 'assistant', content: params.text })
+    // Build audio object based on model type
+    const audioObj: Record<string, string> = { format: 'wav' }
+    if (isVoiceDesign) {
+      // Voice design: no voice field needed
+    } else if (isVoiceClone && voiceId) {
+      // Voice clone: voice = data URL with base64 audio sample
+      audioObj.voice = voiceId
+    } else {
+      // Preset voice: voice = voice name (e.g. 茉莉, 冰糖)
+      audioObj.voice = voiceId
+    }
 
     return {
       url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
       method: 'POST',
       headers: {
-        'api-key': config.apiKey,  // MiMo uses api-key header, NOT Authorization: Bearer
+        'api-key': config.apiKey,
         'Content-Type': 'application/json',
       },
       body: {
         model,
         messages,
-        audio: {
-          format: 'wav',
-          voice: voiceId,
-        },
+        audio: audioObj,
         stream: false,
       },
     }

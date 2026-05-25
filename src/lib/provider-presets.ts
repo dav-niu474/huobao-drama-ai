@@ -128,7 +128,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'mimo',
       name: 'MiMo',
-      defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
       defaultModel: 'mimo-v2.5-pro',
       description: 'MiMo 大模型 — 1T 参数旗舰对话，1M 超长上下文，含思维链推理，OpenAI 兼容接口',
       envKey: 'MIMO_API_KEY',
@@ -441,15 +441,15 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'mimo',
       name: 'MiMo TTS',
-      defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
       defaultModel: 'mimo-v2.5-tts',
       description: 'MiMo 语音合成 — V2.5 TTS，支持声音克隆和声音设计，OpenAI 兼容接口',
       envKey: 'MIMO_API_KEY',
       availableModels: [
-        { id: 'mimo-v2.5-tts', name: 'MiMo V2.5 TTS', tags: ['推荐', '最新'] },
-        { id: 'mimo-v2.5-tts-voiceclone', name: 'MiMo V2.5 声音克隆', tags: ['最新'] },
+        { id: 'mimo-v2.5-tts', name: 'MiMo V2.5 TTS (预置音色)', tags: ['推荐', '最新'] },
         { id: 'mimo-v2.5-tts-voicedesign', name: 'MiMo V2.5 声音设计', tags: ['最新'] },
-        { id: 'mimo-v2-tts', name: 'MiMo V2 TTS' },
+        { id: 'mimo-v2.5-tts-voiceclone', name: 'MiMo V2.5 声音克隆', tags: ['最新'] },
+        { id: 'mimo-v2-tts', name: 'MiMo V2 TTS (旧版)' },
       ],
     },
     {
