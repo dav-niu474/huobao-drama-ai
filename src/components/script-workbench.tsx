@@ -419,7 +419,7 @@ export function ScriptWorkbench() {
       <div className="flex flex-1 overflow-hidden">
         {/* ── 左栏：章节导航 + 生成配置 (slide-out drawer on < lg) ── */}
         <div
-          className={`shrink-0 border-r border-border flex flex-col transition-all duration-200 ${
+          className={`shrink-0 border-r border-border flex flex-col overflow-hidden transition-all duration-200 ${
             leftCollapsed ? 'w-10' : 'w-72'
           } hidden lg:flex`}
         >
@@ -455,7 +455,7 @@ export function ScriptWorkbench() {
               </div>
 
               {/* 章节列表 */}
-              <ScrollArea className="flex-1">
+              <ScrollArea className="flex-1 min-h-0">
                 {chapters.length > 0 ? (
                   <div className="p-2 space-y-1">
                     {chapters.map((ch, idx) => (
@@ -543,7 +543,7 @@ export function ScriptWorkbench() {
               </ScrollArea>
 
               {/* 生成配置面板 */}
-              <div className="border-t border-border p-3 space-y-3">
+              <div className="shrink-0 border-t border-border p-3 space-y-3">
                 <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                   <Zap className="size-3 text-amber-500" />
                   生成配置
