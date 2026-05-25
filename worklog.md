@@ -597,3 +597,29 @@ Work Log:
 Stage Summary:
 - PR #42 已创建，等待审核
 - ⚠️ 未经用户确认不可合入
+
+---
+Task ID: 5
+Agent: main
+Task: 修复剧本工作台剩余问题
+
+Work Log:
+- 用 agent-browser 打开线上站点(huobao-drama-ai.vercel.app)验证当前main分支代码
+- 注册用户、创建项目、进入剧本工作台查看实际布局
+- 发现feature分支之前的修复不够完善：
+  1. leftCollapsed 默认 false → 移动端首次加载弹出遮罩
+  2. episodeRangeEnd === 10 判断太脆弱
+- 修复 leftCollapsed 默认值：桌面展开(>=1024)，移动端折叠
+- 修复集数联动：用 useRef 替代脆弱的值判断，首次同步后不再覆盖
+- next build 通过
+- commit 564b47f 推送到 feat/add-mimo-provider
+
+Stage Summary:
+- 剧本工作台修复现在包含：
+  - overflow-hidden + min-h-0 (章节滚动)
+  - shrink-0 (生成配置面板不被压缩)
+  - 章节标题 fallback (第N章)
+  - 章节内容预览 (新功能)
+  - 左栏默认状态响应式 (桌面展开/移动折叠)
+  - 集数范围健壮同步 (useRef)
+- PR #42 已更新，Vercel Preview 会自动部署
