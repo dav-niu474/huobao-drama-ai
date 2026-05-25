@@ -54,60 +54,90 @@ export async function parseNovelFile(
 // ============================================================
 
 // Chinese chapter patterns (ordered by specificity)
-const CHAPTER_PATTERNS = [
-  /^[\s]*第[零一二三四五六七八九十百千万\d]+[章回节卷卷][\s\S]*$/gm,  // 第X章/第X回/第X节/第X卷
-  /^[\s]*Chapter\s+\d+[\s\S]*$/gim,                                     // Chapter X (English)
-  /^[\s]*CHAPTER\s+\d+[\s\S]*$/gm,                                      // CHAPTER X
-  /^[\s]*卷[零一二三四五六七八九十百千万\d]+[\s\S]*$/gm,                  // 卷X
-  /^[\s]*\d+[\.\、][\s\S]*$/gm,                                         // 1. / 1、 numbered
+const CHAPTER_PATTERNS: RegExp[] = [
+  /^[\s]*第[零一二三四五六七八九十百千万\d]+[章回节卷][\s]*.*$/gm,   // 第X章 xxx / 第X回 xxx / 第X节 xxx / 第X卷 xxx
+  /^[\s]*Chapter\s+\d+[\s]*.*$/gim,                                   // Chapter X xxx (English)
+  /^[\s]*CHAPTER\s+\d+[\s]*.*$/gm,                                    // CHAPTER X
+  /^[\s]*卷[零一二三四五六七八九十百千万\d]+[\s]*.*$/gm,               // 卷X xxx
+  /^[\s]*\d+[\.\、][\s]*.*$/gm,                                      // 1. xxx / 1、xxx numbered
+  /^[\s]*第[零一二三四五六七八九十百千万\d]+集[\s]*.*$/gm,             // 第X集
+  /^[\s]*\[第[零一二三四五六七八九十百千万\d]+[章回节卷集]\][\s]*.*$/gm, // [第X章] 带方括号
+  /^[\s]*【第[零一二三四五六七八九十百千万\d]+[章回节卷集]】[\s]*.*$/gm, // 【第X章】带书名号
+  /^[\s]*[（\(]第[零一二三四五六七八九十百千万\d]+[章回节卷集][）\)][\s]*.*$/gm, // （第X章）带括号
 ]
+
+/** Extract a clean title from a matched chapter heading line */
+function extractTitle(matchedLine: string): string {
+  const trimmed = matchedLine.trim()
+  if (trimmed.length <= 60) return trimmed
+  return trimmed.slice(0, 60) + '…'
+}
 
 export function splitChapters(text: string): Chapter[] {
   if (!text || text.trim().length === 0) {
     return []
   }
 
+  // Normalize line endings: CRLF → LF
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
   // Try each pattern until we find one that splits into >= 2 chapters
   for (const pattern of CHAPTER_PATTERNS) {
-    const matches = [...text.matchAll(pattern)]
+    pattern.lastIndex = 0
+    const matches = [...normalizedText.matchAll(pattern)]
     if (matches.length >= 2) {
       const chapters: Chapter[] = []
       for (let i = 0; i < matches.length; i++) {
         const startIdx = matches[i].index!
-        const endIdx = i + 1 < matches.length ? matches[i + 1].index! : text.length
-        const title = matches[i][0].trim()
-        const content = text.slice(startIdx + matches[i][0].length, endIdx).trim()
+        const endIdx = i + 1 < matches.length ? matches[i + 1].index! : normalizedText.length
+        const title = extractTitle(matches[i][0])
+        const content = normalizedText.slice(startIdx + matches[i][0].length, endIdx).trim()
         chapters.push({ index: i, title, content })
       }
       return chapters
     }
   }
 
-  // No chapter pattern found — split by ~5000 char chunks
-  const CHUNK_SIZE = 5000
+  // No chapter pattern found — split by paragraph boundaries
+  // Use a larger chunk size and extract meaningful titles from content
+  const CHUNK_SIZE = 8000
   const chapters: Chapter[] = []
   let idx = 0
-  let chunkNum = 1
 
-  while (idx < text.length) {
-    let endIdx = Math.min(idx + CHUNK_SIZE, text.length)
+  while (idx < normalizedText.length) {
+    let endIdx = Math.min(idx + CHUNK_SIZE, normalizedText.length)
 
     // Try to break at paragraph boundary (double newline)
-    if (endIdx < text.length) {
-      const lastParagraphBreak = text.lastIndexOf('\n\n', endIdx)
+    if (endIdx < normalizedText.length) {
+      const lastParagraphBreak = normalizedText.lastIndexOf('\n\n', endIdx)
       if (lastParagraphBreak > idx + CHUNK_SIZE * 0.5) {
         endIdx = lastParagraphBreak
+      } else {
+        const lastLineBreak = normalizedText.lastIndexOf('\n', endIdx)
+        if (lastLineBreak > idx + CHUNK_SIZE * 0.3) {
+          endIdx = lastLineBreak
+        }
       }
     }
 
-    const content = text.slice(idx, endIdx).trim()
+    const content = normalizedText.slice(idx, endIdx).trim()
     if (content.length > 0) {
+      // Extract a meaningful title from the first non-empty line of the chunk
+      const firstLine = content.split('\n').find(l => l.trim().length > 0)?.trim() || ''
+      let title: string
+      if (firstLine.length > 0 && firstLine.length <= 50) {
+        title = firstLine
+      } else if (firstLine.length > 50) {
+        title = firstLine.slice(0, 30) + '…'
+      } else {
+        title = `第${chapters.length + 1}章`
+      }
+
       chapters.push({
         index: chapters.length,
-        title: `片段 ${chunkNum}`,
+        title,
         content,
       })
-      chunkNum++
     }
     idx = endIdx
   }

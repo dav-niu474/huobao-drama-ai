@@ -77,7 +77,7 @@ export function ScriptWorkbench() {
   const [parsedContent, setParsedContent] = useState<ParsedContent>({})
   const [episodes, setEpisodes] = useState<EpisodeStatus[]>([])
   const [leftCollapsed, setLeftCollapsed] = useState(false)
-  const [activeTab, setActiveTab] = useState('skeleton')
+  const [activeTab, setActiveTab] = useState('chapter')
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number | null>(null)
 
   // Generation states
@@ -90,8 +90,15 @@ export function ScriptWorkbench() {
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
 
-  // Upload state
-  const [uploading, setUploading] = useState(false)
+  // Auto-sync episode range when chapters load
+  useEffect(() => {
+    if (chapters.length > 0 && episodeRangeEnd === 10) {
+      setEpisodeRangeEnd(chapters.length)
+    }
+  }, [chapters.length, episodeRangeEnd])
+
+  // Reparse state
+  const [reparsing, setReparsing] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [parseProgress, setParseProgress] = useState({ current: 0, total: 0, message: '' })
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -105,6 +112,27 @@ export function ScriptWorkbench() {
   // Expanded episode for script output
   const [expandedEpisode, setExpandedEpisode] = useState<string | null>(null)
   const [episodeScripts, setEpisodeScripts] = useState<Record<string, string>>({})
+
+  // ── Reparse handler ──
+  const handleReparseChapters = async () => {
+    if (!novel || reparsing) return
+    setReparsing(true)
+    try {
+      const res = await fetch(`/api/novels/${novel.id}/reparse`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setChapters(data.chapters || [])
+        toast({ title: '重新解析完成', description: data.message })
+      } else {
+        const err = await res.json()
+        toast({ title: '重新解析失败', description: err.error || '未知错误', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '重新解析失败', description: '网络错误', variant: 'destructive' })
+    } finally {
+      setReparsing(false)
+    }
+  }
 
   // ── Data Fetching helpers (called from event handlers, not effects) ──
   const loadNovelData = async () => {
@@ -212,40 +240,7 @@ export function ScriptWorkbench() {
 
   // ── Handlers ──
 
-  const handleFileUpload = async (file: File) => {
-    if (!selectedDramaId) return
-    setUploading(true)
-    try {
-      const result = await api.novels.uploadForDrama(selectedDramaId, file)
-      setNovel(result.novel)
-      setChapters(result.chapters || [])
-      toast({ title: '小说上传成功' })
 
-      // Auto-trigger parsing
-      setParsing(true)
-      setParseProgress({ current: 0, total: 1, message: '开始解析...' })
-      await api.novels.parse(result.novel.id)
-    } catch (err: any) {
-      toast({
-        title: '上传失败',
-        description: err.message || '请检查文件格式（支持.txt和.docx）',
-        variant: 'destructive',
-      })
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file) await handleFileUpload(file)
-  }
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) await handleFileUpload(file)
-  }
 
   const handleGenerateSkeleton = async () => {
     if (!selectedDramaId) return
@@ -419,7 +414,7 @@ export function ScriptWorkbench() {
       <div className="flex flex-1 overflow-hidden">
         {/* ── 左栏：章节导航 + 生成配置 (slide-out drawer on < lg) ── */}
         <div
-          className={`shrink-0 border-r border-border flex flex-col transition-all duration-200 ${
+          className={`shrink-0 border-r border-border flex flex-col overflow-hidden transition-all duration-200 ${
             leftCollapsed ? 'w-10' : 'w-72'
           } hidden lg:flex`}
         >
@@ -444,18 +439,32 @@ export function ScriptWorkbench() {
                 <span className="text-xs font-medium text-muted-foreground">
                   章节导航 ({chapters.length})
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="size-6 p-0"
-                  onClick={() => setLeftCollapsed(true)}
-                >
-                  <ChevronLeft className="size-3.5" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  {novel && chapters.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="size-6 p-0"
+                      title="重新解析章节"
+                      disabled={reparsing}
+                      onClick={handleReparseChapters}
+                    >
+                      <RefreshCw className={`size-3 ${reparsing ? 'animate-spin' : ''}`} />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => setLeftCollapsed(true)}
+                  >
+                    <ChevronLeft className="size-3.5" />
+                  </Button>
+                </div>
               </div>
 
               {/* 章节列表 */}
-              <ScrollArea className="flex-1">
+              <ScrollArea className="flex-1 min-h-0">
                 {chapters.length > 0 ? (
                   <div className="p-2 space-y-1">
                     {chapters.map((ch, idx) => (
@@ -466,15 +475,15 @@ export function ScriptWorkbench() {
                             ? 'bg-primary/10 text-primary'
                             : 'hover:bg-muted/50 text-foreground'
                         }`}
-                        onClick={() => setSelectedChapterIdx(idx)}
+                        onClick={() => {
+                          setSelectedChapterIdx(idx)
+                          setActiveTab('chapter')
+                        }}
                       >
                         <span className="size-4 rounded flex items-center justify-center text-[10px] font-mono bg-muted/60 shrink-0">
                           {idx + 1}
                         </span>
-                        <span className="truncate flex-1">{ch.title}</span>
-                        {novel?.parseStatus === 'parsed' && (
-                          <Check className="size-3 text-emerald-500 shrink-0" />
-                        )}
+                        <span className="truncate flex-1">{ch.title || `第${idx + 1}章`}</span>
                       </button>
                     ))}
                   </div>
@@ -508,42 +517,17 @@ export function ScriptWorkbench() {
                     )}
                   </div>
                 ) : (
-                  /* 上传区域 */
-                  <div
-                    className="p-4"
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                  >
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                      <p className="text-xs font-medium">
-                        上传小说文件
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        支持 .txt 和 .docx 格式
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        拖拽文件或点击选择
-                      </p>
-                      {uploading && (
-                        <Loader2 className="size-4 mx-auto mt-2 animate-spin text-amber-500" />
-                      )}
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".txt,.docx"
-                      className="hidden"
-                      onChange={handleFileSelect}
-                    />
+                  <div className="p-4 text-center">
+                    <BookOpen className="size-8 mx-auto text-muted-foreground/30 mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      请先在项目中上传小说
+                    </p>
                   </div>
                 )}
               </ScrollArea>
 
               {/* 生成配置面板 */}
-              <div className="border-t border-border p-3 space-y-3">
+              <div className="shrink-0 border-t border-border p-3 space-y-3">
                 <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                   <Zap className="size-3 text-amber-500" />
                   生成配置
@@ -668,15 +652,12 @@ export function ScriptWorkbench() {
                             ? 'bg-primary/10 text-primary'
                             : 'hover:bg-muted/50 text-foreground'
                         }`}
-                        onClick={() => { setSelectedChapterIdx(idx); setLeftCollapsed(true) }}
+                        onClick={() => { setSelectedChapterIdx(idx); setActiveTab('chapter'); setLeftCollapsed(true) }}
                       >
                         <span className="size-4 rounded flex items-center justify-center text-[10px] font-mono bg-muted/60 shrink-0">
                           {idx + 1}
                         </span>
-                        <span className="truncate flex-1">{ch.title}</span>
-                        {novel?.parseStatus === 'parsed' && (
-                          <Check className="size-3 text-emerald-500 shrink-0" />
-                        )}
+                        <span className="truncate flex-1">{ch.title || `第${idx + 1}章`}</span>
                       </button>
                     ))}
                   </div>
@@ -692,14 +673,9 @@ export function ScriptWorkbench() {
                     )}
                   </div>
                 ) : (
-                  <div className="p-4" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                      <p className="text-xs font-medium">上传小说文件</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
-                    </div>
+                  <div className="p-4 text-center">
+                    <BookOpen className="size-8 mx-auto text-muted-foreground/30 mb-2" />
+                    <p className="text-xs text-muted-foreground">请先在项目中上传小说</p>
                   </div>
                 )}
               </ScrollArea>
@@ -743,7 +719,7 @@ export function ScriptWorkbench() {
           </div>
         )}
 
-        {/* ── 中栏：三个Tab ── */}
+        {/* ── 中栏：四个Tab ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <Tabs
             value={activeTab}
@@ -752,6 +728,21 @@ export function ScriptWorkbench() {
           >
             <div className="border-b border-border px-4 pt-2">
               <TabsList className="bg-transparent h-9 p-0 gap-4">
+                <TabsTrigger
+                  value="chapter"
+                  className="text-xs data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none data-[state=active]:shadow-none data-[state=active]:bg-transparent px-1"
+                >
+                  <BookOpen className="size-3.5 mr-1.5" />
+                  章节原文
+                  {chapters.length > 0 && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] px-1 py-0 ml-1 h-4"
+                    >
+                      {chapters.length}
+                    </Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger
                   value="skeleton"
                   className="text-xs data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none data-[state=active]:shadow-none data-[state=active]:bg-transparent px-1"
@@ -789,6 +780,72 @@ export function ScriptWorkbench() {
                 </TabsTrigger>
               </TabsList>
             </div>
+
+            {/* Tab: 章节原文 */}
+            <TabsContent
+              value="chapter"
+              className="flex-1 overflow-hidden m-0"
+            >
+              <ScrollArea className="h-full">
+                <div className="p-4 max-w-4xl mx-auto">
+                  {selectedChapterIdx !== null && chapters[selectedChapterIdx] ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="size-4 text-amber-500" />
+                          <span className="text-sm font-medium">
+                            第{selectedChapterIdx + 1}章 · {chapters[selectedChapterIdx].title || `第${selectedChapterIdx + 1}章`}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300"
+                          >
+                            原文
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">
+                            {chapters[selectedChapterIdx].content?.length || 0} 字
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => setSelectedChapterIdx(null)}
+                          >
+                            <X className="size-3" />
+                            关闭
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50">
+                          {chapters[selectedChapterIdx].content || '（本章内容为空）'}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : chapters.length > 0 ? (
+                    <EmptyState
+                      icon={<BookOpen className="size-10 text-amber-500/40" />}
+                      title="章节原文"
+                      description="点击左侧章节列表，在此处查看原文内容，方便对照生成骨架和策略"
+                      actionLabel="选择章节"
+                      onAction={() => {}}
+                      disabled={true}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={<BookOpen className="size-10 text-amber-500/40" />}
+                      title="章节原文"
+                      description="请先在项目中上传小说，章节将自动显示在此处"
+                      actionLabel="等待小说上传"
+                      onAction={() => {}}
+                      disabled={true}
+                    />
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
 
             {/* Tab: 故事骨架 */}
             <TabsContent
@@ -1193,26 +1250,20 @@ export function ScriptWorkbench() {
             <div className="space-y-3">
               <StepItem
                 number={1}
-                title="上传小说"
-                done={!!novel}
-                active={!novel}
+                title="查看章节原文"
+                done={chapters.length > 0}
+                active={chapters.length === 0}
               />
               <StepItem
                 number={2}
-                title="解析小说"
-                done={novel?.parseStatus === 'parsed'}
-                active={!!novel && novel?.parseStatus !== 'parsed'}
-              />
-              <StepItem
-                number={3}
                 title="提取故事骨架"
                 done={!!parsedContent.skeleton}
                 active={
-                  !parsedContent.skeleton && novel?.parseStatus === 'parsed'
+                  !parsedContent.skeleton && chapters.length > 0
                 }
               />
               <StepItem
-                number={4}
+                number={3}
                 title="制定改编策略"
                 done={!!parsedContent.strategy}
                 active={
@@ -1220,7 +1271,7 @@ export function ScriptWorkbench() {
                 }
               />
               <StepItem
-                number={5}
+                number={4}
                 title="生成剧本"
                 done={completedEpisodes > 0}
                 active={
