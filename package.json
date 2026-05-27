@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/pre-dev.js && next dev -p 3000 2>&1 | tee dev.log",
-    "build": "node scripts/build.js && next build",
-    "postinstall": "node scripts/postinstall.js",
+    "build": "prisma generate && prisma db push && next build",
+    "postinstall": "prisma generate",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "node scripts/pre-dev.js",
@@ -14,6 +14,7 @@
     "db:reset": "prisma migrate reset"
   },
   "dependencies": {
+    "@vercel/blob": "^0.27.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
