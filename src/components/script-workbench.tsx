@@ -208,19 +208,54 @@ export function ScriptWorkbench() {
   const totalEpisodes = episodes.length || 0
   const progressPercent = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 100) : 0
 
-  // ── P0：用原文集数标题替代"片段N" ──
+  // ════════════════════════════════════════════════════════════
+  // ★★★ P0：标题清洗 — 替换"片段N"等通用占位标题 ★★★
+  //
+  //   通用占位标题模式："片段1"、"片段2"、"第1部分"、"第2部分"、
+  //   纯数字、"Episode 1"等。这些标题没有任何语义信息。
+  //
+  //   清洗策略：
+  //   1. 如果标题是通用占位符 → 用章节内容首行（去掉标题行后第一行有意义的文字）
+  //   2. 如果首行也没意义 → 用"第N章"格式
+  //
+  //   这个清洗同时应用于：
+  //   - 左侧栏章节列表
+  //   - 中栏章节原文标题
+  //   - 右侧栏/剧本输出的 episode 标题
+  // ════════════════════════════════════════════════════════════
+
+  const GENERIC_TITLE_PATTERNS = /^片段\d+$|^第\d+部分$|^第\d+集$|^Episode\s*\d+$/i
+
+  const cleanChapterTitle = useCallback((ch: ChapterInfo, idx: number): string => {
+    if (ch.title && !GENERIC_TITLE_PATTERNS.test(ch.title)) {
+      return ch.title
+    }
+    // 用内容首行替代
+    const firstLine = ch.content.split('\n').find((l) => l.trim().length > 0)?.trim() || ''
+    if (firstLine.length >= 2 && !GENERIC_TITLE_PATTERNS.test(firstLine)) {
+      return firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine
+    }
+    return `第${idx + 1}章`
+  }, [])
+
+  // 清洗后的章节列表（用于左侧栏显示）
+  const displayChapters = chapters.map((ch, idx) => ({
+    ...ch,
+    displayTitle: cleanChapterTitle(ch, idx),
+  }))
+
   const getEpisodeDisplayTitle = useCallback((ep: EpisodeStatus): string => {
-    // 过滤掉通用占位标题（如"片段1"、"第1集"、"Episode 1"等）
-    const genericPatterns = /^片段\d+$|^第\d+集$|^Episode\s*\d+$/i
-    if (ep.title && !genericPatterns.test(ep.title)) {
+    if (ep.title && !GENERIC_TITLE_PATTERNS.test(ep.title)) {
       return ep.title
     }
-    // 尝试从 sourceChapterIds 找到原始章节标题
     try {
       const chapterIds: number[] = JSON.parse(ep.sourceChapterIds || '[]')
       if (chapterIds.length > 0) {
         const matchedTitles = chapterIds
-          .map((idx) => chapters.find((ch) => ch.index === idx)?.title)
+          .map((idx) => {
+            const ch = chapters.find((c) => c.index === idx)
+            return ch ? cleanChapterTitle(ch, ch.index) : undefined
+          })
           .filter(Boolean) as string[]
         if (matchedTitles.length > 0) {
           return matchedTitles.join(' / ')
@@ -228,7 +263,7 @@ export function ScriptWorkbench() {
       }
     } catch { /* ignore */ }
     return ep.title || `第${ep.episodeNumber}集`
-  }, [chapters])
+  }, [chapters, cleanChapterTitle])
 
   // ════════════════════════════════════════════════════════════
   // Data Loading
@@ -243,7 +278,9 @@ export function ScriptWorkbench() {
       const data = await res.json()
       if (!data || !mountedRef.current) return false
       setNovel(data)
-      setChapters(data.chapters || [])
+      // ★ 清洗章节标题：API 返回的 chapters 可能包含旧版 parser 产生的"片段N"标题
+      const rawChapters: ChapterInfo[] = data.chapters || []
+      setChapters(rawChapters)
       try {
         const pc = JSON.parse(data.parsedContent || '{}')
         setParsedContent(pc)
@@ -536,9 +573,9 @@ export function ScriptWorkbench() {
                 <div className="p-4 flex items-center justify-center">
                   <Loader2 className="size-5 animate-spin text-amber-500" />
                 </div>
-              ) : chapters.length > 0 ? (
+              ) : displayChapters.length > 0 ? (
                 <div className="p-2 space-y-0.5">
-                  {chapters.map((ch, idx) => (
+                  {displayChapters.map((ch, idx) => (
                     <button
                       key={`ch-${ch.index}-${idx}`}
                       className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
@@ -553,7 +590,7 @@ export function ScriptWorkbench() {
                       }`}>
                         {idx + 1}
                       </span>
-                      <span className="truncate flex-1">{ch.title}</span>
+                      <span className="truncate flex-1">{ch.displayTitle}</span>
                     </button>
                   ))}
                 </div>
@@ -671,14 +708,14 @@ export function ScriptWorkbench() {
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">
                           第 {selectedChapterIdx! + 1} 章
                         </Badge>
-                        <h2 className="text-sm font-semibold">{selectedChapter.title}</h2>
+                        <h2 className="text-sm font-semibold">{displayChapters[selectedChapterIdx!]?.displayTitle || selectedChapter.title}</h2>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" disabled={selectedChapterIdx === 0}
                           onClick={() => setSelectedChapterIdx(selectedChapterIdx! - 1)}>
                           <ChevronLeft className="size-3" />上一章
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" disabled={selectedChapterIdx === chapters.length - 1}
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" disabled={selectedChapterIdx === displayChapters.length - 1}
                           onClick={() => setSelectedChapterIdx(selectedChapterIdx! + 1)}>
                           下一章<ChevronRight className="size-3" />
                         </Button>
