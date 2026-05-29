@@ -1231,4 +1231,8 @@ const AGENT_TOOL_NAMES: Record<string, Record<string, string>> = {
     generate_scene_prompt: 'generate_scene_prompt',
     generate_grid_prompt: 'generate_grid_prompt',
   },
+  // 小说→剧本 流水线的三个 agent 不需要工具，只生成文本
+  story_skeleton: {},
+  adaptation_strategy: {},
+  script_generator: {},
 }

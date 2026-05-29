@@ -35,12 +35,10 @@ export async function parseNovelFile(
   const ext = fileName.toLowerCase().split('.').pop()
 
   if (ext === 'txt') {
-    // Decode as UTF-8 text
     return buffer.toString('utf-8')
   }
 
   if (ext === 'docx') {
-    // Use mammoth to extract text from .docx
     const mammoth = await import('mammoth')
     const result = await mammoth.extractRawText({ buffer })
     return result.value
@@ -51,22 +49,36 @@ export async function parseNovelFile(
 
 // ============================================================
 // splitChapters — Split novel text into chapters
+//
+// ★★★ 核心设计原则 ★★★
+//
+//   用户的核心需求：把小说按原始章节拆分，不要乱切片段！
+//
+//   章节识别策略（优先级从高到低）：
+//   1. "第X章/回/节/卷/部/篇/集" — 中文小说最常见格式
+//   2. 纯中文数字章节 — "一、"、"十二、" 等
+//   3. 阿拉伯数字编号 — "1."、"1、" 等
+//   4. 英文 Chapter X
+//   5. 【标题】括号格式
+//   6. 空行分隔的独立短行 — 启发式标题检测
+//
+//   如果以上都匹配不到 ≥2 个章节标题：
+//   → 用空行（双换行 \n\n）分段，每段取首行做标题
+//   → 这比按字数切割好得多，因为空行通常是章节/场景的自然分界
+//   → 绝对不按固定字数切割成无意义的片段
 // ============================================================
 
-// Chinese chapter patterns (ordered by specificity — most specific first)
 const CHAPTER_PATTERNS = [
-  // Level 1: 标准"第X章/回/节/卷/部/篇/集"格式（含中文数字、阿拉伯数字、〇字）
+  // Level 1: 标准"第X章/回/节/卷/部/篇/集"格式
   /^[\s]*第[零〇一二三四五六七八九十百千万\d]+[章回节卷部篇集][\s\t]*[：:·\-\s]?\s*\S?.*$/gm,
   // Level 2: 纯中文数字章节（如"一、"、"十二、"）
   /^[\s]*[一二三四五六七八九十百千万]+[、．\.]\s*\S?.*$/gm,
-  // Level 3: 阿拉伯数字编号（如"1."、"1、"、"第1节"）
+  // Level 3: 阿拉伯数字编号（如"1."、"1、"）
   /^[\s]*\d+[\.\、]\s*\S?.*$/gm,
   // Level 4: 英文 Chapter X
   /^[\s]*Chapter\s+\d+[\s\S]*$/gim,
   // Level 5: 【标题】括号格式
   /^[\s]*【[^】]+】[\s]*$/gm,
-  // Level 6: 独立短行（5-30字，不以标点结尾，前后有空行——启发式章节标题）
-  /^[\s]*[^\n]{2,30}[\s]*$/gm,
 ]
 
 // 验证匹配到的行是否真的像章节标题（排除正文误匹配）
@@ -81,14 +93,6 @@ function isValidChapterTitle(line: string): boolean {
   if (/^\d+[\.\、]/.test(trimmed)) return true
   if (/^[一二三四五六七八九十百千万]+[、．\.]/.test(trimmed)) return true
 
-  // 启发式：短行且不以常见句末标点结尾
-  if (trimmed.length <= 30 && !/[。，！？；：…、""''）】》]$/.test(trimmed)) {
-    // 进一步排除：全是数字或太短
-    if (/^\d+$/.test(trimmed) && trimmed.length > 3) return false
-    if (trimmed.length < 2) return false
-    return true
-  }
-
   return false
 }
 
@@ -97,15 +101,13 @@ export function splitChapters(text: string): Chapter[] {
     return []
   }
 
-  // Try each pattern until we find one that produces valid chapter splits
+  // ── Strategy 1: 用正则模式匹配章节标题 ──
   for (const pattern of CHAPTER_PATTERNS) {
     const source = pattern.source
     const flags = pattern.flags
-    // Reset regex by creating a new one each iteration
     const regex = new RegExp(source, flags)
     const matches = [...text.matchAll(regex)]
 
-    // Filter matches to only valid chapter titles
     const validMatches = matches.filter((m) => isValidChapterTitle(m[0]))
 
     if (validMatches.length >= 2) {
@@ -115,55 +117,99 @@ export function splitChapters(text: string): Chapter[] {
         const endIdx = i + 1 < validMatches.length ? validMatches[i + 1].index! : text.length
         const title = validMatches[i][0].trim()
         const content = text.slice(startIdx + validMatches[i][0].length, endIdx).trim()
-        // Skip empty chapters (title-only matches with no content)
         if (content.length > 0) {
           chapters.push({ index: chapters.length, title, content })
         }
       }
-      // Only return if we got at least 2 real chapters
       if (chapters.length >= 2) return chapters
     }
   }
 
-  // Fallback: No chapter pattern found — split by ~8000 char chunks at paragraph boundary
-  // Use the first meaningful line as the chunk title instead of "片段 N"
-  const CHUNK_SIZE = 8000
-  const chapters: Chapter[] = []
-  let idx = 0
+  // ── Strategy 2: 按空行（双换行）分段 ──
+  // 空行是小说中最自然的段落/场景分界，比按字数切割好得多
+  const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim().length > 0)
 
-  while (idx < text.length) {
-    let endIdx = Math.min(idx + CHUNK_SIZE, text.length)
+  if (paragraphs.length >= 2) {
+    // 进一步：如果段落太多（>50），可能只是普通段落不是章节
+    // 尝试合并为更合理的章节大小
+    if (paragraphs.length <= 100) {
+      // 段落数合理，每个段落（或相邻几个小段落）作为一个章节
+      const chapters: Chapter[] = []
+      let currentContent = ''
+      let currentTitle = ''
 
-    // Try to break at paragraph boundary (double newline)
-    if (endIdx < text.length) {
-      const lastParagraphBreak = text.lastIndexOf('\n\n', endIdx)
-      if (lastParagraphBreak > idx + CHUNK_SIZE * 0.5) {
-        endIdx = lastParagraphBreak
+      for (let i = 0; i < paragraphs.length; i++) {
+        const para = paragraphs[i].trim()
+        const firstLine = para.split('\n')[0].trim()
+
+        // 如果当前段落是一个短行（可能是章节标题）
+        if (firstLine.length <= 50 && firstLine.length >= 2 && !/[。，！？；：…""''）】》]$/.test(firstLine)) {
+          // 保存前一个章节
+          if (currentContent.trim().length > 0) {
+            const title = currentTitle || currentContent.split('\n')[0].trim().slice(0, 40)
+            chapters.push({
+              index: chapters.length,
+              title: title.length >= 2 ? title : `第${chapters.length + 1}章`,
+              content: currentContent.trim(),
+            })
+          }
+          currentTitle = firstLine
+          currentContent = para
+        } else {
+          // 正文段落，追加到当前章节
+          currentContent += '\n\n' + para
+        }
       }
+
+      // 保存最后一个章节
+      if (currentContent.trim().length > 0) {
+        const title = currentTitle || currentContent.split('\n')[0].trim().slice(0, 40)
+        chapters.push({
+          index: chapters.length,
+          title: title.length >= 2 ? title : `第${chapters.length + 1}章`,
+          content: currentContent.trim(),
+        })
+      }
+
+      if (chapters.length >= 2) return chapters
     }
 
-    const content = text.slice(idx, endIdx).trim()
-    if (content.length > 0) {
-      // Extract title from the first non-empty line of the chunk
-      const firstLine = content.split('\n').find((l) => l.trim().length > 0)?.trim() || ''
-      // Limit title length, remove common prefixes
-      let title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine
-      // If first line looks like a chapter heading, use it; otherwise "第N部分"
-      const chunkNum = chapters.length + 1
-      if (title.length < 2) {
-        title = `第${chunkNum}部分`
-      }
+    // 段落太多，按段落分但限制最大章节数
+    const chapters: Chapter[] = []
+    // 每 N 个段落合并为一个章节
+    const PARAS_PER_CHAPTER = Math.max(1, Math.floor(paragraphs.length / 30))
+    let paraIdx = 0
 
-      chapters.push({
-        index: chapters.length,
-        title,
-        content,
-      })
+    while (paraIdx < paragraphs.length) {
+      const chunk = paragraphs.slice(paraIdx, paraIdx + PARAS_PER_CHAPTER).join('\n\n').trim()
+      if (chunk.length > 0) {
+        const firstLine = chunk.split('\n')[0].trim()
+        let title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine
+        if (title.length < 2) {
+          title = `第${chapters.length + 1}章`
+        }
+        chapters.push({
+          index: chapters.length,
+          title,
+          content: chunk,
+        })
+      }
+      paraIdx += PARAS_PER_CHAPTER
     }
-    idx = endIdx
+
+    if (chapters.length >= 2) return chapters
   }
 
-  return chapters
+  // ── Strategy 3: 实在找不到任何分界，整体作为一个章节 ──
+  // 绝对不按固定字数切割成无意义的片段！
+  const firstLine = text.split('\n')[0].trim()
+  const title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : (firstLine.length >= 2 ? firstLine : '全文')
+
+  return [{
+    index: 0,
+    title,
+    content: text.trim(),
+  }]
 }
 
 // ============================================================
@@ -180,7 +226,6 @@ export async function extractChapterEvents(
   const GROUP_SIZE = 5
   const groups: Chapter[][] = []
 
-  // Group chapters (5 per group)
   for (let i = 0; i < chapters.length; i += GROUP_SIZE) {
     groups.push(chapters.slice(i, i + GROUP_SIZE))
   }
@@ -204,21 +249,14 @@ export async function extractChapterEvents(
       message: `正在解析 ${chapterRange}...`,
     } as ParseProgress)
 
-    // Build the prompt content for this group
     const chaptersText = group
       .map((ch) => `## ${ch.title}\n\n${ch.content}`)
       .join('\n\n---\n\n')
 
-    const prompt = `请分析以下小说章节，提取故事骨架信息，包括：核心设定、关键事件、人物关系、情感弧线、改编建议。
-
-${chaptersText}`
+    const prompt = `请分析以下小说章节，提取故事骨架信息，包括：核心设定、关键事件、人物关系、情感弧线、改编建议。\n\n${chaptersText}`
 
     try {
-      // Call the agent via the internal API
-      // We use the agent stream route internally
       const result = await callStorySkeletonAgent(agentType, dramaId, prompt)
-
-      // Store result keyed by chapter range
       allEvents[`group_${g + 1}`] = {
         chapters: group.map((ch) => ch.index),
         chapterRange,
@@ -252,14 +290,11 @@ async function callStorySkeletonAgent(
   dramaId: string,
   message: string
 ): Promise<string> {
-  // Import agent execution dynamically
   const { executeAgent } = await import('@/lib/agents/factory')
 
-  // Create a dummy episodeId since story_skeleton doesn't need a specific episode
-  // We use dramaId as a reference
   const result = await executeAgent(
     agentType as 'story_skeleton',
-    dramaId, // episodeId placeholder — story_skeleton doesn't use it for DB reads
+    dramaId,
     dramaId,
     message
   )

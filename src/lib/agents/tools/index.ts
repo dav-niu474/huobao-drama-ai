@@ -547,6 +547,10 @@ export const AGENT_TOOLS: Record<AgentType, ToolDefinition[]> = {
   storyboard_breaker: STORYBOARD_BREAKER_TOOLS,
   voice_assigner: VOICE_ASSIGNER_TOOLS,
   grid_prompt_generator: GRID_PROMPT_GENERATOR_TOOLS,
+  // 小说→剧本 流水线的三个 agent 不需要工具，只生成文本
+  story_skeleton: [],
+  adaptation_strategy: [],
+  script_generator: [],
 }
 
 /**
