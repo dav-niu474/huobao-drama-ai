@@ -61,9 +61,15 @@ export async function POST(
     const updated = await db.novel.update({
       where: { id },
       data: {
-        chapters: newChapters as any,
+        chapters: JSON.stringify(newChapters),
         parseStatus: 'parsed',
       },
+    })
+
+    // Also update drama novelParsed flag
+    await db.drama.update({
+      where: { id: novel.dramaId },
+      data: { novelParsed: true },
     })
 
     return NextResponse.json({
