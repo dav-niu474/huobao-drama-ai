@@ -40,7 +40,7 @@ function parseEpisodeDecisions(skeleton: string): EpisodeDecision[] {
     let match
     while ((match = pattern.exec(skeleton)) !== null) {
       const num = parseInt(match[1], 10)
-      if (num > 0 && num <= 100) {
+      if (num > 0 && num <= 500) {
         foundNumbers.add(num)
       }
     }

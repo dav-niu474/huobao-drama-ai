@@ -15,15 +15,25 @@ import { Loader2 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
 // ViewRouter — 纯 switch/case，同时只渲染一个组件
+//
+// ★★★ 核心修复 ★★★
+//
+//   1. 完全不使用 AnimatePresence / motion.div
+//      之前：AnimatePresence mode="wait" + motion.div key={view}
+//      切换 view 时，exit 动画期间旧组件仍在 DOM 中
+//      新组件也开始挂载，导致两个页面 DOM 同时存在并重叠
+//
+//   2. 现在用纯 React switch + key={view}
+//      key 变化时 React 立即卸载旧组件、挂载新组件
+//      绝对不会有两个组件同时存在的情况
+//
+//   3. 每次只 return 一个组件，不是 && 条件渲染
+//      之前：{view === 'X' && <X />} {view === 'Y' && <Y />}
+//      多个条件可能短暂同时为 true（React concurrent mode）
+//      现在：switch-case 只 return 一个
 // ════════════════════════════════════════════════════════════
 
-function isFullscreenView(view: string): boolean {
-  return view === 'script-workbench' || view === 'asset-workbench' || view === 'episode-workspace'
-}
-
-function ViewRouter() {
-  const view = useAppStore((s) => s.view)
-
+function ViewRouter({ view }: { view: string }) {
   switch (view) {
     case 'projects':
       return <ProjectListView />
@@ -45,30 +55,32 @@ function ViewRouter() {
 }
 
 // ════════════════════════════════════════════════════════════
-// AuthGuard — 核心修复：彻底解决"两个页面重叠"
+// 全屏视图列表 — 这些视图自己管理内部滚动和布局
+// ════════════════════════════════════════════════════════════
+
+const FULLSCREEN_VIEWS = new Set([
+  'script-workbench',
+  'asset-workbench',
+  'episode-workspace',
+])
+
+// ════════════════════════════════════════════════════════════
+// AuthGuard
 //
-// 根因：next-auth 的 useSession() 在某些情况下会短暂地把
-// status 重置为 'loading' 且 session 为 null（例如浏览器
-// tab 切换、网络波动等）。这导致 AuthGuard 卸载整个
-// ViewRouter 并显示 loading 旋转图标，session 恢复后
-// ViewRouter 重新挂载，所有组件 state 丢失，从头加载。
-// 新旧两个渲染状态在浏览器中同时可见 → "两个页面重叠"。
+// ★★★ 核心修复 ★★★
 //
-// 修复方案：
-//   用 hasEverHadSession ref 记住"是否曾经拿到过 session"。
-//   一旦拿到过 session，就绝不再显示 loading 旋转图标，
-//   也绝不卸载 ViewRouter。即使 session 短暂丢失，
-//   也保持当前视图不变，只在 session 确实不存在时
-//   （用户主动登出）才切换到 AuthView。
+//   1. 永远只用一个 DOM 容器结构，不再根据 view 切换容器
+//   2. 全屏视图用 overflow-hidden（自己管理滚动）
+//      非全屏视图用 overflow-auto（容器提供滚动）
+//   3. hasEverHadSession ref：拿到过 session 后绝不卸载 ViewRouter
+//   4. footer 只在非全屏视图时显示
 // ════════════════════════════════════════════════════════════
 
 function AuthGuard() {
   const { data: session, status } = useSession()
   const view = useAppStore((s) => s.view)
 
-  // 核心：一旦 session 曾经存在过，就记住这个事实
-  // 这样即使 session 短暂变为 null（refetch 过程中），
-  // 也不会卸载 ViewRouter
+  // ★ 保险：一旦 session 曾经存在过，就绝不卸载 ViewRouter
   const hasEverHadSession = useRef(false)
 
   useEffect(() => {
@@ -78,7 +90,6 @@ function AuthGuard() {
   }, [session])
 
   // 首次加载（从未拿到过 session）：显示 loading
-  // 这只在应用启动时的初始 session 获取期间显示
   if (status === 'loading' && !hasEverHadSession.current) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
@@ -95,32 +106,35 @@ function AuthGuard() {
     return <AuthView />
   }
 
-  // 有 session，或者曾经有过 session（即使当前短暂丢失）
-  // → 保持显示当前视图，绝不卸载 ViewRouter
+  // ★★★ 核心：永远同一个 DOM 结构 ★★★
+  const isFullscreen = FULLSCREEN_VIEWS.has(view)
 
-  // 全屏工作台视图：h-screen 占满视口
-  if (isFullscreenView(view)) {
-    return (
-      <div className="h-screen overflow-hidden bg-background">
-        <ViewRouter />
-      </div>
-    )
-  }
-
-  // 普通视图：带 footer 的滚动布局
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <ViewRouter />
-      <footer className="mt-auto border-t border-border/50 py-4 text-center text-xs text-muted-foreground">
-        <span className="opacity-70">AI短剧创作平台 &copy; {new Date().getFullYear()}</span>
-      </footer>
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* 主内容区：全屏视图自己管滚动，非全屏由容器滚动 */}
+      <div className={`flex-1 min-h-0 ${isFullscreen ? 'overflow-hidden' : 'overflow-auto'}`}>
+        <ViewRouter view={view} key={view} />
+      </div>
+      {/* 非全屏视图显示底部 footer */}
+      {!isFullscreen && (
+        <footer className="shrink-0 border-t border-border/50 py-4 text-center text-xs text-muted-foreground">
+          <span className="opacity-70">AI短剧创作平台 &copy; {new Date().getFullYear()}</span>
+        </footer>
+      )}
     </div>
   )
 }
 
+// ════════════════════════════════════════════════════════════
 // SessionProvider:
-//   refetchInterval=0: 不自动 refetch（防止 session 状态频繁变化）
-//   refetchOnWindowFocus=false: 窗口聚焦时不 refetch（防止 tab 切换触发 session 变化）
+//   refetchInterval=0: 不自动 refetch（之前=5导致每5秒重渲染！）
+//   refetchOnWindowFocus=false: 窗口聚焦时不 refetch
+//
+// ★★★ 这是"几秒后刷新出另一个页面"的直接原因！★★★
+//   之前 refetchInterval=5 → 每5秒 session 更新 → AuthGuard 重渲染
+//   → AnimatePresence exit+enter 动画 → 旧页面和新页面短暂同时存在
+// ════════════════════════════════════════════════════════════
+
 export default function Home() {
   return (
     <SessionProvider refetchInterval={0} refetchOnWindowFocus={false}>

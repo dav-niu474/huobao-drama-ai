@@ -122,13 +122,16 @@ export async function POST(request: NextRequest) {
     const chapters = splitChapters(text)
 
     // Create Novel record
+    // ★ parseStatus 直接设为 'parsed'，因为 splitChapters 已经在上传时完成了章节拆分
+    //   之前的流程：上传→pending→需要手动触发parse→parsed
+    //   现在：上传时 splitChapters 直接拆好章节，无需额外 parse 步骤
     const novel = await db.novel.create({
       data: {
         dramaId,
         title: file.name.replace(/\.(txt|docx)$/i, ''),
         chapters: JSON.stringify(chapters),
         parsedContent: '{}',
-        parseStatus: 'pending',
+        parseStatus: chapters.length > 0 ? 'parsed' : 'pending',
         fileSize: buffer.length,
         fileName: file.name,
       },
@@ -139,7 +142,7 @@ export async function POST(request: NextRequest) {
       where: { id: dramaId },
       data: {
         novelSource: file.name,
-        novelParsed: false,
+        novelParsed: chapters.length > 0,
       },
     })
 

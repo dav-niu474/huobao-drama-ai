@@ -35,12 +35,10 @@ export async function parseNovelFile(
   const ext = fileName.toLowerCase().split('.').pop()
 
   if (ext === 'txt') {
-    // Decode as UTF-8 text
     return buffer.toString('utf-8')
   }
 
   if (ext === 'docx') {
-    // Use mammoth to extract text from .docx
     const mammoth = await import('mammoth')
     const result = await mammoth.extractRawText({ buffer })
     return result.value
@@ -51,99 +49,167 @@ export async function parseNovelFile(
 
 // ============================================================
 // splitChapters — Split novel text into chapters
+//
+// ★★★ 核心设计原则 ★★★
+//
+//   用户的核心需求：把小说按原始章节拆分，不要乱切片段！
+//
+//   章节识别策略（优先级从高到低）：
+//   1. "第X章/回/节/卷/部/篇/集" — 中文小说最常见格式
+//   2. 纯中文数字章节 — "一、"、"十二、" 等
+//   3. 阿拉伯数字编号 — "1."、"1、" 等
+//   4. 英文 Chapter X
+//   5. 【标题】括号格式
+//   6. 空行分隔的独立短行 — 启发式标题检测
+//
+//   如果以上都匹配不到 ≥2 个章节标题：
+//   → 用空行（双换行 \n\n）分段，每段取首行做标题
+//   → 这比按字数切割好得多，因为空行通常是章节/场景的自然分界
+//   → 绝对不按固定字数切割成无意义的片段
 // ============================================================
 
-// Comprehensive Chinese/English chapter patterns (ordered by specificity)
-// Each pattern captures the chapter title line
 const CHAPTER_PATTERNS = [
-  // 第X章/第X回/第X节/第X卷/第X集/第X部/第X篇 + optional title text
-  // Supports: 第一章, 第1章, 第一回 大观园, 第23章 暗流, 第二十三章, 第零一章
-  /^[\s]*(第[零一二三四五六七八九十百千万〇０-９\d]+[章回节卷集部篇][^\n]*)/gm,
-  // 卷X / 卷之X + optional title (e.g. 卷一 风起, 卷之三)
-  /^[\s]*(卷[之]?[零一二三四五六七八九十百千万〇\d]+[^\n]*)/gm,
-  // 序章/终章/番外/尾声/楔子/引子 + optional title
-  /^[\s]*([序终][章卷]|[番外][篇章]?|尾声|楔子|引子)[^\n]*/gm,
-  // Chapter X (English)
-  /^[\s]*(Chapter\s+\d+[^\n]*)/gim,
-  // CHAPTER X
-  /^[\s]*(CHAPTER\s+\d+[^\n]*)/gm,
-  // 纯数字编号行 如 "1", "2", "3" 或 "1." "1、" 后跟标题文字（需独占一行）
-  /^[\s]*(\d{1,4})[\s]*[\.、．]\s*[^\n]+/gm,
-  // 【标题】格式
-  /^[\s]*【[^】]+】/gm,
+  // Level 1: 标准"第X章/回/节/卷/部/篇/集"格式
+  /^[\s]*第[零〇一二三四五六七八九十百千万\d]+[章回节卷部篇集][\s\t]*[：:·\-\s]?\s*\S?.*$/gm,
+  // Level 2: 纯中文数字章节（如"一、"、"十二、"）
+  /^[\s]*[一二三四五六七八九十百千万]+[、．\.]\s*\S?.*$/gm,
+  // Level 3: 阿拉伯数字编号（如"1."、"1、"）
+  /^[\s]*\d+[\.\、]\s*\S?.*$/gm,
+  // Level 4: 英文 Chapter X
+  /^[\s]*Chapter\s+\d+[\s\S]*$/gim,
+  // Level 5: 【标题】括号格式
+  /^[\s]*【[^】]+】[\s]*$/gm,
 ]
+
+// 验证匹配到的行是否真的像章节标题（排除正文误匹配）
+function isValidChapterTitle(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+
+  // 包含典型章节关键词 → 一定是标题
+  if (/^第[零〇一二三四五六七八九十百千万\d]+[章回节卷部篇集]/.test(trimmed)) return true
+  if (/^Chapter\s+\d+/i.test(trimmed)) return true
+  if (/^【[^】]+】$/.test(trimmed)) return true
+  if (/^\d+[\.\、]/.test(trimmed)) return true
+  if (/^[一二三四五六七八九十百千万]+[、．\.]/.test(trimmed)) return true
+
+  return false
+}
 
 export function splitChapters(text: string): Chapter[] {
   if (!text || text.trim().length === 0) {
     return []
   }
 
-  // Try each pattern until we find one that splits into >= 2 chapters
+  // ── Strategy 1: 用正则模式匹配章节标题 ──
   for (const pattern of CHAPTER_PATTERNS) {
-    const matches = [...text.matchAll(pattern)]
-    if (matches.length >= 2) {
+    const source = pattern.source
+    const flags = pattern.flags
+    const regex = new RegExp(source, flags)
+    const matches = [...text.matchAll(regex)]
+
+    const validMatches = matches.filter((m) => isValidChapterTitle(m[0]))
+
+    if (validMatches.length >= 2) {
       const chapters: Chapter[] = []
-      for (let i = 0; i < matches.length; i++) {
-        const startIdx = matches[i].index!
-        const endIdx = i + 1 < matches.length ? matches[i + 1].index! : text.length
-        // Use the captured title (first capture group or full match)
-        const rawTitle = matches[i][1] || matches[i][0]
-        const title = rawTitle.trim()
-        const content = text.slice(startIdx + matches[i][0].length, endIdx).trim()
-        chapters.push({ index: i, title, content })
+      for (let i = 0; i < validMatches.length; i++) {
+        const startIdx = validMatches[i].index!
+        const endIdx = i + 1 < validMatches.length ? validMatches[i + 1].index! : text.length
+        const title = validMatches[i][0].trim()
+        const content = text.slice(startIdx + validMatches[i][0].length, endIdx).trim()
+        if (content.length > 0) {
+          chapters.push({ index: chapters.length, title, content })
+        }
       }
-      return chapters
+      if (chapters.length >= 2) return chapters
     }
   }
 
-  // No chapter pattern found — split by paragraph boundaries
-  // Use first meaningful line of each chunk as title
-  const CHUNK_SIZE = 5000
-  const chapters: Chapter[] = []
-  let idx = 0
+  // ── Strategy 2: 按空行（双换行）分段 ──
+  // 空行是小说中最自然的段落/场景分界，比按字数切割好得多
+  const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim().length > 0)
 
-  while (idx < text.length) {
-    let endIdx = Math.min(idx + CHUNK_SIZE, text.length)
+  if (paragraphs.length >= 2) {
+    // 进一步：如果段落太多（>50），可能只是普通段落不是章节
+    // 尝试合并为更合理的章节大小
+    if (paragraphs.length <= 100) {
+      // 段落数合理，每个段落（或相邻几个小段落）作为一个章节
+      const chapters: Chapter[] = []
+      let currentContent = ''
+      let currentTitle = ''
 
-    // Try to break at paragraph boundary (double newline)
-    if (endIdx < text.length) {
-      const lastParagraphBreak = text.lastIndexOf('\n\n', endIdx)
-      if (lastParagraphBreak > idx + CHUNK_SIZE * 0.5) {
-        endIdx = lastParagraphBreak
-      }
-    }
+      for (let i = 0; i < paragraphs.length; i++) {
+        const para = paragraphs[i].trim()
+        const firstLine = para.split('\n')[0].trim()
 
-    const chunk = text.slice(idx, endIdx).trim()
-    if (chunk.length > 0) {
-      // Extract first line as title, use rest as content
-      const firstNewline = chunk.indexOf('\n')
-      let title: string
-      let content: string
-
-      if (firstNewline > 0 && firstNewline < 80) {
-        // First line is short enough to be a title
-        title = chunk.slice(0, firstNewline).trim()
-        content = chunk.slice(firstNewline + 1).trim()
-      } else if (firstNewline < 0 && chunk.length < 80) {
-        // Entire chunk is short, use as both title and content
-        title = chunk
-        content = chunk
-      } else {
-        // First line too long or doesn't exist, use first N chars
-        title = chunk.slice(0, 30).trim() + '...'
-        content = chunk
+        // 如果当前段落是一个短行（可能是章节标题）
+        if (firstLine.length <= 50 && firstLine.length >= 2 && !/[。，！？；：…""''）】》]$/.test(firstLine)) {
+          // 保存前一个章节
+          if (currentContent.trim().length > 0) {
+            const title = currentTitle || currentContent.split('\n')[0].trim().slice(0, 40)
+            chapters.push({
+              index: chapters.length,
+              title: title.length >= 2 ? title : `第${chapters.length + 1}章`,
+              content: currentContent.trim(),
+            })
+          }
+          currentTitle = firstLine
+          currentContent = para
+        } else {
+          // 正文段落，追加到当前章节
+          currentContent += '\n\n' + para
+        }
       }
 
-      chapters.push({
-        index: chapters.length,
-        title,
-        content,
-      })
+      // 保存最后一个章节
+      if (currentContent.trim().length > 0) {
+        const title = currentTitle || currentContent.split('\n')[0].trim().slice(0, 40)
+        chapters.push({
+          index: chapters.length,
+          title: title.length >= 2 ? title : `第${chapters.length + 1}章`,
+          content: currentContent.trim(),
+        })
+      }
+
+      if (chapters.length >= 2) return chapters
     }
-    idx = endIdx
+
+    // 段落太多，按段落分但限制最大章节数
+    const chapters: Chapter[] = []
+    // 每 N 个段落合并为一个章节
+    const PARAS_PER_CHAPTER = Math.max(1, Math.floor(paragraphs.length / 30))
+    let paraIdx = 0
+
+    while (paraIdx < paragraphs.length) {
+      const chunk = paragraphs.slice(paraIdx, paraIdx + PARAS_PER_CHAPTER).join('\n\n').trim()
+      if (chunk.length > 0) {
+        const firstLine = chunk.split('\n')[0].trim()
+        let title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine
+        if (title.length < 2) {
+          title = `第${chapters.length + 1}章`
+        }
+        chapters.push({
+          index: chapters.length,
+          title,
+          content: chunk,
+        })
+      }
+      paraIdx += PARAS_PER_CHAPTER
+    }
+
+    if (chapters.length >= 2) return chapters
   }
 
-  return chapters
+  // ── Strategy 3: 实在找不到任何分界，整体作为一个章节 ──
+  // 绝对不按固定字数切割成无意义的片段！
+  const firstLine = text.split('\n')[0].trim()
+  const title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : (firstLine.length >= 2 ? firstLine : '全文')
+
+  return [{
+    index: 0,
+    title,
+    content: text.trim(),
+  }]
 }
 
 // ============================================================
@@ -160,7 +226,6 @@ export async function extractChapterEvents(
   const GROUP_SIZE = 5
   const groups: Chapter[][] = []
 
-  // Group chapters (5 per group)
   for (let i = 0; i < chapters.length; i += GROUP_SIZE) {
     groups.push(chapters.slice(i, i + GROUP_SIZE))
   }
@@ -184,21 +249,14 @@ export async function extractChapterEvents(
       message: `正在解析 ${chapterRange}...`,
     } as ParseProgress)
 
-    // Build the prompt content for this group
     const chaptersText = group
       .map((ch) => `## ${ch.title}\n\n${ch.content}`)
       .join('\n\n---\n\n')
 
-    const prompt = `请分析以下小说章节，提取故事骨架信息，包括：核心设定、关键事件、人物关系、情感弧线、改编建议。
-
-${chaptersText}`
+    const prompt = `请分析以下小说章节，提取故事骨架信息，包括：核心设定、关键事件、人物关系、情感弧线、改编建议。\n\n${chaptersText}`
 
     try {
-      // Call the agent via the internal API
-      // We use the agent stream route internally
       const result = await callStorySkeletonAgent(agentType, dramaId, prompt)
-
-      // Store result keyed by chapter range
       allEvents[`group_${g + 1}`] = {
         chapters: group.map((ch) => ch.index),
         chapterRange,
@@ -232,14 +290,11 @@ async function callStorySkeletonAgent(
   dramaId: string,
   message: string
 ): Promise<string> {
-  // Import agent execution dynamically
   const { executeAgent } = await import('@/lib/agents/factory')
 
-  // Create a dummy episodeId since story_skeleton doesn't need a specific episode
-  // We use dramaId as a reference
   const result = await executeAgent(
     agentType as 'story_skeleton',
-    dramaId, // episodeId placeholder — story_skeleton doesn't use it for DB reads
+    dramaId,
     dramaId,
     message
   )

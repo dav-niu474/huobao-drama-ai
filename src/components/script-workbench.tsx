@@ -8,8 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -17,7 +15,6 @@ import {
   FileText,
   Loader2,
   Check,
-  X,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -25,12 +22,8 @@ import {
   Brain,
   Play,
   RotateCcw,
-  ListChecks,
-  BarChart3,
-  Clock,
   FileUp,
   RefreshCw,
-  Layers,
   Zap,
   Eye,
 } from 'lucide-react'
@@ -62,21 +55,97 @@ interface EpisodeStatus {
 }
 
 // ════════════════════════════════════════════════════════════
-// Main Component — 完全重写
-// 核心原则：
-//   1. 不用 framer-motion，避免动画引起的卸载/重挂载
-//   2. 所有 callback 用 useRef 稳定引用，防止 useEffect 死循环
-//   3. 只在 selectedDramaId 变化时加载一次数据
-//   4. 用 mountedRef 防止组件卸载后的 setState
+// Sub-components
+// ════════════════════════════════════════════════════════════
+
+function StatusDot({ status }: { status: string }) {
+  const color =
+    status === 'completed' ? 'bg-emerald-500' :
+    status === 'processing' ? 'bg-amber-500' :
+    status === 'failed' ? 'bg-red-500' : 'bg-zinc-500'
+  const label =
+    status === 'completed' ? '已完成' :
+    status === 'processing' ? '生成中' :
+    status === 'failed' ? '失败' : '待创作'
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+      <span className={`size-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+  disabled,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  actionLabel?: string
+  onAction?: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="mb-4 opacity-40">{icon}</div>
+      <p className="text-sm font-medium mb-1">{title}</p>
+      <p className="text-xs text-muted-foreground max-w-xs">{description}</p>
+      {actionLabel && onAction && (
+        <Button size="sm" className="mt-4" onClick={onAction} disabled={disabled}>
+          {actionLabel}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// Tab type
+// ════════════════════════════════════════════════════════════
+
+type TabKey = 'source' | 'skeleton' | 'strategy' | 'scripts'
+
+const TABS: { key: TabKey; label: string; icon: typeof Eye }[] = [
+  { key: 'source', label: '章节原文', icon: Eye },
+  { key: 'skeleton', label: '故事骨架', icon: Brain },
+  { key: 'strategy', label: '改编策略', icon: Sparkles },
+  { key: 'scripts', label: '剧本输出', icon: FileText },
+]
+
+// ════════════════════════════════════════════════════════════
+// Main Component — 彻底重写 v7
+//
+// ★★★ 核心修复 ★★★
+//
+//   1. 完全不使用 Radix Tabs / AnimatePresence / framer-motion
+//      之前：Radix TabsContent 用 absolute inset-0 堆叠
+//      所有 TabsContent 同时存在于 DOM，靠 hidden 属性切换
+//      当 React 重渲染时，hidden 属性可能短暂失效
+//      导致多个 TabsContent 同时可见 → 页面重叠
+//
+//   2. 现在只有一个 tab 内容在 DOM 中
+//      用简单的 {activeTab === 'source' && ...} 条件渲染
+//      切换 tab 时，旧内容完全卸载，新内容才挂载
+//      不可能有任何重叠
+//
+//   3. 不用 absolute 定位，用正常的 flex 布局
+//   4. 不用 h-screen，用 h-full 填满父容器
+//   5. 三栏布局：Left | Center | Right 是兄弟节点
+//   6. P0：不显示"片段N"，直接显示原文集数标题
 // ════════════════════════════════════════════════════════════
 
 export function ScriptWorkbench() {
-  // ── Zustand store (primitive selectors, stable) ──
+  // ── Zustand store ──
   const selectedDramaId = useAppStore((s) => s.selectedDramaId)
   const navigateToProject = useAppStore((s) => s.navigateToProject)
   const currentDrama = useAppStore((s) => s.currentDrama)
 
-  // ── Toast via ref (避免 toast 引用不稳定导致 useEffect 重跑) ──
+  // ── Toast via ref (avoid re-render from toast changes) ──
   const { toast } = useToast()
   const toastRef = useRef(toast)
   useEffect(() => { toastRef.current = toast }, [toast])
@@ -86,12 +155,12 @@ export function ScriptWorkbench() {
   const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [parsedContent, setParsedContent] = useState<ParsedContent>({})
   const [episodes, setEpisodes] = useState<EpisodeStatus[]>([])
-  const [dataLoaded, setDataLoaded] = useState(false)
+  const [dataReady, setDataReady] = useState(false)
 
   // ── Layout ──
-  const [leftCollapsed, setLeftCollapsed] = useState(false)
+  const [leftOpen, setLeftOpen] = useState(true)
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState('source')
+  const [activeTab, setActiveTab] = useState<TabKey>('source')
 
   // ── Generation ──
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false)
@@ -118,7 +187,7 @@ export function ScriptWorkbench() {
   const [expandedEpisode, setExpandedEpisode] = useState<string | null>(null)
   const [episodeScripts, setEpisodeScripts] = useState<Record<string, string>>({})
 
-  // ── Refs: 稳定的值引用，让 callback 不依赖变化的 state ──
+  // ── Refs ──
   const mountedRef = useRef(true)
   const selectedDramaIdRef = useRef(selectedDramaId)
   const novelIdRef = useRef<string | null>(null)
@@ -126,7 +195,6 @@ export function ScriptWorkbench() {
   useEffect(() => { selectedDramaIdRef.current = selectedDramaId }, [selectedDramaId])
   useEffect(() => { novelIdRef.current = novel?.id ?? null }, [novel?.id])
 
-  // 组件卸载标记
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
@@ -141,69 +209,132 @@ export function ScriptWorkbench() {
   const progressPercent = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 100) : 0
 
   // ════════════════════════════════════════════════════════════
-  // Data Loading — 从 useRef 读值，callback 引用永远稳定
+  // ★★★ P0：标题清洗 — 替换"片段N"等通用占位标题 ★★★
+  //
+  //   通用占位标题模式："片段1"、"片段2"、"第1部分"、"第2部分"、
+  //   纯数字、"Episode 1"等。这些标题没有任何语义信息。
+  //
+  //   清洗策略：
+  //   1. 如果标题是通用占位符 → 用章节内容首行（去掉标题行后第一行有意义的文字）
+  //   2. 如果首行也没意义 → 用"第N章"格式
+  //
+  //   这个清洗同时应用于：
+  //   - 左侧栏章节列表
+  //   - 中栏章节原文标题
+  //   - 右侧栏/剧本输出的 episode 标题
+  // ════════════════════════════════════════════════════════════
+
+  const GENERIC_TITLE_PATTERNS = /^片段\d+$|^第\d+部分$|^第\d+集$|^Episode\s*\d+$/i
+
+  const cleanChapterTitle = useCallback((ch: ChapterInfo, idx: number): string => {
+    if (ch.title && !GENERIC_TITLE_PATTERNS.test(ch.title)) {
+      return ch.title
+    }
+    // 用内容首行替代
+    const firstLine = ch.content.split('\n').find((l) => l.trim().length > 0)?.trim() || ''
+    if (firstLine.length >= 2 && !GENERIC_TITLE_PATTERNS.test(firstLine)) {
+      return firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine
+    }
+    return `第${idx + 1}章`
+  }, [])
+
+  // 清洗后的章节列表（用于左侧栏显示）
+  const displayChapters = chapters.map((ch, idx) => ({
+    ...ch,
+    displayTitle: cleanChapterTitle(ch, idx),
+  }))
+
+  const getEpisodeDisplayTitle = useCallback((ep: EpisodeStatus): string => {
+    if (ep.title && !GENERIC_TITLE_PATTERNS.test(ep.title)) {
+      return ep.title
+    }
+    try {
+      const chapterIds: number[] = JSON.parse(ep.sourceChapterIds || '[]')
+      if (chapterIds.length > 0) {
+        const matchedTitles = chapterIds
+          .map((idx) => {
+            const ch = chapters.find((c) => c.index === idx)
+            return ch ? cleanChapterTitle(ch, ch.index) : undefined
+          })
+          .filter(Boolean) as string[]
+        if (matchedTitles.length > 0) {
+          return matchedTitles.join(' / ')
+        }
+      }
+    } catch { /* ignore */ }
+    return ep.title || `第${ep.episodeNumber}集`
+  }, [chapters, cleanChapterTitle])
+
+  // ════════════════════════════════════════════════════════════
+  // Data Loading
   // ════════════════════════════════════════════════════════════
 
   const loadNovelData = useCallback(async () => {
     const dramaId = selectedDramaIdRef.current
-    if (!dramaId) return
+    if (!dramaId) return false
     try {
       const res = await fetch(`/api/novels?dramaId=${dramaId}`)
-      if (!res.ok || !mountedRef.current) return
+      if (!res.ok || !mountedRef.current) return false
       const data = await res.json()
-      if (!data || !mountedRef.current) return
-
+      if (!data || !mountedRef.current) return false
       setNovel(data)
-      setChapters(data.chapters || [])
+      // ★ 清洗章节标题：API 返回的 chapters 可能包含旧版 parser 产生的"片段N"标题
+      const rawChapters: ChapterInfo[] = data.chapters || []
+      setChapters(rawChapters)
       try {
         const pc = JSON.parse(data.parsedContent || '{}')
         setParsedContent(pc)
         if (pc.skeleton) setSkeletonEdit(pc.skeleton)
         if (pc.strategy) setStrategyEdit(pc.strategy)
       } catch { /* ignore */ }
-    } catch { /* ignore */ }
+      return true
+    } catch {
+      return false
+    }
   }, [])
 
   const loadScriptStatus = useCallback(async () => {
     const dramaId = selectedDramaIdRef.current
-    if (!dramaId) return
+    if (!dramaId) return false
     try {
       const status = await api.dramas.getScriptStatus(dramaId)
-      if (!mountedRef.current) return
+      if (!mountedRef.current) return false
       setEpisodes(status.episodes)
       if (status.episodes.length > 0) {
         setEpisodeRangeEnd(Math.max(...status.episodes.map((e) => e.episodeNumber)))
       }
-    } catch { /* ignore */ }
+      return true
+    } catch {
+      return false
+    }
   }, [])
 
-  // ── Initial data load — 只依赖 selectedDramaId (primitive) ──
-  // 用 dataLoaded ref 防止 React StrictMode 双重调用
-  const initialLoadDoneRef = useRef<string | null>(null)
+  // ── Initial data load: 每个 dramaId 只跑一次 ──
+  const loadedDramaIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!selectedDramaId) return
-    // 同一个 dramaId 只加载一次
-    if (initialLoadDoneRef.current === selectedDramaId) return
-    initialLoadDoneRef.current = selectedDramaId
+    if (loadedDramaIdRef.current === selectedDramaId) return
+    loadedDramaIdRef.current = selectedDramaId
 
     let cancelled = false
+    setDataReady(false)
+
     ;(async () => {
       await loadNovelData()
       if (cancelled || !mountedRef.current) return
       await loadScriptStatus()
       if (!cancelled && mountedRef.current) {
-        setDataLoaded(true)
+        setDataReady(true)
       }
     })()
+
     return () => { cancelled = true }
   }, [selectedDramaId, loadNovelData, loadScriptStatus])
 
   // ── Parse progress polling ──
-  // 只在 parsing=true 时启动，用 novelIdRef 避免依赖 novel 对象
   useEffect(() => {
     if (!parsing) return
-
     const poll = async () => {
       const nid = novelIdRef.current
       if (!nid || !mountedRef.current) return
@@ -221,7 +352,6 @@ export function ScriptWorkbench() {
         }
       } catch { /* ignore */ }
     }
-
     const interval = setInterval(poll, 3000)
     return () => clearInterval(interval)
   }, [parsing, loadNovelData])
@@ -250,12 +380,6 @@ export function ScriptWorkbench() {
     } finally {
       if (mountedRef.current) setUploading(false)
     }
-  }
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file) await handleFileUpload(file)
   }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -390,11 +514,11 @@ export function ScriptWorkbench() {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Render
+  // ★ RENDER ★
   // ════════════════════════════════════════════════════════════
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="h-full flex flex-col bg-background overflow-hidden">
       {/* ── Top Bar ── */}
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         <button
@@ -415,536 +539,476 @@ export function ScriptWorkbench() {
           </Badge>
         )}
         {!isGenerating && <div className="ml-auto" />}
-        <Button variant="ghost" size="sm" className="size-8 p-0 lg:hidden" onClick={() => setLeftCollapsed(!leftCollapsed)}>
-          {leftCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+        <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => setLeftOpen(!leftOpen)}>
+          {leftOpen ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />}
         </Button>
       </div>
 
-      {/* ── Main Three-Column Layout ── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* ── Main Layout: 三栏 flex row，Left | Center | Right 是兄弟节点 ── */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
 
-        {/* ═══ Left Column: Chapter Nav + Gen Config ═══ */}
-        <div className={`shrink-0 border-r border-border flex flex-col transition-all duration-200 ${leftCollapsed ? 'w-10' : 'w-72'} hidden lg:flex`}>
-          {leftCollapsed ? (
-            <div className="flex flex-col items-center py-2">
-              <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => setLeftCollapsed(false)}>
-                <ChevronRight className="size-4" />
-              </Button>
-              <div className="mt-2 [writing-mode:vertical-rl] text-xs text-muted-foreground">章节导航</div>
-            </div>
-          ) : (
-            <>
-              {/* Chapter list header */}
-              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-xs font-medium text-muted-foreground">章节导航 ({chapters.length})</span>
-                <div className="flex items-center gap-1">
-                  {novel && (
-                    <Button variant="ghost" size="sm" className="size-6 p-0" onClick={handleReparse} disabled={reparsing} title="重新解析章节">
-                      <RotateCcw className={`size-3 ${reparsing ? 'animate-spin' : ''}`} />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => setLeftCollapsed(true)}>
-                    <ChevronLeft className="size-3.5" />
+        {/* ═══ Left Column (w-72) ═══ */}
+        {leftOpen && (
+          <div className="w-72 border-r border-border flex flex-col overflow-hidden shrink-0">
+            {/* Chapter list header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
+              <span className="text-xs font-medium text-muted-foreground">
+                章节导航 {!dataReady ? '' : `(${chapters.length})`}
+              </span>
+              <div className="flex items-center gap-1">
+                {novel && (
+                  <Button variant="ghost" size="sm" className="size-6 p-0" onClick={handleReparse} disabled={reparsing} title="重新解析章节">
+                    <RotateCcw className={`size-3 ${reparsing ? 'animate-spin' : ''}`} />
                   </Button>
-                </div>
-              </div>
-
-              {/* Chapter list */}
-              <ScrollArea className="flex-1">
-                {chapters.length > 0 ? (
-                  <div className="p-2 space-y-0.5">
-                    {chapters.map((ch, idx) => (
-                      <button
-                        key={`${ch.index}-${idx}`}
-                        className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
-                          selectedChapterIdx === idx
-                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                            : 'hover:bg-muted/50 text-foreground'
-                        }`}
-                        onClick={() => handleChapterClick(idx)}
-                      >
-                        <span className={`size-5 rounded flex items-center justify-center text-[10px] font-mono shrink-0 ${
-                          selectedChapterIdx === idx ? 'bg-amber-500/20' : 'bg-muted/60'
-                        }`}>
-                          {idx + 1}
-                        </span>
-                        <span className="truncate flex-1">{ch.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : novel ? (
-                  <div className="p-4 text-center">
-                    {parsing ? (
-                      <div className="space-y-2">
-                        <Loader2 className="size-5 animate-spin mx-auto text-amber-500" />
-                        <p className="text-xs text-muted-foreground">正在解析...</p>
-                        {parseProgress.total > 0 && (
-                          <>
-                            <Progress value={(parseProgress.current / parseProgress.total) * 100} className="h-1" />
-                            <p className="text-[10px] text-muted-foreground">{parseProgress.message}</p>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">暂无章节数据</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
-                    <div
-                      className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                      <p className="text-xs font-medium">上传小说文件</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
-                      <p className="text-[10px] text-muted-foreground">拖拽文件或点击选择</p>
-                      {uploading && <Loader2 className="size-4 mx-auto mt-2 animate-spin text-amber-500" />}
-                    </div>
-                    <input ref={fileInputRef} type="file" accept=".txt,.docx" className="hidden" onChange={handleFileSelect} />
-                  </div>
                 )}
-              </ScrollArea>
-
-              {/* Generation config panel */}
-              <div className="border-t border-border p-3 space-y-3">
-                <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Zap className="size-3 text-amber-500" />
-                  生成配置
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground w-8 shrink-0">集范围</span>
-                  <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
-                  <span className="text-[10px] text-muted-foreground">至</span>
-                  <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
-                </div>
-                <div className="space-y-1.5">
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || generatingSkeleton || isGenerating}>
-                    {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
-                    生成故事骨架
-                  </Button>
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleGenerateStrategy} disabled={!parsedContent.skeleton || generatingStrategy || isGenerating}>
-                    {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                    生成改编策略
-                  </Button>
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || generatingScripts || isGenerating}>
-                    {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-                    批量生成剧本
-                  </Button>
-                </div>
-                {isGenerating && generationProgress > 0 && <Progress value={generationProgress} className="h-1.5" />}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* ═══ Mobile Left Drawer ═══ */}
-        {!leftCollapsed && (
-          <div className="lg:hidden fixed inset-0 z-50 flex">
-            <div className="flex-1 bg-black/50" onClick={() => setLeftCollapsed(true)} />
-            <div className="w-72 bg-background border-l border-border flex flex-col overflow-y-auto">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-xs font-medium text-muted-foreground">章节导航 ({chapters.length})</span>
-                <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => setLeftCollapsed(true)}>
-                  <X className="size-3.5" />
+                <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => setLeftOpen(false)}>
+                  <ChevronLeft className="size-3.5" />
                 </Button>
               </div>
-              <ScrollArea className="flex-1">
-                {chapters.length > 0 ? (
-                  <div className="p-2 space-y-0.5">
-                    {chapters.map((ch, idx) => (
-                      <button
-                        key={`m-${ch.index}-${idx}`}
-                        className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
-                          selectedChapterIdx === idx ? 'bg-amber-500/10 text-amber-700' : 'hover:bg-muted/50 text-foreground'
-                        }`}
-                        onClick={() => { handleChapterClick(idx); setLeftCollapsed(true) }}
-                      >
-                        <span className="size-5 rounded flex items-center justify-center text-[10px] font-mono bg-muted/60 shrink-0">{idx + 1}</span>
-                        <span className="truncate flex-1">{ch.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-4" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                      <p className="text-xs font-medium">上传小说文件</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
+            </div>
+
+            {/* Chapter list content — 简单 div + overflow-y-auto 替代 ScrollArea */}
+            <div className="flex-1 overflow-y-auto">
+              {!dataReady ? (
+                <div className="p-4 flex items-center justify-center">
+                  <Loader2 className="size-5 animate-spin text-amber-500" />
+                </div>
+              ) : displayChapters.length > 0 ? (
+                <div className="p-2 space-y-0.5">
+                  {displayChapters.map((ch, idx) => (
+                    <button
+                      key={`ch-${ch.index}-${idx}`}
+                      className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
+                        selectedChapterIdx === idx
+                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                          : 'hover:bg-muted/50 text-foreground'
+                      }`}
+                      onClick={() => handleChapterClick(idx)}
+                    >
+                      <span className={`size-5 rounded flex items-center justify-center text-[10px] font-mono shrink-0 ${
+                        selectedChapterIdx === idx ? 'bg-amber-500/20' : 'bg-muted/60'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <span className="truncate flex-1">{ch.displayTitle}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : novel ? (
+                <div className="p-4 text-center">
+                  {parsing ? (
+                    <div className="space-y-2">
+                      <Loader2 className="size-5 animate-spin mx-auto text-amber-500" />
+                      <p className="text-xs text-muted-foreground">正在解析...</p>
+                      {parseProgress.total > 0 && (
+                        <>
+                          <Progress value={(parseProgress.current / parseProgress.total) * 100} className="h-1" />
+                          <p className="text-[10px] text-muted-foreground">{parseProgress.message}</p>
+                        </>
+                      )}
                     </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">暂无章节数据</p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4"
+                  onDrop={async (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) await handleFileUpload(f) }}
+                  onDragOver={(e) => e.preventDefault()}
+                >
+                  <div
+                    className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-xs font-medium">上传小说文件</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
+                    <p className="text-[10px] text-muted-foreground">拖拽文件或点击选择</p>
+                    {uploading && <Loader2 className="size-4 mx-auto mt-2 animate-spin text-amber-500" />}
                   </div>
-                )}
-              </ScrollArea>
-              <div className="border-t border-border p-3 space-y-1.5">
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || isGenerating}>
+                  <input ref={fileInputRef} type="file" accept=".txt,.docx" className="hidden" onChange={handleFileSelect} />
+                </div>
+              )}
+            </div>
+
+            {/* Generation config panel */}
+            <div className="border-t border-border p-3 space-y-3 shrink-0">
+              <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Zap className="size-3 text-amber-500" />
+                生成配置
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-muted-foreground w-8 shrink-0">集范围</span>
+                <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
+                <span className="text-[10px] text-muted-foreground">至</span>
+                <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
+              </div>
+              <div className="space-y-1.5">
+                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || generatingSkeleton || isGenerating}>
                   {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
                   生成故事骨架
                 </Button>
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleGenerateStrategy} disabled={!parsedContent.skeleton || isGenerating}>
+                <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleGenerateStrategy} disabled={!parsedContent.skeleton || generatingStrategy || isGenerating}>
                   {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                   生成改编策略
                 </Button>
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || isGenerating}>
+                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || generatingScripts || isGenerating}>
                   {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
                   批量生成剧本
                 </Button>
               </div>
+              {isGenerating && generationProgress > 0 && <Progress value={generationProgress} className="h-1.5" />}
             </div>
           </div>
         )}
 
-        {/* ═══ Center Column: 4 Tabs ═══ */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
-            <div className="border-b border-border px-4 pt-2">
-              <TabsList className="bg-transparent h-9 p-0 gap-4">
-                <TabsTrigger value="source" className="text-xs data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none data-[state=active]:shadow-none data-[state=active]:bg-transparent px-1">
-                  <Eye className="size-3.5 mr-1.5" />
-                  章节原文
-                </TabsTrigger>
-                <TabsTrigger value="skeleton" className="text-xs data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none data-[state=active]:shadow-none data-[state=active]:bg-transparent px-1">
-                  <Brain className="size-3.5 mr-1.5" />
-                  故事骨架
-                  {parsedContent.skeleton && <Check className="size-3 ml-1 text-emerald-500" />}
-                </TabsTrigger>
-                <TabsTrigger value="strategy" className="text-xs data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none data-[state=active]:shadow-none data-[state=active]:bg-transparent px-1">
-                  <Sparkles className="size-3.5 mr-1.5" />
-                  改编策略
-                  {parsedContent.strategy && <Check className="size-3 ml-1 text-emerald-500" />}
-                </TabsTrigger>
-                <TabsTrigger value="scripts" className="text-xs data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none data-[state=active]:shadow-none data-[state=active]:bg-transparent px-1">
-                  <FileText className="size-3.5 mr-1.5" />
-                  剧本输出
-                  {completedEpisodes > 0 && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1 h-4">{completedEpisodes}</Badge>}
-                </TabsTrigger>
-              </TabsList>
-            </div>
+        {/* ═══ Center Column (flex-1) ═══ */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Tab 栏 — 简单 button 列表，不用 Radix Tabs */}
+          <div className="border-b border-border px-4 pt-2 shrink-0 flex items-center gap-4">
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`text-xs flex items-center gap-1.5 pb-2 border-b-2 transition-colors ${
+                    isActive
+                      ? 'border-amber-500 text-foreground font-medium'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="size-3.5" />
+                  {tab.label}
+                  {tab.key === 'skeleton' && parsedContent.skeleton && <Check className="size-3 text-emerald-500" />}
+                  {tab.key === 'strategy' && parsedContent.strategy && <Check className="size-3 text-emerald-500" />}
+                  {tab.key === 'scripts' && completedEpisodes > 0 && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5 h-4">{completedEpisodes}</Badge>
+                  )}
+                </button>
+              )
+            })}
+          </div>
 
-            {/* Tab: 章节原文 */}
-            <TabsContent value="source" className="flex-1 overflow-hidden m-0">
-              <ScrollArea className="h-full">
-                <div className="p-4 max-w-4xl mx-auto">
-                  {selectedChapter ? (
-                    <div className="space-y-3">
+          {/* ★★★ Tab 内容：条件渲染 — 同时只有一个 tab 在 DOM 中 ★★★ */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {/* ── Tab: 章节原文 ── */}
+            {activeTab === 'source' && (
+              <div className="p-4 max-w-4xl mx-auto">
+                {!dataReady ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
+                    <p className="text-sm text-muted-foreground">正在加载数据...</p>
+                  </div>
+                ) : selectedChapter ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">
                           第 {selectedChapterIdx! + 1} 章
                         </Badge>
-                        <h2 className="text-sm font-semibold">{selectedChapter.title}</h2>
+                        <h2 className="text-sm font-semibold">{displayChapters[selectedChapterIdx!]?.displayTitle || selectedChapter.title}</h2>
                       </div>
-                      <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50 max-h-[calc(100vh-200px)] overflow-y-auto">
-                        {selectedChapter.content}
-                      </pre>
-                    </div>
-                  ) : chapters.length > 0 ? (
-                    <EmptyState icon={<Eye className="size-10 text-amber-500/40" />} title="章节原文" description="在左侧选择一个章节，在此查看原文内容" />
-                  ) : novel ? (
-                    <EmptyState icon={<Eye className="size-10 text-amber-500/40" />} title="章节原文" description="小说正在解析中，解析完成后即可查看章节内容" />
-                  ) : (
-                    <EmptyState
-                      icon={<FileUp className="size-10 text-amber-500/40" />}
-                      title="章节原文"
-                      description="请先上传小说文件，系统将自动解析章节结构并显示原文"
-                      actionLabel="上传小说"
-                      onAction={() => fileInputRef.current?.click()}
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-
-            {/* Tab: 故事骨架 */}
-            <TabsContent value="skeleton" className="flex-1 overflow-hidden m-0">
-              <ScrollArea className="h-full">
-                <div className="p-4 max-w-4xl mx-auto">
-                  {parsedContent.skeleton ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">已生成</Badge>
-                          {parsedContent.skeletonGeneratedAt && (
-                            <span className="text-[10px] text-muted-foreground">{new Date(parsedContent.skeletonGeneratedAt).toLocaleString()}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingSkeleton(!editingSkeleton)}>
-                            {editingSkeleton ? <><Check className="size-3" />保存</> : <><FileText className="size-3" />编辑</>}
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateSkeleton} disabled={isGenerating}>
-                            <RotateCcw className="size-3" />重新生成
-                          </Button>
-                        </div>
-                      </div>
-                      {editingSkeleton ? (
-                        <Textarea value={skeletonEdit} onChange={(e) => setSkeletonEdit(e.target.value)} className="min-h-[500px] text-sm font-mono" placeholder="编辑故事骨架内容..." />
-                      ) : (
-                        <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50">
-                          {parsedContent.skeleton}
-                        </pre>
-                      )}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={<Brain className="size-10 text-amber-500/40" />}
-                      title="故事骨架"
-                      description="从小说中提取故事骨架：核心设定、关键删除决策、改编增强建议、分集决策"
-                      actionLabel="生成故事骨架"
-                      onAction={handleGenerateSkeleton}
-                      disabled={!novel || isGenerating}
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-
-            {/* Tab: 改编策略 */}
-            <TabsContent value="strategy" className="flex-1 overflow-hidden m-0">
-              <ScrollArea className="h-full">
-                <div className="p-4 max-w-4xl mx-auto">
-                  {parsedContent.strategy ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">已生成</Badge>
-                          {parsedContent.strategyGeneratedAt && (
-                            <span className="text-[10px] text-muted-foreground">{new Date(parsedContent.strategyGeneratedAt).toLocaleString()}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingStrategy(!editingStrategy)}>
-                            {editingStrategy ? <><Check className="size-3" />保存</> : <><FileText className="size-3" />编辑</>}
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateStrategy} disabled={isGenerating}>
-                            <RotateCcw className="size-3" />重新生成
-                          </Button>
-                        </div>
-                      </div>
-                      {editingStrategy ? (
-                        <Textarea value={strategyEdit} onChange={(e) => setStrategyEdit(e.target.value)} className="min-h-[500px] text-sm font-mono" placeholder="编辑改编策略内容..." />
-                      ) : (
-                        <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50">
-                          {parsedContent.strategy}
-                        </pre>
-                      )}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={<Sparkles className="size-10 text-amber-500/40" />}
-                      title="改编策略"
-                      description="基于故事骨架制定改编策略：核心原则、删除决策、世界观策略、角色处理策略"
-                      actionLabel="生成改编策略"
-                      onAction={handleGenerateStrategy}
-                      disabled={!parsedContent.skeleton || isGenerating}
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-
-            {/* Tab: 剧本输出 */}
-            <TabsContent value="scripts" className="flex-1 overflow-hidden m-0">
-              <ScrollArea className="h-full">
-                <div className="p-4 max-w-4xl mx-auto">
-                  {episodes.length > 0 ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">共 {episodes.length} 集 · 已完成 {completedEpisodes} 集</span>
-                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={loadScriptStatus}>
-                          <RefreshCw className="size-3" />刷新状态
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" disabled={selectedChapterIdx === 0}
+                          onClick={() => setSelectedChapterIdx(selectedChapterIdx! - 1)}>
+                          <ChevronLeft className="size-3" />上一章
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" disabled={selectedChapterIdx === displayChapters.length - 1}
+                          onClick={() => setSelectedChapterIdx(selectedChapterIdx! + 1)}>
+                          下一章<ChevronRight className="size-3" />
                         </Button>
                       </div>
-                      {episodes.map((ep) => (
-                        <Card key={ep.id} className="border-border/50 py-0 gap-0">
-                          <CardHeader
-                            className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors"
-                            onClick={() => handleViewEpisodeScript(ep.id)}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
-                                  <span className="text-xs font-bold text-primary">E{String(ep.episodeNumber).padStart(2, '0')}</span>
-                                </div>
-                                <div>
-                                  <CardTitle className="text-sm font-medium">{ep.title || `第${ep.episodeNumber}集`}</CardTitle>
-                                  <div className="flex items-center gap-2 mt-0.5"><StatusBadge status={ep.scriptStatus} /></div>
-                                </div>
-                              </div>
-                              <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
-                            </div>
-                          </CardHeader>
-                          {/* 不用 AnimatePresence/motion.div，用纯 CSS 过渡 */}
-                          {expandedEpisode === ep.id && (
-                            <CardContent className="pt-0 px-4 pb-4">
-                              <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
-                                {episodeScripts[ep.id] ? (
-                                  <pre className="whitespace-pre-wrap text-xs leading-relaxed max-h-80 overflow-y-auto">{episodeScripts[ep.id]}</pre>
-                                ) : (
-                                  <div className="flex items-center justify-center py-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
-                                )}
-                              </div>
-                            </CardContent>
-                          )}
-                        </Card>
-                      ))}
                     </div>
-                  ) : (
-                    <EmptyState
-                      icon={<FileText className="size-10 text-amber-500/40" />}
-                      title="剧本输出"
-                      description="基于故事骨架和改编策略，批量生成每集剧本"
-                      actionLabel="批量生成剧本"
-                      onAction={handleGenerateScripts}
-                      disabled={!parsedContent.strategy || isGenerating}
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
-        </div>
-
-        {/* ═══ Right Column: Progress & Stats ═══ */}
-        <div className="hidden lg:flex shrink-0 w-80 border-l border-border flex-col overflow-hidden">
-          {/* Progress ring */}
-          <div className="p-4 border-b border-border">
-            <div className="flex items-center justify-center">
-              <div className="relative">
-                <svg className="size-24 -rotate-90">
-                  <circle cx="48" cy="48" r="40" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/30" />
-                  <circle cx="48" cy="48" r="40" fill="none" stroke="currentColor" strokeWidth="6" strokeDasharray={`${2 * Math.PI * 40}`} strokeDashoffset={`${2 * Math.PI * 40 * (1 - progressPercent / 100)}`} strokeLinecap="round" className="text-amber-500 transition-all duration-500" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <span className="text-xl font-bold">{progressPercent}%</span>
-                    <p className="text-[10px] text-muted-foreground">完成度</p>
+                    <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50">
+                      {selectedChapter.content}
+                    </pre>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Episode status list */}
-          <div className="border-b border-border">
-            <div className="px-4 py-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">剧集状态</span>
-              <span className="text-[10px] text-muted-foreground">{completedEpisodes}/{totalEpisodes}</span>
-            </div>
-            <ScrollArea className="max-h-48">
-              <div className="px-4 pb-2 space-y-1">
-                {episodes.length > 0 ? episodes.map((ep) => (
-                  <div key={ep.id} className="flex items-center gap-2 text-xs">
-                    <StatusDot status={ep.scriptStatus} />
-                    <span className="text-muted-foreground font-mono w-6">E{String(ep.episodeNumber).padStart(2, '0')}</span>
-                    <span className="flex-1 truncate">{ep.title || `第${ep.episodeNumber}集`}</span>
-                  </div>
-                )) : (
-                  <p className="text-[10px] text-muted-foreground py-2">暂无剧集，生成后将在此显示</p>
+                ) : chapters.length > 0 ? (
+                  <EmptyState
+                    icon={<Eye className="size-10 text-amber-500" />}
+                    title="章节原文"
+                    description="在左侧选择一个章节，在此查看原文内容"
+                  />
+                ) : novel ? (
+                  <EmptyState
+                    icon={<Eye className="size-10 text-amber-500" />}
+                    title="章节原文"
+                    description="小说正在解析中，解析完成后即可查看章节内容"
+                  />
+                ) : (
+                  <EmptyState
+                    icon={<FileUp className="size-10 text-amber-500" />}
+                    title="章节原文"
+                    description="请先上传小说文件，系统将自动解析章节结构并显示原文"
+                    actionLabel="上传小说"
+                    onAction={() => fileInputRef.current?.click()}
+                  />
                 )}
               </div>
-            </ScrollArea>
-          </div>
+            )}
 
-          {/* Stats */}
-          <div className="p-4 border-b border-border">
-            <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-              <BarChart3 className="size-3" />统计信息
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <StatCard label="总章节" value={String(chapters.length)} icon={<ListChecks className="size-3" />} />
-              <StatCard label="总集数" value={String(totalEpisodes || '—')} icon={<Layers className="size-3" />} />
-              <StatCard label="已完成" value={String(completedEpisodes)} icon={<Check className="size-3" />} />
-              <StatCard label="预计时长" value={`${totalEpisodes * 2}min`} icon={<Clock className="size-3" />} />
-            </div>
-          </div>
+            {/* ── Tab: 故事骨架 ── */}
+            {activeTab === 'skeleton' && (
+              <div className="p-4 max-w-4xl mx-auto">
+                {!dataReady ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
+                    <p className="text-sm text-muted-foreground">正在加载数据...</p>
+                  </div>
+                ) : parsedContent.skeleton ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">已生成</Badge>
+                        {parsedContent.skeletonGeneratedAt && (
+                          <span className="text-[10px] text-muted-foreground">{new Date(parsedContent.skeletonGeneratedAt).toLocaleString()}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingSkeleton(!editingSkeleton)}>
+                          {editingSkeleton ? <><Check className="size-3" />完成</> : <><FileText className="size-3" />编辑</>}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateSkeleton} disabled={isGenerating}>
+                          <RotateCcw className="size-3" />重新生成
+                        </Button>
+                      </div>
+                    </div>
+                    {editingSkeleton ? (
+                      <Textarea value={skeletonEdit} onChange={(e) => setSkeletonEdit(e.target.value)} className="min-h-[500px] text-sm font-mono" placeholder="编辑故事骨架内容..." />
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50">
+                        {parsedContent.skeleton}
+                      </pre>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<Brain className="size-10 text-amber-500" />}
+                    title="故事骨架"
+                    description="从小说中提取故事骨架：核心设定、关键删除决策、改编增强建议、分集决策"
+                    actionLabel="生成故事骨架"
+                    onAction={handleGenerateSkeleton}
+                    disabled={!novel || isGenerating}
+                  />
+                )}
+              </div>
+            )}
 
-          {/* Workflow steps */}
-          <div className="flex-1 p-4 overflow-y-auto">
-            <div className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
-              <Zap className="size-3 text-amber-500" />工作流程
-            </div>
-            <div className="space-y-3">
-              <StepItem number={1} title="上传小说" done={!!novel} active={!novel} />
-              <StepItem number={2} title="解析小说" done={novel?.parseStatus === 'parsed'} active={!!novel && novel?.parseStatus !== 'parsed'} />
-              <StepItem number={3} title="提取故事骨架" done={!!parsedContent.skeleton} active={!parsedContent.skeleton && novel?.parseStatus === 'parsed'} />
-              <StepItem number={4} title="制定改编策略" done={!!parsedContent.strategy} active={!!parsedContent.skeleton && !parsedContent.strategy} />
-              <StepItem number={5} title="生成剧本" done={completedEpisodes > 0} active={!!parsedContent.strategy && completedEpisodes === 0} />
+            {/* ── Tab: 改编策略 ── */}
+            {activeTab === 'strategy' && (
+              <div className="p-4 max-w-4xl mx-auto">
+                {!dataReady ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
+                    <p className="text-sm text-muted-foreground">正在加载数据...</p>
+                  </div>
+                ) : parsedContent.strategy ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">已生成</Badge>
+                        {parsedContent.strategyGeneratedAt && (
+                          <span className="text-[10px] text-muted-foreground">{new Date(parsedContent.strategyGeneratedAt).toLocaleString()}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingStrategy(!editingStrategy)}>
+                          {editingStrategy ? <><Check className="size-3" />完成</> : <><FileText className="size-3" />编辑</>}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateStrategy} disabled={isGenerating}>
+                          <RotateCcw className="size-3" />重新生成
+                        </Button>
+                      </div>
+                    </div>
+                    {editingStrategy ? (
+                      <Textarea value={strategyEdit} onChange={(e) => setStrategyEdit(e.target.value)} className="min-h-[500px] text-sm font-mono" placeholder="编辑改编策略内容..." />
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50">
+                        {parsedContent.strategy}
+                      </pre>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<Sparkles className="size-10 text-amber-500" />}
+                    title="改编策略"
+                    description="基于故事骨架制定改编策略：核心原则、删除决策、世界观策略、角色处理策略"
+                    actionLabel="生成改编策略"
+                    onAction={handleGenerateStrategy}
+                    disabled={!parsedContent.skeleton || isGenerating}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* ── Tab: 剧本输出 ── */}
+            {activeTab === 'scripts' && (
+              <div className="p-4 max-w-4xl mx-auto">
+                {!dataReady ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
+                    <p className="text-sm text-muted-foreground">正在加载数据...</p>
+                  </div>
+                ) : episodes.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">共 {episodes.length} 集 · 已完成 {completedEpisodes} 集</span>
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={loadScriptStatus}>
+                        <RefreshCw className="size-3" />刷新状态
+                      </Button>
+                    </div>
+                    {episodes.map((ep) => (
+                      <Card key={ep.id} className="border-border/50 py-0 gap-0">
+                        <CardHeader
+                          className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                          onClick={() => handleViewEpisodeScript(ep.id)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
+                                <span className="text-xs font-bold text-primary">E{String(ep.episodeNumber).padStart(2, '0')}</span>
+                              </div>
+                              <div>
+                                <CardTitle className="text-sm font-medium">{getEpisodeDisplayTitle(ep)}</CardTitle>
+                                <div className="flex items-center gap-2 mt-0.5"><StatusDot status={ep.scriptStatus} /></div>
+                              </div>
+                            </div>
+                            <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
+                          </div>
+                        </CardHeader>
+                        {expandedEpisode === ep.id && (
+                          <CardContent className="pt-0 px-4 pb-4">
+                            <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
+                              {episodeScripts[ep.id] ? (
+                                <pre className="whitespace-pre-wrap text-xs leading-relaxed max-h-80 overflow-y-auto">{episodeScripts[ep.id]}</pre>
+                              ) : (
+                                <div className="flex items-center justify-center py-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+                              )}
+                            </div>
+                          </CardContent>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<FileText className="size-10 text-amber-500" />}
+                    title="剧本输出"
+                    description="基于故事骨架和改编策略，批量生成每集剧本"
+                    actionLabel="批量生成剧本"
+                    onAction={handleGenerateScripts}
+                    disabled={!parsedContent.strategy || isGenerating}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ═══ Right Column (w-80) — 和 Center 是兄弟节点 ═══ */}
+        <div className="w-80 border-l border-border flex flex-col overflow-hidden shrink-0">
+          <div className="px-4 py-3 border-b border-border shrink-0">
+            <span className="text-xs font-medium text-muted-foreground">进度统计</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 space-y-4">
+              {/* 总体进度 */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-muted-foreground">剧本生成进度</span>
+                  <span className="text-xs font-medium">{progressPercent}%</span>
+                </div>
+                <Progress value={progressPercent} className="h-2" />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {completedEpisodes} / {totalEpisodes} 集已完成
+                </p>
+              </div>
+
+              {/* 小说状态 */}
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-muted-foreground">小说状态</span>
+                {novel ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">文件</span>
+                      <span className="truncate max-w-36">{novel.fileName}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">解析状态</span>
+                      <Badge variant={novel.parseStatus === 'parsed' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+                        {novel.parseStatus === 'parsed' ? '已解析' : novel.parseStatus === 'parsing' ? '解析中' : '待解析'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">章节数</span>
+                      <span>{chapters.length}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">尚未上传小说</p>
+                )}
+              </div>
+
+              {/* 生成状态 */}
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-muted-foreground">生成状态</span>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">故事骨架</span>
+                    {parsedContent.skeleton ? (
+                      <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-emerald-600">已生成</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">未生成</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">改编策略</span>
+                    {parsedContent.strategy ? (
+                      <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-emerald-600">已生成</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">未生成</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">剧本输出</span>
+                    {completedEpisodes > 0 ? (
+                      <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-emerald-600">{completedEpisodes}集</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">未生成</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 集范围配置 */}
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-muted-foreground">集范围配置</span>
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
+                  <span className="text-[10px] text-muted-foreground">至</span>
+                  <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
+                </div>
+                <div className="space-y-1.5 pt-1">
+                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || isGenerating}>
+                    {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
+                    生成故事骨架
+                  </Button>
+                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleGenerateStrategy} disabled={!parsedContent.skeleton || isGenerating}>
+                    {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                    生成改编策略
+                  </Button>
+                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || isGenerating}>
+                    {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+                    批量生成剧本
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════════════════════
-// Sub-components (不用 framer-motion)
-// ════════════════════════════════════════════════════════════
-
-function EmptyState({ icon, title, description, actionLabel, onAction, disabled }: {
-  icon: React.ReactNode
-  title: string
-  description: string
-  actionLabel?: string
-  onAction?: () => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4">{icon}</div>
-      <h3 className="text-sm font-medium mb-1">{title}</h3>
-      <p className="text-xs text-muted-foreground max-w-xs mb-4">{description}</p>
-      {actionLabel && onAction && (
-        <Button size="sm" onClick={onAction} disabled={disabled} className="gap-1.5">
-          <Sparkles className="size-3" />
-          {actionLabel}
-        </Button>
-      )}
-    </div>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; className: string }> = {
-    completed: { label: '已完成', className: 'text-emerald-600 border-emerald-300' },
-    generating: { label: '生成中', className: 'text-amber-600 border-amber-300' },
-    failed: { label: '失败', className: 'text-red-600 border-red-300' },
-    pending: { label: '待生成', className: 'text-muted-foreground border-border' },
-  }
-  const c = config[status] || config.pending
-  return <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${c.className}`}>{c.label}</Badge>
-}
-
-function StatusDot({ status }: { status: string }) {
-  const colorMap: Record<string, string> = {
-    completed: 'bg-emerald-500',
-    generating: 'bg-amber-500 animate-pulse',
-    failed: 'bg-red-500',
-    pending: 'bg-muted-foreground/40',
-  }
-  return <span className={`size-1.5 rounded-full shrink-0 ${colorMap[status] || colorMap.pending}`} />
-}
-
-function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
-  return (
-    <div className="bg-muted/30 rounded-md px-2.5 py-2 flex items-center gap-2">
-      <div className="text-muted-foreground">{icon}</div>
-      <div>
-        <div className="text-xs font-medium">{value}</div>
-        <div className="text-[10px] text-muted-foreground">{label}</div>
-      </div>
-    </div>
-  )
-}
-
-function StepItem({ number, title, done, active }: { number: number; title: string; done: boolean; active: boolean }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className={`size-6 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${
-        done ? 'bg-emerald-500/20 text-emerald-600' : active ? 'bg-amber-500/20 text-amber-600' : 'bg-muted/60 text-muted-foreground'
-      }`}>
-        {done ? <Check className="size-3" /> : number}
-      </div>
-      <span className={`text-xs ${done ? 'text-emerald-600' : active ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{title}</span>
     </div>
   )
 }

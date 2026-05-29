@@ -1,0 +1,1 @@
+https://teamocode.com/oauth/authorize?client=teamo-cli&devic│
