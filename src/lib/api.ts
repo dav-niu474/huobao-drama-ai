@@ -1467,4 +1467,59 @@ export const api = {
         body: JSON.stringify({ dramaId }),
       }),
   },
+
+  // ---- Drama Members (团队协作) ----
+  members: {
+    list: (dramaId: string) =>
+      request<{ members: any[] }>(`/api/dramas/${dramaId}/members`),
+
+    invite: (dramaId: string, data: { userEmail: string; role: string }) =>
+      request<{ member: any }>(`/api/dramas/${dramaId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (dramaId: string, memberId: string, data: { role: string }) =>
+      request<{ member: any }>(`/api/dramas/${dramaId}/members/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    remove: (dramaId: string, memberId: string) =>
+      request<{ success: boolean }>(`/api/dramas/${dramaId}/members/${memberId}`, {
+        method: 'DELETE',
+      }),
+  },
+
+  // ---- Comments (评论批注) ----
+  comments: {
+    list: (dramaId: string, params?: { episodeId?: string; storyboardId?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.episodeId) query.set('episodeId', params.episodeId)
+      if (params?.storyboardId) query.set('storyboardId', params.storyboardId)
+      const qs = query.toString()
+      return request<{ comments: any[] }>(`/api/dramas/${dramaId}/comments${qs ? `?${qs}` : ''}`)
+    },
+
+    add: (dramaId: string, data: { content: string; episodeId?: string; storyboardId?: string }) =>
+      request<{ comment: any }>(`/api/dramas/${dramaId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (commentId: string, data: { content?: string; resolved?: boolean }) =>
+      request<{ comment: any }>(`/api/comments/${commentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (commentId: string) =>
+      request<{ success: boolean }>(`/api/comments/${commentId}`, {
+        method: 'DELETE',
+      }),
+  },
 }

@@ -23,6 +23,9 @@ model User {
   dramas Drama[]
   userProviders UserProvider[]
   assets Asset[]
+  memberships DramaMember[]
+  comments Comment[]
+  invitedMembers DramaMember[] @relation("InvitedMembers")
 }
 
 // ============ Drama Project ============
@@ -55,6 +58,8 @@ model Drama {
   imageGenerations ImageGeneration[]
   videoGenerations VideoGeneration[]
   videoMerges      VideoMerge[]
+  members          DramaMember[]
+  comments         Comment[]
 }
 
 // ============ Episode ============
@@ -79,6 +84,7 @@ model Episode {
 
   drama        Drama        @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   storyboards  Storyboard[]
+  comments     Comment[]
 
   @@unique([dramaId, episodeNumber])
 }
@@ -167,6 +173,7 @@ model Storyboard {
   updatedAt       DateTime @updatedAt
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  comments Comment[]
 }
 
 // ============ Character Appearance (NEW - 核心资产沉淀) ============
@@ -395,4 +402,41 @@ model VideoMerge {
   updatedAt   DateTime @updatedAt
 
   drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
+}
+
+// ============ Drama Member (团队协作) ============
+model DramaMember {
+  id        String   @id @default(cuid())
+  dramaId   String
+  userId    String
+  role      String   @default("viewer")  // "owner" | "editor" | "viewer"
+  invitedBy String?  // userId of the inviter
+  status    String   @default("active")  // "pending" | "active" | "removed"
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  drama    Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  user     User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter  User? @relation("InvitedMembers", fields: [invitedBy], references: [id], onDelete: SetNull)
+
+  @@unique([dramaId, userId])
+}
+
+// ============ Comment (评论批注) ============
+model Comment {
+  id           String   @id @default(cuid())
+  dramaId      String
+  episodeId    String?
+  storyboardId String?
+  userId       String
+  content      String
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  drama      Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  episode    Episode?    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  storyboard Storyboard? @relation(fields: [storyboardId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

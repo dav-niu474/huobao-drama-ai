@@ -24,11 +24,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
 import { CostStatsPanel } from '@/components/episode/cost-stats-panel'
+import { CollaborationPanel } from '@/components/collaboration-panel'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -382,6 +383,9 @@ export function ProjectDetailView() {
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchExpanded, setBatchExpanded] = useState(false)
   const [batchPolling, setBatchPolling] = useState(false)
+
+  // Collaboration sidebar
+  const [collabOpen, setCollabOpen] = useState(false)
 
   // Import from library dialog
   const [importOpen, setImportOpen] = useState(false)
@@ -739,6 +743,15 @@ export function ProjectDetailView() {
                   )}
                   <span className="hidden sm:inline">批量生产</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCollabOpen(!collabOpen)}
+                  className={`text-xs gap-1 ${collabOpen ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <Users className="size-3.5" />
+                  <span className="hidden sm:inline">团队</span>
+                </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">添加集</span>
@@ -769,8 +782,9 @@ export function ProjectDetailView() {
         </div>
       )}
 
-      {/* Episodes list */}
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+      {/* Episodes list + Collaboration sidebar */}
+      <div className="flex-1 flex overflow-hidden">
+        <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
         {loading && !drama ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -993,7 +1007,43 @@ export function ProjectDetailView() {
             </Card>
           </div>
         ) : null}
-      </main>
+        </main>
+
+        {/* ── Collaboration Sidebar ── */}
+        {collabOpen && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 320, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="border-l border-border/50 bg-background shrink-0 overflow-hidden"
+          >
+            <div className="w-80 h-full flex flex-col">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
+                <h3 className="text-sm font-medium">团队协作</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-6 p-0"
+                  onClick={() => setCollabOpen(false)}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-hidden p-2">
+                <CollaborationPanel
+                  dramaId={drama?.id ?? ''}
+                  episodes={drama?.episodes?.map((ep) => ({
+                    id: ep.id,
+                    title: ep.title,
+                    episodeNumber: ep.episodeNumber,
+                  })) ?? []}
+                />
+              </div>
+            </div>
+          </motion.aside>
+        )}
+      </div>
 
       {/* ── Add Episode Dialog ─────────────────────────────── */}
       <Dialog open={addEpOpen} onOpenChange={setAddEpOpen}>
