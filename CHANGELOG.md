@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-30
+
+### Added
+- 小团队协作系统 — DramaMember数据模型 + 邀请机制 + 角色权限(owner/editor/viewer) + 成员管理API
+- 评论批注系统 — Comment数据模型 + 按集数/分镜筛选评论 + 解决/重新打开状态 + 评论增删改API
+- 项目进度看板 — Dashboard API + 全局管线进度可视化 + 资产统计 + 成本汇总 + 最近活动流
+- 团队协作面板 — Members Tab(邀请/角色管理/移除) + Comments Tab(筛选/添加/解决/删除)
+- Vidu视频适配器轮询支持 — 实现buildPollRequest/parsePollResponse，不再仅限Webhook
+
+### Fixed
+- 修复batch-pipeline.ts硬编码localhost:3000 — 改用getBaseUrl()函数，支持Vercel生产环境部署
+- 修复noKeyProviders空数组 — 添加z-ai-sdk到免Key供应商列表
+
 ## [0.7.0] - 2026-05-23
 
 ### Added
