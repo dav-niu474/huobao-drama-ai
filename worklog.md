@@ -850,3 +850,31 @@ Stage Summary:
   4. 音色分配面板 (voice-panel.tsx) → 可选择 MiMo 音色
   5. 配音生成面板 (dubbing-panel.tsx) → 可为镜头生成配音
 - 所有 TTS 相关 API 均可正常使用
+
+---
+Task ID: voice-system-overhaul
+Agent: Main Agent
+Task: 完善语音系统 - TTS模型选择器、音色库UI重设计、API修复
+
+Work Log:
+- 深度分析完整语音系统：voice-panel.tsx、dubbing-panel.tsx、model-selector.tsx、episode-workspace.tsx、API路由、适配器、Agent工具
+- 发现7个问题：TTS选择器未开放、音色库UI简陋、Agent目录与API目录不一致且含无效音色、批量配音不传voiceId、MiMo适配器硬编码朗读指令、voiceStyle未传递
+- 在工作区头部（桌面+移动端）添加TTS模型选择器
+- 重设计音色库UI：卡片网格布局、搜索/过滤/试听、framer-motion动画
+- 统一Agent语音目录：替换12个硬编码无效音色为供应商感知的完整目录（42个音色）
+- 修复批量配音：从characters数组查找voiceId并传递
+- MiMo TTS适配器：voiceStyle参数替代硬编码"用自然流畅的语调朗读"
+- 完善voiceStyle传递链路：TTSProviderAdapter接口、voice-sample API、generate-tts API、ai-config.ts
+- MiMo TTS全部8个音色API实测通过（冰糖/茉莉/苏打/白桦/Chloe/Mia/Milo/Dean）
+- Next.js build验证通过
+- 推送到fix/voice-system-improvements分支
+
+Stage Summary:
+- 8个文件修改，+755/-241行
+- TTS模型选择器已开放（桌面+移动端）
+- 音色库UI全面重设计（卡片网格+搜索+试听+动画）
+- Agent语音目录统一且供应商感知
+- 批量配音+voiceStyle传递链路完整
+- MiMo全部8个音色验证通过
+- 分支: fix/voice-system-improvements
+- 待合并到main
