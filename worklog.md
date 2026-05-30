@@ -830,3 +830,23 @@ Stage Summary:
   3. TTS分类 + adapter 路径 → 200 OK + 51KB 音频
 - Vercel 已部署 commit 7e27ee6
 - 用户需在 Vercel Dashboard 更新 MIMO_API_KEY 为 SGP key
+---
+Task ID: 4
+Agent: main
+Task: 修复 MiMo TTS 音色选择器未开放 + 验证 TTS 完整调用链
+
+Work Log:
+- 发现 VOICE_CATALOG 缺少 MiMo 音色定义，导致音色分配面板无法选择 MiMo 音色
+- 添加 MiMo 音色: 冰糖/茉莉(中文女), 苏打/白桦(中文男), Chloe/Mia(英文女), Milo/Dean(英文男)
+- 端到端验证 6 个音色全部 200 OK + 音频数据
+- 模拟完整 aiClient.generateTts 调用链验证通过
+- PR #55 merged to main
+
+Stage Summary:
+- TTS 完整调用链验证通过:
+  1. 音色库 API (/api/ai/voices) → 返回 MiMo 8 个音色
+  2. 连接测试 (/api/ai/test-connection) → LLM/TTS 两条路径均 200 OK
+  3. 语音生成 (/api/ai/generate-tts) → MiMoTTSAdapter → /chat/completions → 200 OK + WAV
+  4. 音色分配面板 (voice-panel.tsx) → 可选择 MiMo 音色
+  5. 配音生成面板 (dubbing-panel.tsx) → 可为镜头生成配音
+- 所有 TTS 相关 API 均可正常使用
