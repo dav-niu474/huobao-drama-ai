@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Generate TTS — aiClient now returns the audio data URL
-    const audioDataUrl = await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle)
+    const audioDataUrl = await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle || undefined)
 
     // Save audio to file storage instead of storing base64 in DB
     let audioUrl = audioDataUrl

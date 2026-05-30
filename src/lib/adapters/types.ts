@@ -80,7 +80,7 @@ export interface VideoProviderAdapter {
 export interface TTSProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
+    params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest
 
   parseResponse(result: unknown): {

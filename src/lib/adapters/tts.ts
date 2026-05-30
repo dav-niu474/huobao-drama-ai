@@ -12,7 +12,7 @@ import { joinProviderUrl } from './url'
 export class MiniMaxTTSAdapter implements TTSProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
+    params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest {
     const model = config.model || 'speech-2.8-hd'
     const voiceId = params.voiceId || 'male-qn-qingse'
@@ -89,7 +89,7 @@ export class MiniMaxTTSAdapter implements TTSProviderAdapter {
 export class ChatfireTTSAdapter implements TTSProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
+    params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest {
     const model = config.model || 'speech-2.8-hd'
     const voiceId = params.voiceId || 'male-qn-qingse'
@@ -160,7 +160,7 @@ export class ChatfireTTSAdapter implements TTSProviderAdapter {
 export class OpenAITTSAdapter implements TTSProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
+    params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest {
     const model = config.model || 'tts-1'
     const voice = params.voiceId || 'alloy'
@@ -228,7 +228,7 @@ export class OpenAITTSAdapter implements TTSProviderAdapter {
 export class AliTTSAdapter implements TTSProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
+    params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest {
     const model = config.model || 'qwen3-tts-vd-2026-01-26'
     const voice = params.voiceId || 'zhitian_emo'
@@ -283,12 +283,14 @@ export class AliTTSAdapter implements TTSProviderAdapter {
 export class MiMoTTSAdapter implements TTSProviderAdapter {
   buildGenerateRequest(
     config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
+    params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest {
     const model = config.model || 'mimo-v2.5-tts'
     // MiMo preset voices: Chloe, Mia (English female); Milo, Dean (English male)
     // 冰糖, 茉莉 (Chinese female); 苏打, 白桦 (Chinese male)
     const voice = params.voiceId || 'Chloe'
+    // Use voiceStyle if provided, otherwise use natural reading style
+    const styleInstruction = params.voiceStyle || '用自然流畅的语调朗读'
 
     return {
       url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
@@ -298,7 +300,7 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
         model,
         messages: [
           // user message: style/emotion instruction (not spoken)
-          { role: 'user', content: '用自然流畅的语调朗读' },
+          { role: 'user', content: styleInstruction },
           // assistant message: the actual text to synthesize
           { role: 'assistant', content: params.text },
         ],

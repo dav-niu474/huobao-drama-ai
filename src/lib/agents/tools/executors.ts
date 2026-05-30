@@ -887,23 +887,97 @@ const updateStoryboard: ToolExecutor = async (params, context) => {
 // Voice Assigner Tools
 // ============================================================
 
-// Available TTS voices catalog (OpenAI-compatible)
-const TTS_VOICE_CATALOG = [
-  // Female voices
-  { id: 'alloy', name: 'Alloy', gender: 'female', description: '中性偏女声，清晰专业' },
-  { id: 'echo', name: 'Echo', gender: 'male', description: '温暖男声，沉稳有力' },
-  { id: 'fable', name: 'Fable', gender: 'male', description: '年轻男声，活泼生动' },
-  { id: 'onyx', name: 'Onyx', gender: 'male', description: '深沉男声，权威厚重' },
-  { id: 'nova', name: 'Nova', gender: 'female', description: '年轻女声，明亮甜美' },
-  { id: 'shimmer', name: 'Shimmer', gender: 'female', description: '柔和女声，温柔亲切' },
-  // Additional voices for variety
-  { id: 'tongtong', name: '童童', gender: 'female', description: '中文女声，标准普通话' },
-  { id: 'xiaoyi', name: '小艺', gender: 'female', description: '中文年轻女声，清新自然' },
-  { id: 'yunyang', name: '云扬', gender: 'male', description: '中文男声，磁性稳重' },
-  { id: 'xiaochen', name: '小辰', gender: 'male', description: '中文年轻男声，阳光活力' },
-  { id: 'xiaomo', name: '小墨', gender: 'male', description: '中文中年男声，低沉浑厚' },
-  { id: 'xiaoxuan', name: '小萱', gender: 'female', description: '中文中年女声，知性优雅' },
-]
+// ============================================================
+// TTS Voice Catalog — Unified across all providers
+// This catalog is shared with /api/ai/voices/route.ts
+// When the voice_assigner agent runs, it dynamically fetches
+// the active TTS provider's voices from the API.
+// ============================================================
+
+interface VoiceEntry {
+  id: string
+  name: string
+  provider: string
+  language?: string
+  description?: string
+  gender?: string
+}
+
+// Full voice catalog per provider (synced with /api/ai/voices)
+const VOICE_CATALOG: Record<string, VoiceEntry[]> = {
+  minimax: [
+    { id: 'male-qn-qingse', name: '青涩青年', provider: 'minimax', language: 'zh', description: '清澈青年男声', gender: 'male' },
+    { id: 'male-qn-jingying', name: '精英青年', provider: 'minimax', language: 'zh', description: '沉稳精英男声', gender: 'male' },
+    { id: 'male-qn-badao', name: '霸道青年', provider: 'minimax', language: 'zh', description: '霸道强硬男声', gender: 'male' },
+    { id: 'male-qn-daxuesheng', name: '大学生', provider: 'minimax', language: 'zh', description: '阳光大学生男声', gender: 'male' },
+    { id: 'female-shaonv', name: '少女', provider: 'minimax', language: 'zh', description: '甜美少女声', gender: 'female' },
+    { id: 'female-yujie', name: '御姐', provider: 'minimax', language: 'zh', description: '成熟御姐声', gender: 'female' },
+    { id: 'female-chengshu', name: '成熟女性', provider: 'minimax', language: 'zh', description: '知性成熟女声', gender: 'female' },
+    { id: 'female-tianmei', name: '甜美女性', provider: 'minimax', language: 'zh', description: '温柔甜美女声', gender: 'female' },
+    { id: 'presenter_male', name: '男主持人', provider: 'minimax', language: 'zh', description: '专业播音男声', gender: 'male' },
+    { id: 'presenter_female', name: '女主持人', provider: 'minimax', language: 'zh', description: '专业播音女声', gender: 'female' },
+    { id: 'audiobook_male_1', name: '有声书男声1', provider: 'minimax', language: 'zh', description: '有声读物男声', gender: 'male' },
+    { id: 'audiobook_female_1', name: '有声书女声1', provider: 'minimax', language: 'zh', description: '有声读物女声', gender: 'female' },
+  ],
+  chatfire: [
+    { id: 'male-qn-qingse', name: '青涩青年', provider: 'chatfire', language: 'zh', description: '清澈青年男声', gender: 'male' },
+    { id: 'male-qn-jingying', name: '精英青年', provider: 'chatfire', language: 'zh', description: '沉稳精英男声', gender: 'male' },
+    { id: 'female-shaonv', name: '少女', provider: 'chatfire', language: 'zh', description: '甜美少女声', gender: 'female' },
+    { id: 'female-yujie', name: '御姐', provider: 'chatfire', language: 'zh', description: '成熟御姐声', gender: 'female' },
+    { id: 'female-chengshu', name: '成熟女性', provider: 'chatfire', language: 'zh', description: '知性成熟女声', gender: 'female' },
+  ],
+  openai: [
+    { id: 'alloy', name: 'Alloy', provider: 'openai', language: 'en', description: '中性平衡声', gender: 'neutral' },
+    { id: 'echo', name: 'Echo', provider: 'openai', language: 'en', description: '温暖男声', gender: 'male' },
+    { id: 'fable', name: 'Fable', provider: 'openai', language: 'en', description: '表达力强声', gender: 'neutral' },
+    { id: 'onyx', name: 'Onyx', provider: 'openai', language: 'en', description: '深沉权威男声', gender: 'male' },
+    { id: 'nova', name: 'Nova', provider: 'openai', language: 'en', description: '友好活力女声', gender: 'female' },
+    { id: 'shimmer', name: 'Shimmer', provider: 'openai', language: 'en', description: '清澈专业女声', gender: 'female' },
+  ],
+  fish_audio: [
+    { id: 'alloy', name: 'Alloy', provider: 'fish_audio', language: 'en', description: '平衡声(OpenAI兼容)', gender: 'neutral' },
+    { id: 'echo', name: 'Echo', provider: 'fish_audio', language: 'en', description: '温暖男声(OpenAI兼容)', gender: 'male' },
+    { id: 'nova', name: 'Nova', provider: 'fish_audio', language: 'en', description: '活力女声(OpenAI兼容)', gender: 'female' },
+  ],
+  ali: [
+    { id: 'zhitian_emo', name: '知甜', provider: 'ali', language: 'zh', description: '温柔甜美女声', gender: 'female' },
+    { id: 'zhiyan_emo', name: '知燕', provider: 'ali', language: 'zh', description: '年轻活力女声', gender: 'female' },
+    { id: 'zhimi_emo', name: '知蜜', provider: 'ali', language: 'zh', description: '可爱甜美女声', gender: 'female' },
+    { id: 'zhibei_emo', name: '知贝', provider: 'ali', language: 'zh', description: '童声女声', gender: 'female' },
+    { id: 'zhiyuan_emo', name: '知远', provider: 'ali', language: 'zh', description: '年轻阳光男声', gender: 'male' },
+    { id: 'zhida_emo', name: '知达', provider: 'ali', language: 'zh', description: '成熟稳重男声', gender: 'male' },
+    { id: 'zhiqiang_emo', name: '知强', provider: 'ali', language: 'zh', description: '低沉浑厚男声', gender: 'male' },
+    { id: 'zhibo_emo', name: '知博', provider: 'ali', language: 'zh', description: '中年磁性男声', gender: 'male' },
+  ],
+  mimo: [
+    { id: '冰糖', name: '冰糖', provider: 'mimo', language: 'zh', description: '甜美中文女声', gender: 'female' },
+    { id: '茉莉', name: '茉莉', provider: 'mimo', language: 'zh', description: '温柔中文女声', gender: 'female' },
+    { id: '苏打', name: '苏打', provider: 'mimo', language: 'zh', description: '清澈中文男声', gender: 'male' },
+    { id: '白桦', name: '白桦', provider: 'mimo', language: 'zh', description: '低沉中文男声', gender: 'male' },
+    { id: 'Chloe', name: 'Chloe', provider: 'mimo', language: 'en', description: '清晰英文女声', gender: 'female' },
+    { id: 'Mia', name: 'Mia', provider: 'mimo', language: 'en', description: '温暖英文女声', gender: 'female' },
+    { id: 'Milo', name: 'Milo', provider: 'mimo', language: 'en', description: '深沉英文男声', gender: 'male' },
+    { id: 'Dean', name: 'Dean', provider: 'mimo', language: 'en', description: '权威英文男声', gender: 'male' },
+  ],
+}
+
+/**
+ * Get the active TTS provider's voices.
+ * Falls back to all voices if provider can't be determined.
+ */
+async function getActiveProviderVoices(): Promise<VoiceEntry[]> {
+  try {
+    const { getActiveProviderForUser } = await import('@/lib/ai-config')
+    const provider = await getActiveProviderForUser('tts')
+    if (provider && VOICE_CATALOG[provider.provider]) {
+      return VOICE_CATALOG[provider.provider]
+    }
+    // If provider not in catalog (e.g. custom), return all voices
+    return Object.values(VOICE_CATALOG).flat()
+  } catch {
+    return Object.values(VOICE_CATALOG).flat()
+  }
+}
 
 const getCharacters: ToolExecutor = async (_params, context) => {
   const characters = await db.character.findMany({
@@ -924,10 +998,11 @@ const getCharacters: ToolExecutor = async (_params, context) => {
 
 const listAvailableVoices: ToolExecutor = async (params) => {
   const gender = (params.gender as string) || 'all'
+  const voices = await getActiveProviderVoices()
   const filtered =
     gender === 'all'
-      ? TTS_VOICE_CATALOG
-      : TTS_VOICE_CATALOG.filter((v) => v.gender === gender)
+      ? voices
+      : voices.filter((v) => v.gender === gender)
   return filtered
 }
 
@@ -950,11 +1025,12 @@ const assignVoice: ToolExecutor = async (params, context) => {
     throw new Error(`Character "${characterName}" not found in this drama`)
   }
 
-  // Validate voiceId
-  const voiceExists = TTS_VOICE_CATALOG.some((v) => v.id === voiceId)
+  // Validate voiceId against active provider's catalog
+  const voices = await getActiveProviderVoices()
+  const voiceExists = voices.some((v) => v.id === voiceId)
   if (!voiceExists) {
     throw new Error(
-      `Voice "${voiceId}" not found. Available: ${TTS_VOICE_CATALOG.map((v) => v.id).join(', ')}`
+      `Voice "${voiceId}" not found. Available: ${voices.map((v) => v.id).join(', ')}`
     )
   }
 
@@ -963,7 +1039,7 @@ const assignVoice: ToolExecutor = async (params, context) => {
     data: { voiceId },
   })
 
-  const voiceInfo = TTS_VOICE_CATALOG.find((v) => v.id === voiceId)!
+  const voiceInfo = voices.find((v) => v.id === voiceId)!
   return {
     success: true,
     character: character.name,

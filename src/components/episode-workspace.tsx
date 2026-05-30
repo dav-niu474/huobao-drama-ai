@@ -1225,7 +1225,17 @@ export function EpisodeWorkspace() {
       setGeneratingTts(sb.id)
       setBatchProgress({ current: i + 1, total: pending.length, message: `生成配音 ${i + 1}/${pending.length}...` })
       try {
-        await api.ai.generateTts(sb.id, sb.dialogue!)
+        // Resolve voiceId from character lookup (same as single-shot handler)
+        let voiceId: string | undefined
+        if (sb.dialogueChar) {
+          const character = characters.find(
+            (c) => c.name.toLowerCase() === sb.dialogueChar!.toLowerCase()
+          )
+          if (character?.voiceId) {
+            voiceId = character.voiceId
+          }
+        }
+        await api.ai.generateTts(sb.id, sb.dialogue!, voiceId)
         successCount++
       } catch {
         // Continue
@@ -1905,6 +1915,12 @@ export function EpisodeWorkspace() {
               onChange={(m) => setWorkspaceModel('video', m)}
               disabled={isConfigLocked}
             />
+            <ModelSelector
+              category="tts"
+              value={workspaceModels.tts}
+              onChange={(m) => setWorkspaceModel('tts', m)}
+              disabled={isConfigLocked}
+            />
 
             {/* Lock/Unlock toggle */}
             <Tooltip>
@@ -2012,6 +2028,12 @@ export function EpisodeWorkspace() {
             category="video"
             value={workspaceModels.video}
             onChange={(m) => setWorkspaceModel('video', m)}
+            disabled={isConfigLocked}
+          />
+          <ModelSelector
+            category="tts"
+            value={workspaceModels.tts}
+            onChange={(m) => setWorkspaceModel('tts', m)}
             disabled={isConfigLocked}
           />
 

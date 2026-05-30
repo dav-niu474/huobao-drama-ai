@@ -855,7 +855,7 @@ export const aiClient = {
       const adapter = getTTSAdapter(provider.provider)
       const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
 
-      const req = adapter.buildGenerateRequest(config, { text, voiceId, speed: 1.0 })
+      const req = adapter.buildGenerateRequest(config, { text, voiceId, speed: 1.0, voiceStyle })
       const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
 
       if (!res.ok) {
