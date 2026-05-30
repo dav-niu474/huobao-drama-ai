@@ -120,6 +120,7 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
       || process.env[preset.envKey.toUpperCase()]
       || (preset.provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
       || (preset.provider === 'sensenova' ? process.env['SENSENOVA_KEY'] : '')
+      || (preset.provider === 'mimo' ? process.env['MIMO_API_KEY'] : '')
       || ''
     if (apiKey) {
       return {
@@ -213,6 +214,10 @@ export async function getAllProviders(category: AiCategory): Promise<ProviderCon
       // Fallback: try SENSENOVA_KEY for sensenova provider (legacy env var name)
       if (preset.provider === 'sensenova' && process.env['SENSENOVA_KEY']) {
         return process.env['SENSENOVA_KEY']
+      }
+      // Fallback: try MIMO_API_KEY for mimo provider (case-insensitive)
+      if (preset.provider === 'mimo' && process.env['MIMO_API_KEY']) {
+        return process.env['MIMO_API_KEY']
       }
       return ''
     })()

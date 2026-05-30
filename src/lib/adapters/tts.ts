@@ -271,6 +271,74 @@ export class AliTTSAdapter implements TTSProviderAdapter {
 }
 
 // ============================================================================
+// MiMo TTS Adapter (Xiaomi MiMo — OpenAI-compatible TTS API)
+// ============================================================================
+
+export class MiMoTTSAdapter implements TTSProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { text: string; voiceId?: string; speed?: number }
+  ): ProviderRequest {
+    const model = config.model || 'mimo-v2.5-tts'
+    const voice = params.voiceId || 'Chelsie'
+    const speed = params.speed ?? 1.0
+
+    return {
+      url: joinProviderUrl(config.baseUrl, '/v1', '/audio/speech'),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: {
+        model,
+        input: params.text,
+        voice,
+        response_format: 'mp3',
+        speed,
+      },
+    }
+  }
+
+  parseResponse(result: unknown): {
+    audioBase64?: string
+    audioHex?: string
+    format: string
+    sampleRate?: number
+  } {
+    // MiMo TTS uses OpenAI-compatible TTS API which returns raw audio binary.
+    // The actual binary response is handled by the caller (aiClient.generateTts)
+    // which checks content-type and converts ArrayBuffer to base64.
+    // This parseResponse is called when the response is JSON (rare for MiMo TTS).
+    if (typeof result === 'string') {
+      return {
+        audioBase64: result,
+        format: 'mp3',
+      }
+    }
+
+    if (result instanceof ArrayBuffer || result instanceof Uint8Array) {
+      const bytes = result instanceof Uint8Array ? result : new Uint8Array(result)
+      const base64 = uint8ArrayToBase64(bytes)
+      return {
+        audioBase64: base64,
+        format: 'mp3',
+      }
+    }
+
+    // JSON response fallback
+    if (typeof result === 'object' && result !== null) {
+      const resp = result as Record<string, unknown>
+      if (resp.audio && typeof resp.audio === 'string') {
+        return {
+          audioBase64: resp.audio as string,
+          format: (resp.format as string) || 'mp3',
+        }
+      }
+    }
+
+    return { format: 'mp3' }
+  }
+}
+
+// ============================================================================
 // Adapter Registry
 // ============================================================================
 
@@ -280,6 +348,7 @@ export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   openai: new OpenAITTSAdapter(),
   fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
   ali: new AliTTSAdapter(),
+  mimo: new MiMoTTSAdapter(), // Xiaomi MiMo — OpenAI-compatible TTS
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {
