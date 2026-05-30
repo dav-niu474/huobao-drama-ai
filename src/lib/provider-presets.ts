@@ -180,9 +180,9 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'mimo',
       name: '小米 MiMo',
-      defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
       defaultModel: 'mimo-v2.5',
-      description: '小米 MiMo 大模型 — mimo-v2.5-pro 旗舰模型 + mimo-v2.5 全模态，OpenAI/Anthropic 兼容接口',
+      description: '小米 MiMo 大模型 — mimo-v2.5-pro 旗舰模型 + mimo-v2.5 全模态，Chat Completions 兼容接口',
       envKey: 'MIMO_API_KEY',
       availableModels: [
         { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro', tags: ['推荐', '最新', '旗舰'] },
@@ -441,9 +441,9 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'mimo',
       name: '小米 MiMo TTS',
-      defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
       defaultModel: 'mimo-v2.5-tts',
-      description: '小米 MiMo 语音合成 — 预置精品音色，限时免费，OpenAI 兼容接口',
+      description: '小米 MiMo 语音合成 — 预置精品音色，限时免费，Chat Completions 兼容接口（文本在 assistant 消息中）',
       envKey: 'MIMO_API_KEY',
       availableModels: [
         { id: 'mimo-v2.5-tts', name: 'MiMo V2.5 TTS', tags: ['推荐', '免费'] },
