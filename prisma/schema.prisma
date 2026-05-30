@@ -3,10 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
-  directUrl         = env("DIRECT_URL")
-  relationMode      = "prisma"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ============ User (Auth) ============
