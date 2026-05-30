@@ -315,6 +315,9 @@ export const api = {
       request<{ status: string }>(`/api/dramas/${dramaId}/batch-pipeline/resume`, {
         method: 'POST',
       }),
+
+    getDashboard: (dramaId: string) =>
+      request<any>(`/api/dramas/${dramaId}/dashboard`),
   },
 
   // ---- Episodes ----

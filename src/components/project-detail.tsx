@@ -24,12 +24,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
 import { CostStatsPanel } from '@/components/episode/cost-stats-panel'
 import { CollaborationPanel } from '@/components/collaboration-panel'
+import { ProjectDashboard } from '@/components/project-dashboard'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -386,6 +387,9 @@ export function ProjectDetailView() {
 
   // Collaboration sidebar
   const [collabOpen, setCollabOpen] = useState(false)
+
+  // Dashboard view
+  const [showDashboard, setShowDashboard] = useState(false)
 
   // Import from library dialog
   const [importOpen, setImportOpen] = useState(false)
@@ -752,6 +756,15 @@ export function ProjectDetailView() {
                   <Users className="size-3.5" />
                   <span className="hidden sm:inline">团队</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDashboard(!showDashboard)}
+                  className={`text-xs gap-1 ${showDashboard ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <Activity className="size-3.5" />
+                  <span className="hidden sm:inline">看板</span>
+                </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">添加集</span>
@@ -784,6 +797,9 @@ export function ProjectDetailView() {
 
       {/* Episodes list + Collaboration sidebar */}
       <div className="flex-1 flex overflow-hidden">
+        {showDashboard && drama ? (
+          <ProjectDashboard dramaId={drama.id} onBack={() => setShowDashboard(false)} />
+        ) : (
         <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
         {loading && !drama ? (
           <div className="space-y-3">
@@ -1008,6 +1024,7 @@ export function ProjectDetailView() {
           </div>
         ) : null}
         </main>
+        )}
 
         {/* ── Collaboration Sidebar ── */}
         {collabOpen && (
