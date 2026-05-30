@@ -787,3 +787,24 @@ Stage Summary:
 - 修复：改用 /chat/completions，文本在 assistant 消息，音色在 audio 参数，响应从 choices[0].message.audio.data 取
 - PR #53: https://github.com/dav-niu474/huobao-drama-ai/pull/53
 - 待用户在测试环境验证后合并
+---
+Task ID: 2
+Agent: main
+Task: 修复 MiMo TTS 400 错误 + 使用用户提供的 SGP key/URL 端到端验证
+
+Work Log:
+- 用户提供新 key (tp-so8o...) 和 SGP URL (token-plan-sgp.xiaomimimo.com/v1)
+- 用新 key + SGP URL 直接 curl 测试，返回 200 OK + 90KB WAV 音频
+- 复现 400 错误：当 messages 中缺少 assistant 角色时触发
+- 更新 provider-presets.ts: defaultBaseUrl cn → sgp
+- 更新 .env: 新 API Key
+- 端到端测试通过：buildRequest → fetch → parseResponse → WAV 文件保存成功
+- PR #53 squash-merged to main
+
+Stage Summary:
+- MiMo TTS 修复已合并到 main (commit 0ca64ea)
+- 端点: /v1/chat/completions (Chat Completions 格式)
+- 文本在 assistant 消息, 风格在 user 消息, 音色在 audio.voice 参数
+- 响应: choices[0].message.audio.data (base64 WAV 24kHz)
+- 端到端验证通过，Vercel 将自动部署
+- 用户需在 Vercel Dashboard 更新 MIMO_API_KEY 环境变量为 SGP key
