@@ -59,6 +59,16 @@ const VOICE_CATALOG: Record<string, VoiceEntry[]> = {
     { id: 'zhiqiang_emo', name: '知强', provider: 'ali', language: 'zh', description: '低沉浑厚男声', gender: 'male' },
     { id: 'zhibo_emo', name: '知博', provider: 'ali', language: 'zh', description: '中年磁性男声', gender: 'male' },
   ],
+  mimo: [
+    { id: '冰糖', name: '冰糖', provider: 'mimo', language: 'zh', description: '甜美中文女声', gender: 'female' },
+    { id: '茉莉', name: '茉莉', provider: 'mimo', language: 'zh', description: '温柔中文女声', gender: 'female' },
+    { id: '苏打', name: '苏打', provider: 'mimo', language: 'zh', description: '清澈中文男声', gender: 'male' },
+    { id: '白桦', name: '白桦', provider: 'mimo', language: 'zh', description: '低沉中文男声', gender: 'male' },
+    { id: 'Chloe', name: 'Chloe', provider: 'mimo', language: 'en', description: 'Clear English female', gender: 'female' },
+    { id: 'Mia', name: 'Mia', provider: 'mimo', language: 'en', description: 'Warm English female', gender: 'female' },
+    { id: 'Milo', name: 'Milo', provider: 'mimo', language: 'en', description: 'Deep English male', gender: 'male' },
+    { id: 'Dean', name: 'Dean', provider: 'mimo', language: 'en', description: 'Authoritative English male', gender: 'male' },
+  ],
 }
 
 // GET /api/ai/voices - List available voices from TTS providers
