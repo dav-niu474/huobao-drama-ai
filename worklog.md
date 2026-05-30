@@ -808,3 +808,25 @@ Stage Summary:
 - 响应: choices[0].message.audio.data (base64 WAV 24kHz)
 - 端到端验证通过，Vercel 将自动部署
 - 用户需在 Vercel Dashboard 更新 MIMO_API_KEY 环境变量为 SGP key
+---
+Task ID: 3
+Agent: main
+Task: 修复 LLM 测试路径检测 TTS 模型 + assistant 消息
+
+Work Log:
+- 用 SGP key + curl 直接复现了用户看到的 400 错误
+- 根因：在 LLM 分类下测试 mimo-v2.5-tts 时，LLM 测试路径只发送 user 消息
+  MiMo API 检测到 TTS 模型后要求 messages 必须有 assistant 角色
+- 修复 test-connection/route.ts: 检测 TTS 模型名(/tts|speech/i)，添加 assistant 消息 + audio 参数
+- 修复 ai-config.ts testConnection: 检测 TTS 模型名，走 TTS adapter 路径
+- 端到端验证三个场景全部 200 OK
+- PR #54 squash-merged to main
+- Vercel 部署完成 (success)
+
+Stage Summary:
+- 三个测试场景全部通过：
+  1. LLM分类 + TTS模型 (mimo-v2.5-tts) → 200 OK + 音频数据
+  2. LLM分类 + LLM模型 (mimo-v2.5) → 200 OK
+  3. TTS分类 + adapter 路径 → 200 OK + 51KB 音频
+- Vercel 已部署 commit 7e27ee6
+- 用户需在 Vercel Dashboard 更新 MIMO_API_KEY 为 SGP key
