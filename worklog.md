@@ -746,3 +746,26 @@ Stage Summary:
 - Vercel线上认证不再报 "Server error"
 - 代码自动处理：NEXTAUTH_URL (从VERCEL_URL推导)、AUTH_TRUST_HOST (自动true)、NEXTAUTH_SECRET (fallback)
 - 用户仍需在Vercel Dashboard设置NEXTAUTH_SECRET以确保session稳定（否则每次冷启动session丢失）
+---
+Task ID: 4
+Agent: Main Agent
+Task: 添加小米MiMo供应商支持（LLM + TTS）
+
+Work Log:
+- 通过web-search搜索MiMo官方API文档
+- 确认MiMo完整8个模型列表：mimo-v2.5-pro, mimo-v2.5, mimo-v2.5-tts, mimo-v2.5-tts-voiceclone, mimo-v2.5-tts-voicedesign, mimo-v2-pro, mimo-v2-omni, mimo-v2.5-asr
+- 确认MiMo TTS使用OpenAI兼容接口 /v1/audio/speech
+- 在provider-presets.ts中添加mimo到llm[]和tts[]数组
+- 在adapters/tts.ts中新增MiMoTTSAdapter类并注册到ttsAdapters
+- 在ai-config.ts中添加MIMO_API_KEY环境变量fallback
+- 在.env和.env.example中添加MIMO_API_KEY配置
+- 本地构建验证通过
+- 创建PR #52并squash merge到main
+- Vercel部署成功
+
+Stage Summary:
+- MiMo供应商已完整集成（LLM 4个模型 + TTS 3个模型）
+- LLM使用OpenAI兼容接口，无需额外适配器
+- TTS使用MiMoTTSAdapter（OpenAI /audio/speech兼容）
+- 同一MIMO_API_KEY同时用于LLM和TTS
+- 前端UI自动从PROVIDER_PRESETS渲染，无需修改前端代码
