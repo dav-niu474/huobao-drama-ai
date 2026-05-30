@@ -557,3 +557,127 @@ Stage Summary:
 - asset-workbench.tsx: 同上h-screen→h-full
 - episode-workspace.tsx: 同上h-screen→h-full
 - 构建验证通过，未推送代码
+
+---
+Task ID: 4-b
+Agent: subagent
+Task: Fix Vidu Video Adapter + noKeyProviders empty array
+
+Work Log:
+- Read src/lib/adapters/video.ts — confirmed ViduVideoAdapter.buildPollRequest() returned null and parsePollResponse() returned error
+- Read src/lib/ai-config.ts — confirmed noKeyProviders was empty `string[] = []`
+- Applied Fix 1: Updated ViduVideoAdapter to implement proper polling
+  - buildPollRequest(): Returns GET /ent/v2/img2video/{task_id} with Token auth header
+  - parsePollResponse(): Handles state values: success/completed → completed, failed/error → failed, otherwise → processing
+  - Updated section comment from "Webhook-only, no polling" to "Polling via GET /ent/v2/img2video/{task_id}"
+- Applied Fix 2: Populated noKeyProviders array with 'z-ai-sdk'
+  - z-ai-sdk is the built-in provider that doesn't require user-configured API keys
+- Committed: 54a2b2e "fix(ai): add Vidu polling support + populate noKeyProviders array"
+
+Stage Summary:
+- 2 files modified, 43 insertions, 18 deletions
+- Vidu adapter now supports polling (previously webhook-only, causing polling mechanism failures)
+- noKeyProviders now correctly identifies z-ai-sdk as not needing API keys
+
+---
+Task ID: 4-a
+Agent: subagent
+Task: Fix P0 Issues in batch-pipeline.ts — Replace hardcoded localhost:3000
+
+Work Log:
+- Read src/lib/batch-pipeline.ts (834 lines) — confirmed 7 hardcoded `http://localhost:3000` URLs
+- Identified all 7 locations:
+  1. executeCharacterImages (line ~604) — /api/ai/generate-character-image
+  2. executeSceneImages (line ~634) — /api/ai/generate-scene-image
+  3. executeDubbing (line ~665) — /api/ai/generate-tts
+  4. executeShotFrames (line ~695) — /api/ai/generate-image
+  5. executeVideos (line ~735) — /api/ai/generate-video
+  6. executeCompose (line ~769) — /api/episodes/{id}/compose
+  7. executeMerge (line ~796) — /api/episodes/{id}/merge
+- Added `getBaseUrl()` helper function after imports:
+  - Uses `process.env.NEXT_PUBLIC_APP_URL` if set (Vercel sets this)
+  - Falls back to `http://localhost:3000` for local development
+- Replaced all 7 instances with template literals using `${getBaseUrl()}`
+- Verified no remaining hardcoded localhost:3000 in fetch URLs (only the fallback in getBaseUrl())
+- Changes committed as part of 54a2b2e
+
+Stage Summary:
+- 1 file modified (src/lib/batch-pipeline.ts), 8 lines changed (1 helper + 7 replacements)
+- All 7 hardcoded localhost URLs replaced with environment-aware getBaseUrl()
+- Vercel deployments now work correctly via NEXT_PUBLIC_APP_URL env var
+
+---
+Task ID: 5-a
+Agent: Main Agent
+Task: Implement Small Team Collaboration System for v0.7
+
+Work Log:
+- Updated Prisma schema with DramaMember and Comment models + relations to User, Drama, Episode, Storyboard
+- Ran prisma db push — synced successfully
+- Created 4 API route files for members CRUD and comments CRUD
+- Added api.members and api.comments client methods to api.ts
+- Created CollaborationPanel component with Members tab and Comments tab
+- Integrated collaboration panel into project-detail.tsx as toggleable right sidebar
+
+Files Modified/Created:
+1. **prisma/schema.prisma** — Added DramaMember and Comment models with all relations
+2. **src/app/api/dramas/[id]/members/route.ts** — GET (list members + owner), POST (invite by email)
+3. **src/app/api/dramas/[id]/members/[memberId]/route.ts** — PATCH (update role), DELETE (remove)
+4. **src/app/api/dramas/[id]/comments/route.ts** — GET (list with filters), POST (add comment)
+5. **src/app/api/comments/[id]/route.ts** — PATCH (resolve/edit), DELETE (delete)
+6. **src/lib/api.ts** — Added api.members.list/invite/update/remove, api.comments.list/add/update/delete
+7. **src/components/collaboration-panel.tsx** — Full component (390 lines)
+   - Members tab: avatar, name, email, role badge, invite dialog, role change, remove
+   - Comments tab: episode filter, comment list, resolve/unresolve, delete, add comment
+8. **src/components/project-detail.tsx** — Added "团队" button, framer-motion right sidebar
+
+DB Push: ✅ Schema synced
+Lint: ✅ No new errors (pre-existing errors unchanged)
+Commit: ✅ feat(collab): add team collaboration — members, invites, permissions, comments
+
+Stage Summary:
+- 8 files changed, 1196 insertions, 4 deletions
+- Full team collaboration system: member management, role-based access, comments/annotations
+- Right sidebar integration with framer-motion slide animation
+
+---
+Task ID: 5-b
+Agent: subagent
+Task: Implement Project Progress Dashboard for v0.7
+
+Work Log:
+- Read worklog.md, prisma schema, api.ts, project-detail.tsx, cost-stats route, members route, pipeline-status route, auth-helpers
+- Created Dashboard API route at /src/app/api/dramas/[id]/dashboard/route.ts
+  - GET handler with requireAuth + drama membership check
+  - Returns: drama info, episode pipeline progress (12-step), asset statistics, generation costs, team info, recent activity
+  - Computes per-episode pipeline progress using same logic as pipeline-status route
+  - Aggregates character/scene/prop/storyboard counts with image/video/tts/composed filters
+  - Builds recentActivity from latest comments + ImageGeneration records
+- Created Dashboard Component at /src/components/project-dashboard.tsx
+  - Header: drama title + genre/style badges + back button
+  - Overview Stats card: overall progress, asset readiness %, team info
+  - Episode Progress table: episode number, title, progress bar (red/amber/green), current step, status badge, video indicator
+  - Asset Statistics: 2x3→6x1 grid of AssetStatCard components (characters, scenes, props, frames, videos, TTS)
+  - Cost Summary: total credits + breakdown by category with colored bars
+  - Recent Activity: comment/image/video/tts activity with type icons and relative timestamps
+- Added api.dramas.getDashboard method to /src/lib/api.ts
+- Integrated into project-detail.tsx:
+  - Added "看板" button with Activity icon in header
+  - showDashboard state toggles between normal content and ProjectDashboard
+  - Dashboard onBack callback returns to normal view
+
+Files Created:
+1. **src/app/api/dramas/[id]/dashboard/route.ts** — GET dashboard data (220 lines)
+2. **src/components/project-dashboard.tsx** — Full dashboard component (540 lines)
+
+Files Modified:
+3. **src/lib/api.ts** — Added getDashboard method
+4. **src/components/project-detail.tsx** — Added showDashboard state, "看板" button, conditional rendering
+
+Lint: ✅ No new errors (pre-existing errors unchanged)
+Commit: ✅ feat(dashboard): add project progress dashboard with pipeline visualization and asset stats (ef951e7)
+
+Stage Summary:
+- 4 files changed, 893 insertions, 1 deletion
+- Full project progress dashboard: pipeline visualization, asset stats, cost summary, team info, recent activity
+- Toggleable view via "看板" button in project detail header
