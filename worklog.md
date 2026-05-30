@@ -769,3 +769,21 @@ Stage Summary:
 - TTS使用MiMoTTSAdapter（OpenAI /audio/speech兼容）
 - 同一MIMO_API_KEY同时用于LLM和TTS
 - 前端UI自动从PROVIDER_PRESETS渲染，无需修改前端代码
+---
+Task ID: 1
+Agent: main
+Task: 诊断并修复 MiMo TTS 401 Invalid API Key 报错
+
+Work Log:
+- 分析了 MiMo TTS 适配器代码，发现使用了 /v1/audio/speech 端点（OpenAI TTS 格式）
+- 直接 curl 测试确认 /v1/audio/speech 返回 404，不是 401
+- 测试了 /v1/chat/completions 端点，确认 MiMo TTS 使用 Chat Completions 格式
+- 搜索 MiMo TTS API 文档，确认完整的请求/响应格式
+- 重写了 MiMoTTSAdapter：端点、请求格式、响应解析全部修正
+- 构建验证通过，创建 PR #53（未自动合并）
+
+Stage Summary:
+- 根因：MiMo TTS 不是 OpenAI TTS 兼容接口，而是复用 Chat Completions 端点
+- 修复：改用 /chat/completions，文本在 assistant 消息，音色在 audio 参数，响应从 choices[0].message.audio.data 取
+- PR #53: https://github.com/dav-niu474/huobao-drama-ai/pull/53
+- 待用户在测试环境验证后合并
