@@ -681,3 +681,24 @@ Stage Summary:
 - 4 files changed, 893 insertions, 1 deletion
 - Full project progress dashboard: pipeline visualization, asset stats, cost summary, team info, recent activity
 - Toggleable view via "看板" button in project detail header
+
+---
+Task ID: login-bug-fix
+Agent: Super Z
+Task: 修复系统部署后登录报错 "Server error - There is a problem with the server configuration"
+
+Work Log:
+- 诊断问题根因：.env 文件缺少 NEXTAUTH_SECRET 和 NEXTAUTH_URL，导致 NextAuth v4 在生产环境无法初始化
+- 检查 auth.ts 发现 useSecureCookies: false 和 Cookie secure: false 被写死，HTTPS 部署环境下无法正常工作
+- 检查 middleware.ts 发现只检查 HTTP Cookie 名称，未检查 HTTPS 的 __Secure- 前缀
+- 生成随机 NEXTAUTH_SECRET 并写入 .env
+- 重写 auth.ts：自动生成 NEXTAUTH_SECRET、智能检测 HTTPS 环境、动态切换安全 Cookie
+- 更新 middleware.ts：支持 __Secure-next-auth.session-token Cookie 名称
+- 更新 .env.example：添加完善的部署说明
+- 验证：/api/auth/csrf 返回 200、/api/auth/session 返回 200、首页返回 200
+
+Stage Summary:
+- 根因：NEXTAUTH_SECRET 缺失是部署环境登录失败的主要原因
+- 修复了 4 个文件：.env、auth.ts、middleware.ts、.env.example
+- auth.ts 现在支持自动检测 HTTPS、自动生成 SECRET（开发环境稳定、生产环境警告）
+- 本地验证通过，登录流程正常
