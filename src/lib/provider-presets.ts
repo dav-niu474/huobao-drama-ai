@@ -178,6 +178,20 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
+      provider: 'mimo',
+      name: '小米 MiMo',
+      defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      defaultModel: 'mimo-v2.5',
+      description: '小米 MiMo 大模型 — mimo-v2.5-pro 旗舰模型 + mimo-v2.5 全模态，OpenAI/Anthropic 兼容接口',
+      envKey: 'MIMO_API_KEY',
+      availableModels: [
+        { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro', tags: ['推荐', '最新', '旗舰'] },
+        { id: 'mimo-v2.5', name: 'MiMo V2.5', tags: ['全模态', 'Agent'] },
+        { id: 'mimo-v2-pro', name: 'MiMo V2 Pro' },
+        { id: 'mimo-v2-omni', name: 'MiMo V2 Omni', tags: ['全模态'] },
+      ],
+    },
+    {
       provider: 'custom',
       name: '自定义 OpenAI 兼容',
       defaultBaseUrl: '',
@@ -422,6 +436,19 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       envKey: 'FISH_AUDIO_API_KEY',
       availableModels: [
         { id: 'fish-speech-1.5', name: 'Fish Speech 1.5', tags: ['推荐', '最新'] },
+      ],
+    },
+    {
+      provider: 'mimo',
+      name: '小米 MiMo TTS',
+      defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      defaultModel: 'mimo-v2.5-tts',
+      description: '小米 MiMo 语音合成 — 预置精品音色，限时免费，OpenAI 兼容接口',
+      envKey: 'MIMO_API_KEY',
+      availableModels: [
+        { id: 'mimo-v2.5-tts', name: 'MiMo V2.5 TTS', tags: ['推荐', '免费'] },
+        { id: 'mimo-v2.5-tts-voiceclone', name: 'MiMo V2.5 TTS Voice Clone', tags: ['声音克隆'] },
+        { id: 'mimo-v2.5-tts-voicedesign', name: 'MiMo V2.5 TTS Voice Design', tags: ['声音设计'] },
       ],
     },
     {
