@@ -702,3 +702,25 @@ Stage Summary:
 - 修复了 4 个文件：.env、auth.ts、middleware.ts、.env.example
 - auth.ts 现在支持自动检测 HTTPS、自动生成 SECRET（开发环境稳定、生产环境警告）
 - 本地验证通过，登录流程正常
+
+---
+Task ID: vercel-login-fix
+Agent: Super Z
+Task: 修复Vercel部署后登录报错 "Server error - There is a problem with the server configuration"
+
+Work Log:
+- 检查Git历史：main分支最新提交添加了DramaMember和Comment模型（commit 1769f96）
+- 发现main分支schema为sqlite，build.js负责在Vercel构建时切换到postgresql
+- 深入分析Vercel环境下的NextAuth配置问题
+- 识别4个根因：NEXTAUTH_SECRET缺失/默认值、authorize()无错误处理、db push超时太短、无pages.error配置
+- 修复auth.ts：保持useSecureCookies=false（Vercel CDN终止SSL）、添加ensureNextAuthSecret()兜底、authorize()添加try/catch、添加pages.error
+- 修复build.js：db push超时30s→60s、添加3次重试逻辑
+- 更新middleware.ts：同时检测HTTP/HTTPS Cookie名称
+- 本地验证：构建成功、CSRF/Session/Login测试全部通过
+- 推送到GitHub：创建分支fix/vercel-login-server-error，提交PR #50
+
+Stage Summary:
+- PR: https://github.com/dav-niu474/huobao-drama-ai/pull/50
+- 修改6个文件：auth.ts、middleware.ts、nextauth route.ts、build.js、.env、.env.example
+- 核心修复：NEXTAUTH_SECRET兜底 + authorize()错误处理 + db push可靠性 + pages.error配置
+- 用户需要确认Vercel环境变量中NEXTAUTH_SECRET已正确设置
