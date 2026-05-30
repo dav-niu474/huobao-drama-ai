@@ -63,14 +63,28 @@ export async function POST(request: NextRequest) {
             headers['X-Title'] = 'AI Drama Creator'
           }
 
+          // Detect if this is a TTS model (e.g., mimo-v2.5-tts)
+          // TTS models require an assistant message in the messages array
+          const isTtsModel = /tts|speech/i.test(model)
+          const messages = isTtsModel
+            ? [
+                { role: 'user' as const, content: 'read naturally' },
+                { role: 'assistant' as const, content: 'OK' },
+              ]
+            : [{ role: 'user' as const, content: 'Say "OK" and nothing else.' }]
+
+          // TTS models need the `audio` parameter for voice output
+          const ttsAudioParam = isTtsModel ? { audio: { format: 'wav', voice: 'Chloe' } } : {}
+
           const res = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify({
               model,
-              messages: [{ role: 'user', content: 'Say "OK" and nothing else.' }],
-              max_tokens: 10,
-              temperature: 0,
+              messages,
+              max_tokens: isTtsModel ? undefined : 10,
+              temperature: isTtsModel ? undefined : 0,
+              ...ttsAudioParam,
             }),
             signal: AbortSignal.timeout(30000),
           })
@@ -87,12 +101,16 @@ export async function POST(request: NextRequest) {
           }
 
           const data = await res.json()
-          const content = data.choices?.[0]?.message?.content ?? ''
+          // TTS models return audio in choices[0].message.audio.data instead of text content
+          const isAudioResponse = isTtsModel && data.choices?.[0]?.message?.audio?.data
+          const preview = isAudioResponse
+            ? `语音合成测试成功，格式: wav`
+            : (data.choices?.[0]?.message?.content ?? '').slice(0, 100)
           return NextResponse.json({
             success: true,
             provider: testProvider,
             model,
-            responsePreview: content.slice(0, 100),
+            responsePreview: preview,
             latency: Date.now() - startTime,
           })
         } catch (error) {

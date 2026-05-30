@@ -912,6 +912,40 @@ export const aiClient = {
       }
 
       if (category === 'llm') {
+        // Detect TTS model being tested under LLM category (e.g., mimo-v2.5-tts)
+        // TTS models require assistant message + audio parameter
+        const isTtsModel = /tts|speech/i.test(provider.model)
+        if (isTtsModel) {
+          // Use TTS adapter for TTS models even when tested under LLM
+          const { getTTSAdapter } = await import('@/lib/adapters/tts')
+          const adapter = getTTSAdapter(provider.provider)
+          const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+          const req = adapter.buildGenerateRequest(config, { text: '你好', voiceId: undefined, speed: 1.0 })
+          const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+          if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            throw new Error(`TTS API error (${res.status}): ${text.slice(0, 200)}`)
+          }
+          const contentType = res.headers.get('content-type') || ''
+          let preview = ''
+          if (contentType.includes('application/json')) {
+            const jsonResult = await res.json()
+            const parsed = adapter.parseResponse(jsonResult)
+            preview = parsed.audioBase64
+              ? `语音合成测试成功，格式: ${parsed.format}`
+              : '语音合成返回数据为空'
+          } else {
+            const buffer = Buffer.from(await res.arrayBuffer())
+            preview = `语音合成测试成功，数据大小: ${(buffer.length / 1024).toFixed(1)}KB`
+          }
+          return {
+            success: true,
+            provider: provider.name,
+            model: provider.model,
+            responsePreview: preview,
+          }
+        }
+
         const response = await this.chat('Say "OK" and nothing else.', undefined, {
           max_tokens: 10,
           temperature: 0,
