@@ -4,6 +4,26 @@ import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { db } from '@/lib/db'
 
+// ============================================================
+// Auto-set critical env vars for Vercel deployment
+// These MUST be set before NextAuth initializes
+// ============================================================
+if (process.env.VERCEL && !process.env.NEXTAUTH_URL) {
+  // Vercel provides VERCEL_URL (e.g., "huobao-drama-ai.vercel.app")
+  const vercelUrl = process.env.VERCEL_URL
+  if (vercelUrl) {
+    process.env.NEXTAUTH_URL = `https://${vercelUrl}`
+    console.log(`[auth] Auto-set NEXTAUTH_URL=https://${vercelUrl}`)
+  }
+}
+
+// AUTH_TRUST_HOST is required for NextAuth to trust Vercel's proxy headers
+// Without this, NextAuth may reject callbacks on Vercel
+if (process.env.VERCEL && !process.env.AUTH_TRUST_HOST) {
+  process.env.AUTH_TRUST_HOST = 'true'
+  console.log('[auth] Auto-set AUTH_TRUST_HOST=true for Vercel')
+}
+
 // Re-export permissions from the client-safe module
 export { ROLE_PERMISSIONS, canCreateProject, canUseAiGeneration, getPermissions } from './permissions'
 export type { UserRole } from './permissions'
@@ -63,6 +83,15 @@ function ensureNextAuthSecret(): string {
 
 // Initialize secret before creating authOptions
 ensureNextAuthSecret()
+
+// Log auth configuration for debugging
+console.log(
+  `[auth] Config: NEXTAUTH_SECRET=${process.env.NEXTAUTH_SECRET ? '✓ set' : '✗ MISSING'}, ` +
+  `NEXTAUTH_URL=${process.env.NEXTAUTH_URL || '(auto)'}, ` +
+  `AUTH_TRUST_HOST=${process.env.AUTH_TRUST_HOST || '(auto)'}, ` +
+  `VERCEL=${process.env.VERCEL || 'no'}, ` +
+  `NODE_ENV=${process.env.NODE_ENV}`
+)
 
 export const authOptions: NextAuthOptions = {
   // Vercel terminates SSL at the CDN edge. The internal connection
