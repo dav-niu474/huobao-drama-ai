@@ -271,7 +271,13 @@ export class AliTTSAdapter implements TTSProviderAdapter {
 }
 
 // ============================================================================
-// MiMo TTS Adapter (Xiaomi MiMo — OpenAI-compatible TTS API)
+// MiMo TTS Adapter (Xiaomi MiMo — Chat Completions-based TTS API)
+//
+// MiMo TTS uses the same /chat/completions endpoint as LLM,
+// with an `audio` parameter for voice configuration.
+// The text to synthesize goes in the `assistant` message,
+// and style/emotion instructions go in the `user` message.
+// Audio is returned as base64 in choices[0].message.audio.data.
 // ============================================================================
 
 export class MiMoTTSAdapter implements TTSProviderAdapter {
@@ -280,19 +286,26 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     params: { text: string; voiceId?: string; speed?: number }
   ): ProviderRequest {
     const model = config.model || 'mimo-v2.5-tts'
-    const voice = params.voiceId || 'Chelsie'
-    const speed = params.speed ?? 1.0
+    // MiMo preset voices: Chloe, Mia (English female); Milo, Dean (English male)
+    // 冰糖, 茉莉 (Chinese female); 苏打, 白桦 (Chinese male)
+    const voice = params.voiceId || 'Chloe'
 
     return {
-      url: joinProviderUrl(config.baseUrl, '/v1', '/audio/speech'),
+      url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: {
         model,
-        input: params.text,
-        voice,
-        response_format: 'mp3',
-        speed,
+        messages: [
+          // user message: style/emotion instruction (not spoken)
+          { role: 'user', content: '用自然流畅的语调朗读' },
+          // assistant message: the actual text to synthesize
+          { role: 'assistant', content: params.text },
+        ],
+        audio: {
+          format: 'wav',
+          voice,
+        },
       },
     }
   }
@@ -303,14 +316,31 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     format: string
     sampleRate?: number
   } {
-    // MiMo TTS uses OpenAI-compatible TTS API which returns raw audio binary.
-    // The actual binary response is handled by the caller (aiClient.generateTts)
-    // which checks content-type and converts ArrayBuffer to base64.
-    // This parseResponse is called when the response is JSON (rare for MiMo TTS).
+    // MiMo TTS returns a Chat Completions response with audio in:
+    // choices[0].message.audio.data (base64-encoded WAV)
+    if (typeof result === 'object' && result !== null) {
+      const resp = result as Record<string, unknown>
+      const choices = resp.choices as Array<Record<string, unknown>> | undefined
+      if (choices && choices.length > 0) {
+        const message = choices[0].message as Record<string, unknown> | undefined
+        if (message) {
+          const audio = message.audio as Record<string, unknown> | undefined
+          if (audio && typeof audio.data === 'string') {
+            return {
+              audioBase64: audio.data as string,
+              format: 'wav',
+              sampleRate: 24000,
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: raw binary response (shouldn't happen with MiMo Chat Completions)
     if (typeof result === 'string') {
       return {
         audioBase64: result,
-        format: 'mp3',
+        format: 'wav',
       }
     }
 
@@ -319,22 +349,11 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
       const base64 = uint8ArrayToBase64(bytes)
       return {
         audioBase64: base64,
-        format: 'mp3',
+        format: 'wav',
       }
     }
 
-    // JSON response fallback
-    if (typeof result === 'object' && result !== null) {
-      const resp = result as Record<string, unknown>
-      if (resp.audio && typeof resp.audio === 'string') {
-        return {
-          audioBase64: resp.audio as string,
-          format: (resp.format as string) || 'mp3',
-        }
-      }
-    }
-
-    return { format: 'mp3' }
+    return { format: 'wav' }
   }
 }
 
