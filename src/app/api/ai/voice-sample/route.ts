@@ -66,10 +66,13 @@ export async function POST(request: NextRequest) {
       voiceStyle: voiceStyle || undefined,
     })
 
+    console.log(`[voice-sample] Generating sample: provider=${provider.provider}, model=${config.model}, voiceId=${voiceId}, text=${sampleText.slice(0, 30)}...`)
+
     const res = await fetch(req.url, {
       method: req.method,
       headers: req.headers,
       body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(60_000), // 60s timeout for TTS
     })
 
     if (!res.ok) {

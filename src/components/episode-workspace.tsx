@@ -553,11 +553,15 @@ export function EpisodeWorkspace() {
 
   const handleAssignVoice = async (characterId: string, voiceId: string) => {
     try {
-      await fetch(`/api/dramas/${selectedDramaId}/characters`, {
+      const res = await fetch(`/api/dramas/${selectedDramaId}/characters`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ characterId, voiceId }),
       })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(errData.error || `音色分配失败 (${res.status})`)
+      }
       toast({ title: '音色已分配' })
       await fetchEpisode()
     } catch (err) {

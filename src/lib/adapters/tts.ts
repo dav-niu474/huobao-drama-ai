@@ -305,7 +305,7 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
           { role: 'assistant', content: params.text },
         ],
         audio: {
-          format: 'wav',
+          format: 'mp3',
           voice,
         },
       },
@@ -330,7 +330,7 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
           if (audio && typeof audio.data === 'string') {
             return {
               audioBase64: audio.data as string,
-              format: 'wav',
+              format: 'mp3',
               sampleRate: 24000,
             }
           }
@@ -342,7 +342,7 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     if (typeof result === 'string') {
       return {
         audioBase64: result,
-        format: 'wav',
+        format: 'mp3',
       }
     }
 
@@ -351,11 +351,11 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
       const base64 = uint8ArrayToBase64(bytes)
       return {
         audioBase64: base64,
-        format: 'wav',
+        format: 'mp3',
       }
     }
 
-    return { format: 'wav' }
+    return { format: 'mp3' }
   }
 }
 
