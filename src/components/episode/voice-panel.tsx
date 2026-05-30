@@ -143,9 +143,13 @@ export function VoicePanel({
     [voices]
   )
 
+  // Track sample audio URLs by voiceId (separate from character samples)
+  const [voicePreviewUrls, setVoicePreviewUrls] = useState<Record<string, string>>({})
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null)
+
   // ── Preview handler for voice library ───────────────────────
   const handlePreviewVoice = useCallback(
-    (voiceId: string) => {
+    async (voiceId: string) => {
       // Stop currently playing
       if (playingVoiceId === voiceId) {
         audioRef.current?.pause()
@@ -160,7 +164,18 @@ export function VoicePanel({
         audioRef.current = null
       }
 
-      // Find if any character has this voice sample already
+      // Check if we already have a preview URL for this voiceId
+      if (voicePreviewUrls[voiceId]) {
+        const audio = new Audio(voicePreviewUrls[voiceId])
+        audio.onended = () => setPlayingVoiceId(null)
+        audio.onerror = () => setPlayingVoiceId(null)
+        audio.play().catch(() => setPlayingVoiceId(null))
+        audioRef.current = audio
+        setPlayingVoiceId(voiceId)
+        return
+      }
+
+      // Also check voiceSamples map (character-based samples)
       const charWithSample = characters.find(
         (c) => c.voiceId === voiceId && voiceSamples[c.id]
       )
@@ -168,19 +183,32 @@ export function VoicePanel({
         const audio = new Audio(voiceSamples[charWithSample.id])
         audio.onended = () => setPlayingVoiceId(null)
         audio.onerror = () => setPlayingVoiceId(null)
-        audio.play()
+        audio.play().catch(() => setPlayingVoiceId(null))
         audioRef.current = audio
         setPlayingVoiceId(voiceId)
         return
       }
 
-      // Otherwise, generate a sample using the first available character as context
-      const defaultChar = characters[0]
-      if (defaultChar) {
-        handleGenerateVoiceSample(defaultChar.id, voiceId)
+      // Generate a new preview sample via the voice-sample API
+      setPreviewLoading(voiceId)
+      try {
+        const result = await api.ai.generateVoiceSample('', voiceId)
+        // Cache the preview URL by voiceId
+        setVoicePreviewUrls((prev) => ({ ...prev, [voiceId]: result.audioUrl }))
+        // Play the generated audio
+        const audio = new Audio(result.audioUrl)
+        audio.onended = () => setPlayingVoiceId(null)
+        audio.onerror = () => setPlayingVoiceId(null)
+        audio.play().catch(() => setPlayingVoiceId(null))
+        audioRef.current = audio
+        setPlayingVoiceId(voiceId)
+      } catch (err) {
+        console.error('Voice preview failed:', err)
+      } finally {
+        setPreviewLoading(null)
       }
     },
-    [playingVoiceId, characters, voiceSamples, handleGenerateVoiceSample]
+    [playingVoiceId, characters, voiceSamples, voicePreviewUrls]
   )
 
   // ── Check if a voice sample audio is available in voiceSamples ──
@@ -275,7 +303,7 @@ export function VoicePanel({
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
         <div className="p-6 space-y-5">
           {/* ══════════════════════════════════════════════════════
               Voice Library Section — REDESIGNED
@@ -353,8 +381,8 @@ export function VoicePanel({
                   {filteredVoices.map((voice) => {
                     const isAssigned = assignedVoiceIds.has(voice.id)
                     const isPlaying = playingVoiceId === voice.id
-                    const isGenerating = isGeneratingForVoice(voice.id)
-                    const hasSample = isVoiceSampleAvailable(voice.id)
+                    const isLoadingPreview = previewLoading === voice.id
+                    const hasCachedPreview = !!voicePreviewUrls[voice.id] || isVoiceSampleAvailable(voice.id)
 
                     return (
                       <motion.div
@@ -418,16 +446,16 @@ export function VoicePanel({
                                 ${
                                   isPlaying
                                     ? 'text-primary bg-primary/10'
-                                    : hasSample
+                                    : hasCachedPreview
                                     ? 'text-muted-foreground hover:text-primary hover:bg-primary/10'
                                     : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60'
                                 }
                               `}
                               onClick={() => handlePreviewVoice(voice.id)}
-                              disabled={isGenerating}
-                              title={hasSample ? '播放试听' : '生成试听'}
+                              disabled={isLoadingPreview}
+                              title={hasCachedPreview ? '播放试听' : '生成试听'}
                             >
-                              {isGenerating ? (
+                              {isLoadingPreview ? (
                                 <Loader2 className="size-3 animate-spin" />
                               ) : isPlaying ? (
                                 <Pause className="size-3" />

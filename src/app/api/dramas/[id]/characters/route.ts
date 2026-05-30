@@ -52,3 +52,50 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to create character' }, { status: 500 });
   }
 }
+
+// PATCH /api/dramas/[id]/characters - Update a character (e.g., assign voiceId)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: dramaId } = await params;
+    const body = await request.json();
+    const { characterId, voiceId, voiceStyle, personality, appearance, imagePrompt } = body;
+
+    if (!characterId) {
+      return NextResponse.json({ error: 'characterId is required' }, { status: 400 });
+    }
+
+    // Verify character belongs to this drama
+    const character = await db.character.findUnique({
+      where: { id: characterId },
+    });
+
+    if (!character || character.dramaId !== dramaId) {
+      return NextResponse.json({ error: 'Character not found in this drama' }, { status: 404 });
+    }
+
+    // Build update data from provided fields
+    const updateData: Record<string, string> = {};
+    if (voiceId !== undefined) updateData.voiceId = voiceId;
+    if (voiceStyle !== undefined) updateData.voiceStyle = voiceStyle;
+    if (personality !== undefined) updateData.personality = personality;
+    if (appearance !== undefined) updateData.appearance = appearance;
+    if (imagePrompt !== undefined) updateData.imagePrompt = imagePrompt;
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
+    const updated = await db.character.update({
+      where: { id: characterId },
+      data: updateData,
+    });
+
+    return NextResponse.json({ character: updated });
+  } catch (error) {
+    console.error('Failed to update character:', error);
+    return NextResponse.json({ error: 'Failed to update character' }, { status: 500 });
+  }
+}
