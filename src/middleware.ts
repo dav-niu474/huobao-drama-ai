@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server'
 // Middleware — API route protection
 // Lightweight cookie-based check (no next-auth/jwt import)
 // to avoid Edge Runtime compatibility issues
+// Checks both HTTP and HTTPS cookie name variants
 // ============================================================
 
 export async function middleware(request: NextRequest) {
@@ -32,6 +33,7 @@ export async function middleware(request: NextRequest) {
 
   if (isProtected) {
     // Check for NextAuth session token cookie
+    // Support both HTTP (next-auth.session-token) and HTTPS (__Secure-next-auth.session-token)
     const sessionToken =
       request.cookies.get('next-auth.session-token')?.value ||
       request.cookies.get('__Secure-next-auth.session-token')?.value

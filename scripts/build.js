@@ -59,6 +59,8 @@ if (runtimeUrl) {
   process.env.DATABASE_URL = runtimeUrl
   process.env.DIRECT_URL = migrationUrl
   console.log('[build] DATABASE_URL configured for PostgreSQL')
+} else {
+  console.warn('[build] WARNING: No PostgreSQL URL found. Database features may not work.')
 }
 
 // Step 3: Generate Prisma client
@@ -74,25 +76,45 @@ try {
   console.warn('[build] Prisma generate warning:', error.message?.slice(0, 300))
 }
 
-// Step 4: Push schema to database (additive only - won't drop existing data)
-if (migrationUrl) {
-  try {
-    console.log('[build] Pushing schema to PostgreSQL (30s timeout)...')
-    execSync('npx prisma db push --skip-generate', {
-      stdio: 'pipe',
-      env: { ...process.env, DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl },
-      timeout: 30000
-    })
-    console.log('[build] Schema pushed to PostgreSQL successfully')
-  } catch (error) {
-    console.warn('[build] Prisma db push failed (non-critical, run /api/migrate manually)')
+// Step 4: Push schema to database with retry logic
+// This is critical for adding new models (like DramaMember, Comment)
+// to the PostgreSQL database on Vercel.
+if (migrationUrl && migrationUrl.startsWith('postgresql')) {
+  const MAX_RETRIES = 3
+  let pushSucceeded = false
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[build] Pushing schema to PostgreSQL (attempt ${attempt}/${MAX_RETRIES}, 60s timeout)...`)
+      execSync('npx prisma db push --skip-generate', {
+        stdio: 'pipe',
+        env: { ...process.env, DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl },
+        timeout: 60000  // Increased from 30s to 60s
+      })
+      console.log('[build] Schema pushed to PostgreSQL successfully')
+      pushSucceeded = true
+      break
+    } catch (error) {
+      const errMsg = error.message?.slice(0, 300) || 'Unknown error'
+      console.warn(`[build] Prisma db push attempt ${attempt} failed: ${errMsg}`)
+      if (attempt < MAX_RETRIES) {
+        console.log('[build] Retrying in 5 seconds...')
+        execSync('sleep 5', { stdio: 'pipe' })
+      }
+    }
   }
+
+  if (!pushSucceeded) {
+    console.warn('[build] Prisma db push failed after all retries. Run /api/migrate manually after deployment.')
+  }
+} else if (migrationUrl) {
+  console.log('[build] Skipping db push (not PostgreSQL)')
 }
 
 console.log('[build] Prisma setup complete, starting Next.js build...')
 
 // Step 5: Ensure admin user exists with correct role
-if (migrationUrl) {
+if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   try {
     console.log('[build] Ensuring admin user exists...')
     const bcrypt = require('bcryptjs')
