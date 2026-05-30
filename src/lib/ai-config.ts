@@ -86,7 +86,7 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
 
   // Check if the provider is explicitly set as active in DB
   // Some providers (like z-ai-sdk) don't need an API key
-  const noKeyProviders: string[] = []
+  const noKeyProviders: string[] = ['z-ai-sdk']
 
   if (dbProvider) {
     // Use DB record if it's active — even if apiKey is empty

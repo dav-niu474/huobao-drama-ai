@@ -212,7 +212,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
 }
 
 // ============================================================================
-// Vidu Video Adapter (Webhook-only, no polling)
+// Vidu Video Adapter (Polling via GET /ent/v2/img2video/{task_id})
 // ============================================================================
 
 export class ViduVideoAdapter implements VideoProviderAdapter {
@@ -267,23 +267,42 @@ export class ViduVideoAdapter implements VideoProviderAdapter {
   }
 
   buildPollRequest(
-    _config: { baseUrl: string; apiKey: string; model: string },
-    _taskId: string
+    config: { baseUrl: string; apiKey: string; model: string },
+    taskId: string
   ): ProviderRequest | null {
-    // Vidu is webhook-only — no polling endpoint
-    return null
+    return {
+      url: joinProviderUrl(config.baseUrl, '/ent/v2', `/img2video/${taskId}`),
+      method: 'GET',
+      headers: { Authorization: `Token ${config.apiKey}` },
+      body: null,
+    }
   }
 
-  parsePollResponse(_result: unknown): {
+  parsePollResponse(result: unknown): {
     status: 'pending' | 'processing' | 'completed' | 'failed'
     videoUrl?: string
     error?: string
   } {
-    // Vidu is webhook-only — polling is not supported
-    return {
-      status: 'pending',
-      error: 'Vidu does not support polling. Results are delivered via webhook only.',
+    const resp = result as Record<string, unknown>
+    const state = resp.state as string
+
+    if (state === 'success' || state === 'completed') {
+      const videoUrl = (resp.video_url || (resp as Record<string, unknown>).url) as string | undefined
+      if (!videoUrl) {
+        return { status: 'failed', error: 'Vidu: Task completed but no video_url returned' }
+      }
+      return { status: 'completed', videoUrl }
     }
+
+    if (state === 'failed' || state === 'error') {
+      return {
+        status: 'failed',
+        error: `Vidu: Task failed - ${JSON.stringify(resp.error || resp)}`,
+      }
+    }
+
+    // processing, running, etc.
+    return { status: 'processing' }
   }
 }
 

@@ -7,6 +7,12 @@
 import { db } from '@/lib/db'
 import { executeAgent } from '@/lib/agents/factory'
 
+// ── Helper: Resolve base URL for internal API calls ───────────
+
+function getBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+}
+
 // ── Types ──────────────────────────────────────────────────────
 
 export interface BatchState {
@@ -602,7 +608,7 @@ class BatchPipelineManager {
       try {
         // Call the character image generation API internally
         const response = await fetch(
-          `http://localhost:3000/api/ai/generate-character-image`,
+          `${getBaseUrl()}/api/ai/generate-character-image`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -631,7 +637,7 @@ class BatchPipelineManager {
     for (const scene of scenes) {
       try {
         const response = await fetch(
-          `http://localhost:3000/api/ai/generate-scene-image`,
+          `${getBaseUrl()}/api/ai/generate-scene-image`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -662,7 +668,7 @@ class BatchPipelineManager {
     for (const sb of withoutTts) {
       try {
         const response = await fetch(
-          `http://localhost:3000/api/ai/generate-tts`,
+          `${getBaseUrl()}/api/ai/generate-tts`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -692,7 +698,7 @@ class BatchPipelineManager {
     // Generate images for each storyboard
     for (const sb of withoutFrames) {
       try {
-        const result = await fetch(`http://localhost:3000/api/ai/generate-image`, {
+        const result = await fetch(`${getBaseUrl()}/api/ai/generate-image`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -732,7 +738,7 @@ class BatchPipelineManager {
     // Generate videos for each storyboard
     for (const sb of withoutVideos) {
       try {
-        const response = await fetch(`http://localhost:3000/api/ai/generate-video`, {
+        const response = await fetch(`${getBaseUrl()}/api/ai/generate-video`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -766,7 +772,7 @@ class BatchPipelineManager {
       try {
         // Use the compose API endpoint
         const response = await fetch(
-          `http://localhost:3000/api/episodes/${episode.id}/compose`,
+          `${getBaseUrl()}/api/episodes/${episode.id}/compose`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -793,7 +799,7 @@ class BatchPipelineManager {
     // Try to merge
     try {
       const response = await fetch(
-        `http://localhost:3000/api/episodes/${episode.id}/merge`,
+        `${getBaseUrl()}/api/episodes/${episode.id}/merge`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
