@@ -43,6 +43,7 @@ import { DubbingPanel } from '@/components/episode/dubbing-panel'
 import { ShotFramesPanel } from '@/components/episode/shot-frames-panel'
 import { VideoPanel } from '@/components/episode/video-panel'
 import { ComposePanel } from '@/components/episode/compose-panel'
+import { TimelineEditor } from '@/components/episode/timeline-editor'
 
 // Shared types & helpers
 import type { StageKey, ProdTabKey, UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
@@ -377,6 +378,7 @@ export function EpisodeWorkspace() {
   const PROD_TAB_MAP: Record<string, ProdTabKey> = {
     'prod:chars': 'chars', 'prod:scenes': 'scenes', 'prod:dubbing': 'dubbing',
     'prod:shots': 'shots', 'prod:videos': 'videos', 'prod:compose': 'compose',
+    'prod:timeline': 'timeline',
   }
 
   const handlePipelineStepClick = useCallback(
@@ -1839,6 +1841,25 @@ export function EpisodeWorkspace() {
                 handleExport={handleExport}
                 setPreviewMode={setPreviewMode}
                 setCurrentPreviewShot={setCurrentPreviewShot}
+              />
+            )}
+            {prodTab === 'timeline' && (
+              <TimelineEditor
+                storyboards={storyboards}
+                episodeId={selectedEpisodeId || ''}
+                dramaId={selectedDramaId || ''}
+                onSelectStoryboard={(sb) => {
+                  // Could navigate to storyboard detail or select in list
+                }}
+                onUpdateStoryboard={handleUpdateStoryboard}
+                onReorderStoryboards={async (orderedIds) => {
+                  try {
+                    await api.storyboards.reorder(selectedEpisodeId!, orderedIds)
+                    await fetchEpisode()
+                  } catch (err) {
+                    throw err
+                  }
+                }}
               />
             )}
           </div>

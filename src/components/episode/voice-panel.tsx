@@ -93,6 +93,16 @@ export function VoicePanel({
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+    }
+  }, [])
+
   // Load voice catalog
   useEffect(() => {
     if (characters.length > 0) {
@@ -193,17 +203,25 @@ export function VoicePanel({
       setPreviewLoading(voiceId)
       try {
         const result = await api.ai.generateVoiceSample('', voiceId)
+        if (!result.audioUrl) {
+          console.error('Voice preview: no audio URL returned')
+          return
+        }
         // Cache the preview URL by voiceId
         setVoicePreviewUrls((prev) => ({ ...prev, [voiceId]: result.audioUrl }))
         // Play the generated audio
         const audio = new Audio(result.audioUrl)
         audio.onended = () => setPlayingVoiceId(null)
-        audio.onerror = () => setPlayingVoiceId(null)
-        audio.play().catch(() => setPlayingVoiceId(null))
+        audio.onerror = (e) => {
+          console.error('Voice preview audio error:', e)
+          setPlayingVoiceId(null)
+        }
+        await audio.play()
         audioRef.current = audio
         setPlayingVoiceId(voiceId)
       } catch (err) {
         console.error('Voice preview failed:', err)
+        setPlayingVoiceId(null)
       } finally {
         setPreviewLoading(null)
       }

@@ -860,8 +860,8 @@ export const aiClient = {
       const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body), signal: AbortSignal.timeout(60_000) })
 
       if (!res.ok) {
-        const text = await res.text().catch(() => 'Unknown error')
-        throw new Error(`TTS API错误 (${res.status}): ${text.slice(0, 300)}`)
+        const errText = await res.text().catch(() => 'Unknown error')
+        throw new Error(`TTS API错误 (${res.status}): ${errText.slice(0, 300)}`)
       }
 
       // Try JSON first, then binary
