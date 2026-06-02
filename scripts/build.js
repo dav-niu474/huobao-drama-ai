@@ -1,6 +1,7 @@
 // ============================================================
 // Build script: ensures PostgreSQL schema + generates client + pushes
-// Restores schema from SQLite (local dev) back to PostgreSQL (Vercel)
+// The committed schema.prisma uses PostgreSQL (production source of truth).
+// If pre-dev.js switched it to SQLite for local dev, this restores it.
 // ============================================================
 
 const fs = require('fs')
@@ -23,7 +24,6 @@ function ensurePostgresqlSchema() {
   provider          = "postgresql"
   url               = env("DATABASE_URL")
   directUrl         = env("DIRECT_URL")
-  relationMode      = "prisma"
 }`
     )
 
@@ -63,7 +63,7 @@ if (runtimeUrl) {
   console.warn('[build] WARNING: No PostgreSQL URL found. Database features may not work.')
 }
 
-// Step 3: Generate Prisma client
+// Step 3: Generate Prisma client (with PostgreSQL schema)
 try {
   console.log('[build] Generating Prisma client...')
   execSync('npx prisma generate', {
@@ -79,6 +79,8 @@ try {
 // Step 4: Push schema to database with retry logic
 // This is critical for adding new models (like DramaMember, Comment)
 // to the PostgreSQL database on Vercel.
+// NOTE: prisma db push is non-destructive — it only adds new columns/tables,
+// it does NOT delete existing data or columns.
 if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   const MAX_RETRIES = 3
   let pushSucceeded = false
@@ -89,7 +91,7 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
       execSync('npx prisma db push --skip-generate', {
         stdio: 'pipe',
         env: { ...process.env, DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl },
-        timeout: 60000  // Increased from 30s to 60s
+        timeout: 60000
       })
       console.log('[build] Schema pushed to PostgreSQL successfully')
       pushSucceeded = true
@@ -113,10 +115,12 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
 
 console.log('[build] Prisma setup complete, starting Next.js build...')
 
-// Step 5: Ensure admin user exists with correct role
+// Step 5: Ensure admin user exists (ONLY create if missing — do NOT reset password)
+// This is safe: it only creates a new admin if one doesn't exist yet.
+// It will NOT overwrite existing passwords, names, or other user data.
 if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   try {
-    console.log('[build] Ensuring admin user exists...')
+    console.log('[build] Checking if admin user exists...')
     const bcrypt = require('bcryptjs')
     const { PrismaClient } = require('@prisma/client')
     const db = new PrismaClient({
@@ -132,20 +136,19 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
         const existing = await db.user.findUnique({ where: { email: adminEmail } })
 
         if (existing) {
-          // Force update to admin role
-          const hashedPassword = await bcrypt.hash(adminPassword, 12)
-          await db.user.update({
-            where: { id: existing.id },
-            data: {
-              role: 'admin',
-              password: hashedPassword,
-              name: adminName,
-              isActive: true,
-            },
-          })
-          console.log(`[build] Admin user ${adminEmail} updated (forced admin role)`)
+          // Admin exists — do NOT reset password or modify user data!
+          // Only ensure role is admin (in case it was accidentally changed)
+          if (existing.role !== 'admin') {
+            await db.user.update({
+              where: { id: existing.id },
+              data: { role: 'admin' },
+            })
+            console.log(`[build] Admin user ${adminEmail} role corrected to admin`)
+          } else {
+            console.log(`[build] Admin user ${adminEmail} already exists — no changes needed`)
+          }
         } else {
-          // Create admin
+          // Create admin — only when it doesn't exist
           const hashedPassword = await bcrypt.hash(adminPassword, 12)
           await db.user.create({
             data: {
