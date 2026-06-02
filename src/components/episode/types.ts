@@ -26,7 +26,7 @@ export type PipelineStepKey =
 
 // ── Production tab key ────────────────────────────────────────
 
-export type ProdTabKey = 'chars' | 'scenes' | 'dubbing' | 'shots' | 'videos' | 'compose'
+export type ProdTabKey = 'chars' | 'scenes' | 'dubbing' | 'shots' | 'videos' | 'compose' | 'timeline'
 
 // ── Pipeline step status ──────────────────────────────────────
 

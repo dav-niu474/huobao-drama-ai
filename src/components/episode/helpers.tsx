@@ -1,4 +1,4 @@
-import { FileText, Users, Mic, Clapperboard, Image, Video, Layers, Download, MapPin } from 'lucide-react'
+import { FileText, Users, Mic, Clapperboard, Image, Video, Layers, Download, MapPin, GanttChart } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { PipelineStepDef, PipelineStepKey, StageKey, StageDef, ProdTabKey } from './types'
 
@@ -39,6 +39,7 @@ export const PROD_TABS: { key: ProdTabKey; label: string; stepNumber: number; ic
   { key: 'shots',   label: '镜头图片', stepNumber: 9,  icon: <Image className="size-3.5" /> },
   { key: 'videos',  label: '视频生成', stepNumber: 10, icon: <Video className="size-3.5" /> },
   { key: 'compose', label: '视频合成', stepNumber: 11, icon: <Layers className="size-3.5" /> },
+  { key: 'timeline', label: '时间线',  stepNumber: 11, icon: <GanttChart className="size-3.5" /> },
 ]
 
 // ── Helper: get pipeline steps for a stage ────────────────────

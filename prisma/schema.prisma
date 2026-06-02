@@ -20,7 +20,7 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  dramas             Drama[]
+dramas             Drama[]
   userProviders      UserProvider[]
   assets             Asset[]
   memberships        DramaMember[]
@@ -31,6 +31,16 @@ model User {
   templateReviews    TemplateReview[]
   publishedTemplates CharacterTemplate[]
   publishConfigs     PublishConfig[]
+dramas Drama[]
+  userProviders UserProvider[]
+  assets Asset[]
+  memberships DramaMember[]
+  comments Comment[]
+  invitedMembers DramaMember[] @relation("InvitedMembers")
+presences Presence[]
+  resourceLocks ResourceLock[]
+  activities Activity[]
+series Series[]
 }
 
 // ============ Drama Project ============
@@ -53,8 +63,12 @@ model Drama {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
   novel            Novel?
+seriesId         String?                     // Optional FK to Series
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel     Novel?
+  series    Series?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   episodes         Episode[]
   characters       Character[]
   scenes           Scene[]
@@ -66,7 +80,11 @@ model Drama {
   ttsGenerations   TtsGeneration[]
   members          DramaMember[]
   comments         Comment[]
-  publishRecords   PublishRecord[]
+publishRecords   PublishRecord[]
+presences        Presence[]
+  resourceLocks    ResourceLock[]
+  activities       Activity[]
+seriesMembers    SeriesMember[]
 }
 
 // ============ Episode ============
@@ -447,6 +465,12 @@ model Comment {
   userId       String
   content      String
   resolved     Boolean  @default(false)
+  // Thread support: parent comment for replies
+  parentId     String?
+  // Position pin on storyboard image (JSON: { x: 0.5, y: 0.3 } as percentage)
+  position     String?
+  // Mentioned user IDs (JSON array)
+  mentions     String   @default("[]")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -454,6 +478,93 @@ model Comment {
   episode    Episode?    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   storyboard Storyboard? @relation(fields: [storyboardId], references: [id], onDelete: Cascade)
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent     Comment?    @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[]   @relation("CommentReplies")
+}
+
+// ============ Presence (在线状态) ============
+model Presence {
+  id            String   @id @default(cuid())
+  userId        String
+  dramaId       String
+  episodeId     String?
+  currentPage   String   @default("")    // Current view/page info
+  cursorX       Float    @default(0)     // Cursor X position (0-1, percentage)
+  cursorY       Float    @default(0)     // Cursor Y position (0-1, percentage)
+  lastHeartbeat DateTime @default(now())
+  expiresAt     DateTime                    // TTL: auto-expire stale presence
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dramaId])
+}
+
+// ============ ResourceLock (资源锁定) ============
+model ResourceLock {
+  id           String   @id @default(cuid())
+  userId       String
+  dramaId      String
+  resourceType String   // "storyboard" | "character" | "scene" | "episode"
+  resourceId   String   // ID of the locked resource
+  lockedAt     DateTime @default(now())
+  expiresAt    DateTime                    // Auto-release after 30s inactivity
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+
+  @@unique([dramaId, resourceType, resourceId])
+}
+
+// ============ Activity (活动记录) ============
+model Activity {
+  id          String   @id @default(cuid())
+  userId      String
+  dramaId     String
+  episodeId   String?
+  type        String   // "user_join" | "user_leave" | "storyboard_update" | "comment_add" | "comment_reply" | "lock_resource" | "unlock_resource" | "cursor_move"
+  description String   // Human-readable: "张三 修改了分镜3"
+  metadata    String   @default("{}")  // JSON: additional context
+  createdAt   DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+}
+
+// ============ Series (IP/系列管理) ============
+model Series {
+  id              String   @id @default(cuid())
+  title           String
+  description     String   @default("")
+  coverImage      String?
+  worldBuildingDoc String  @default("")  // Rich text / markdown for shared world settings
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dramas  Drama[]        // Dramas with seriesId pointing to this series
+  members SeriesMember[]
+}
+
+// ============ Series Member (系列成员) ============
+model SeriesMember {
+  id        String   @id @default(cuid())
+  seriesId  String
+  dramaId   String
+  order     Int      @default(0)
+  role      String   @default("main")  // "main" | "spinoff" | "prequel" | "sequel"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  series Series @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  drama  Drama  @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+
+  @@unique([seriesId, dramaId])
 }
 
 // ════════════════════════════════════════════════════════════

@@ -286,16 +286,17 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     params: { text: string; voiceId?: string; speed?: number; voiceStyle?: string }
   ): ProviderRequest {
     const model = config.model || 'mimo-v2.5-tts'
-    // MiMo preset voices: Chloe, Mia (English female); Milo, Dean (English male)
-    // 冰糖, 茉莉 (Chinese female); 苏打, 白桦 (Chinese male)
-    const voice = params.voiceId || 'Chloe'
+    // MiMo preset voices: mimo_default (auto), 冰糖, 茉莉 (Chinese female);
+    // 苏打, 白桦 (Chinese male); Chloe, Mia (English female); Milo, Dean (English male)
+    const voice = params.voiceId || 'mimo_default'
     // Use voiceStyle if provided, otherwise use natural reading style
     const styleInstruction = params.voiceStyle || '用自然流畅的语调朗读'
 
     return {
       url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      // MiMo uses api-key header (not Authorization Bearer) per official docs
+      headers: { 'api-key': config.apiKey, 'Content-Type': 'application/json' },
       body: {
         model,
         messages: [
@@ -305,9 +306,10 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
           { role: 'assistant', content: params.text },
         ],
         audio: {
-          format: 'mp3',
+          format: 'wav',
           voice,
         },
+        stream: false,
       },
     }
   }
@@ -330,7 +332,24 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
           if (audio && typeof audio.data === 'string') {
             return {
               audioBase64: audio.data as string,
-              format: 'mp3',
+              format: 'wav',
+              sampleRate: 24000,
+            }
+          }
+          // Fallback: audio might be a raw base64 string
+          if (typeof audio === 'string' && (audio as string).length > 100) {
+            return {
+              audioBase64: audio,
+              format: 'wav',
+              sampleRate: 24000,
+            }
+          }
+          // Fallback: content field may contain base64 audio data
+          const content = message.content as string | undefined
+          if (content && /^[A-Za-z0-9+/=]+$/.test(content) && content.length > 100) {
+            return {
+              audioBase64: content,
+              format: 'wav',
               sampleRate: 24000,
             }
           }
@@ -342,7 +361,7 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     if (typeof result === 'string') {
       return {
         audioBase64: result,
-        format: 'mp3',
+        format: 'wav',
       }
     }
 
@@ -351,11 +370,11 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
       const base64 = uint8ArrayToBase64(bytes)
       return {
         audioBase64: base64,
-        format: 'mp3',
+        format: 'wav',
       }
     }
 
-    return { format: 'mp3' }
+    return { format: 'wav' }
   }
 }
 
