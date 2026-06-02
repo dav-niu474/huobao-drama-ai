@@ -203,3 +203,36 @@ This project runs in a restricted cloud sandbox environment.
 - **ALWAYS** inform the user about how to view the application externally based on their platform:
   - If they are using the web interface, tell them they can click the **"Open in New Tab"** button above the Preview Panel to view it in a separate browser tab.
   - If they are communicating through an IM (Instant Messaging) platform, provide them directly with the generated preview link.
+
+### Post-Launch Self-Verification with Agent Browser (MANDATORY)
+
+When the Next.js project has started successfully (dev server running on port 3000 without fatal errors in `/home/z/my-project/dev.log`), you MUST NOT consider the task complete based on a clean build alone. A passing lint and a running server do **not** prove the website actually works for the user.
+
+You MUST use **Agent Browser** to perform end-to-end self-verification before reporting completion:
+
+1. **Open the page**
+   - Use Agent Browser to navigate to the `/` route (the only user-visible route).
+   - Wait for the page to fully load and capture the rendered result.
+
+2. **Verify it renders, not just responds**
+   - Confirm the page is visually rendered (no blank/white screen, no error boundary, no hydration crash).
+   - Cross-check against `/home/z/my-project/dev.log` for any runtime errors, failed API calls, or hydration mismatches that appeared during the visit.
+
+3. **Verify core interactivity (the golden path)**
+   - Exercise the primary user flows you just built: click the main buttons, submit the key forms, trigger navigation/tabs/modals, and confirm each produces the expected result.
+   - For data-driven features, confirm the frontend actually receives and displays backend/API data (not just an empty skeleton or a loading spinner that never resolves).
+   - For real-time features (WebSocket/socket.io), confirm messages flow end-to-end.
+
+4. **Check responsiveness and the sticky footer**
+   - Verify the layout holds on both mobile and desktop widths.
+   - Confirm the footer sticks to the bottom on short pages and is pushed down naturally on long pages (no overlap, no floating gap).
+
+5. **Fix and re-verify**
+   - If Agent Browser surfaces any broken interaction, console/runtime error, missing data, or layout defect, you MUST fix the root cause and re-run the self-verification loop.
+   - Repeat until the page loads cleanly **and** every core interaction works.
+
+6. **Report honestly**
+   - Only after Agent Browser confirms the site is interactive and runnable may you report the task as done.
+   - If a specific flow genuinely cannot be verified in the browser, say so explicitly rather than claiming success.
+
+**CRITICAL:** "It compiles" / "the server is up" is never sufficient evidence of completion. Browser-verified interactivity is the required standard of done.
