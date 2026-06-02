@@ -172,8 +172,7 @@ export interface Asset {
   user?: { id: string; name: string } | null
 }
 
-export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'marketplace'
-export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'series'
+export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'marketplace' | 'series'
 
 // ============================================================
 // Store interface
@@ -200,8 +199,8 @@ interface AppStore {
   navigateToAssetLibrary: () => void
   navigateToScriptWorkbench: (dramaId: string) => void
   navigateToAssetWorkbench: (dramaId: string) => void
-navigateToMarketplace: () => void
-navigateToSeries: () => void
+  navigateToMarketplace: () => void
+  navigateToSeries: () => void
 
   // Drama data cache
   dramas: Drama[]
@@ -306,10 +305,15 @@ export const useAppStore = create<AppStore>((set) => ({
       episodeLockedConfig: null,
     }),
 
-navigateToMarketplace: () =>
+  navigateToMarketplace: () =>
     set({
       view: 'marketplace',
-navigateToSeries: () =>
+      selectedDramaId: null,
+      selectedEpisodeId: null,
+      episodeLockedConfig: null,
+    }),
+
+  navigateToSeries: () =>
     set({
       view: 'series',
       selectedDramaId: null,

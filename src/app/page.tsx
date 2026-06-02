@@ -1,6 +1,3 @@
-import { redirect } from 'next/navigation'
-import { routing } from '@/i18n/routing'
-
 import { useRef, useEffect } from 'react'
 import { SessionProvider, useSession } from 'next-auth/react'
 import { useAppStore } from '@/lib/store'
@@ -13,6 +10,7 @@ import { AssetLibraryView } from '@/components/asset-library-view'
 import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
 import { MarketplacePage } from '@/components/marketplace/marketplace-page'
+import { SeriesPanel } from '@/components/series-panel'
 import { Loader2 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
@@ -53,6 +51,8 @@ function ViewRouter({ view }: { view: string }) {
       return <AssetLibraryView />
     case 'marketplace':
       return <MarketplacePage />
+    case 'series':
+      return <SeriesPanel />
     default:
       return <ProjectListView />
   }
@@ -67,6 +67,7 @@ const FULLSCREEN_VIEWS = new Set([
   'asset-workbench',
   'episode-workspace',
   'marketplace',
+  'series',
 ])
 
 // ════════════════════════════════════════════════════════════
@@ -146,7 +147,4 @@ export default function Home() {
       <AuthGuard />
     </SessionProvider>
   )
-// Root page: redirect to the default locale
-export default function RootPage() {
-  redirect(`/${routing.defaultLocale}`)
 }

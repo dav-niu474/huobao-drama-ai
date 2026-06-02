@@ -300,17 +300,16 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={navigateToSeries} title={tn('series')}>
-              <Layers className="size-4" />
-            </Button>
-            <Button variant="outline" size="icon" onClick={navigateToAssetLibrary} title={tn('assetLibrary')}>
+            <Button variant="outline" size="icon" onClick={navigateToAssetLibrary} title="资产库">
               <Library className="size-4" />
             </Button>
-<Button variant="outline" size="icon" onClick={navigateToMarketplace} title="角色市场">
+            <Button variant="outline" size="icon" onClick={navigateToMarketplace} title="角色市场">
               <Store className="size-4" />
             </Button>
+            <Button variant="outline" size="icon" onClick={navigateToSeries} title="系列管理">
+              <Layers className="size-4" />
+            </Button>
             <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
-<Button variant="outline" size="icon" onClick={navigateToSettings} title={tn('settings')}>
               <Settings className="size-4" />
             </Button>
             <LanguageSwitcher />
