@@ -1,3 +1,5 @@
+'use client'
+
 import { useRef, useEffect } from 'react'
 import { SessionProvider, useSession } from 'next-auth/react'
 import { useAppStore } from '@/lib/store'

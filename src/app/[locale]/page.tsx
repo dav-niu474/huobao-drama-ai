@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { SessionProvider, useSession } from 'next-auth/react'
 import { useAppStore } from '@/lib/store'
@@ -12,6 +12,7 @@ import { SettingsView } from '@/components/settings-view'
 import { AssetLibraryView } from '@/components/asset-library-view'
 import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
+import { MarketplacePage } from '@/components/marketplace/marketplace-page'
 import { SeriesPanel } from '@/components/series-panel'
 import { Loader2 } from 'lucide-react'
 
@@ -35,6 +36,8 @@ function ViewRouter({ view }: { view: string }) {
       return <SettingsView />
     case 'asset-library':
       return <AssetLibraryView />
+    case 'marketplace':
+      return <MarketplacePage />
     case 'series':
       return <SeriesPanel />
     default:
@@ -50,6 +53,8 @@ const FULLSCREEN_VIEWS = new Set([
   'script-workbench',
   'asset-workbench',
   'episode-workspace',
+  'marketplace',
+  'series',
 ])
 
 // ════════════════════════════════════════════════════════════
@@ -61,15 +66,17 @@ function AuthGuard() {
   const view = useAppStore((s) => s.view)
   const t = useTranslations('common')
 
-  // Track whether user has ever had a session — derived from session directly
-  // No need for effect; just use memoized value
-  const [everHadSession, setEverHadSession] = useState(false)
-  // When session transitions from null to non-null, remember it
-  if (session && !everHadSession) {
-    setEverHadSession(true)
-  }
+  // ★ 保险：一旦 session 曾经存在过，就绝不卸载 ViewRouter
+  const hasEverHadSession = useRef(false)
 
-  if (status === 'loading' && !everHadSession) {
+  useEffect(() => {
+    if (session) {
+      hasEverHadSession.current = true
+    }
+  }, [session])
+
+  // 首次加载（从未拿到过 session）：显示 loading
+  if (status === 'loading' && !hasEverHadSession.current) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -80,10 +87,12 @@ function AuthGuard() {
     )
   }
 
-  if (!session && !everHadSession) {
+  // 没有 session 且之前也没有拿到过 → 显示登录页
+  if (!session && !hasEverHadSession.current) {
     return <AuthView />
   }
 
+  // ★★★ 核心：永远同一个 DOM 结构 ★★★
   const isFullscreen = FULLSCREEN_VIEWS.has(view)
 
   return (

@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  serverExternalPackages: ['@vercel/blob'],
 };
 
 export default withNextIntl(nextConfig);

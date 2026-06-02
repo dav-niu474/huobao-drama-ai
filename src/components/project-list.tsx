@@ -37,8 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Store } from 'lucide-react'
-import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Layers } from 'lucide-react'
+import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Store, Layers } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { ScriptUploadDialog } from '@/components/script-upload-dialog'
@@ -191,8 +190,7 @@ function ProjectCard({
 // ── main component ───────────────────────────────────────────
 
 export function ProjectListView() {
-const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAssetLibrary, navigateToMarketplace, setLoading, loading } = useAppStore()
-const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAssetLibrary, navigateToSeries, setLoading, loading } = useAppStore()
+const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAssetLibrary, navigateToMarketplace, navigateToSeries, setLoading, loading } = useAppStore()
   const { toast } = useToast()
   const perms = usePermissions()
   const tc = useTranslations('common')

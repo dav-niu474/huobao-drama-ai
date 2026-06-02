@@ -10,7 +10,7 @@
 // 6. Repeats until no more tool calls or max steps
 // ============================================================
 
-import { AgentType, AgentExecutionResult } from './types'
+import { AgentType, AgentExecutionResult, AGENT_NAMES } from './types'
 import { DEFAULT_SYSTEM_PROMPTS } from './prompts'
 import { getOpenAIToolsForAgent } from './tools/index'
 import { getExecutorsForAgent, ToolExecutor } from './tools/executors'
@@ -499,7 +499,7 @@ async function callLLMWithTools(
 // Agent name mapping (imported from types)
 // ============================================================
 
-import { AGENT_NAMES } from './types'
+// AGENT_NAMES imported above
 
 // ============================================================
 // Main Agent Execution Function

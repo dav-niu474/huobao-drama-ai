@@ -20,7 +20,7 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-dramas             Drama[]
+  dramas             Drama[]
   userProviders      UserProvider[]
   assets             Asset[]
   memberships        DramaMember[]
@@ -31,16 +31,10 @@ dramas             Drama[]
   templateReviews    TemplateReview[]
   publishedTemplates CharacterTemplate[]
   publishConfigs     PublishConfig[]
-dramas Drama[]
-  userProviders UserProvider[]
-  assets Asset[]
-  memberships DramaMember[]
-  comments Comment[]
-  invitedMembers DramaMember[] @relation("InvitedMembers")
-presences Presence[]
-  resourceLocks ResourceLock[]
-  activities Activity[]
-series Series[]
+  presences          Presence[]
+  resourceLocks      ResourceLock[]
+  activities         Activity[]
+  series             Series[]
 }
 
 // ============ Drama Project ============
@@ -63,28 +57,26 @@ model Drama {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  novel            Novel?
-seriesId         String?                     // Optional FK to Series
-  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  novel     Novel?
-  series    Series?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
-  episodes         Episode[]
-  characters       Character[]
-  scenes           Scene[]
-  props            Prop[]
-  generationCosts  GenerationCost[]
-  imageGenerations ImageGeneration[]
-  videoGenerations VideoGeneration[]
-  videoMerges      VideoMerge[]
-  ttsGenerations   TtsGeneration[]
-  members          DramaMember[]
-  comments         Comment[]
-publishRecords   PublishRecord[]
-presences        Presence[]
-  resourceLocks    ResourceLock[]
-  activities       Activity[]
-seriesMembers    SeriesMember[]
+  user              User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel             Novel?
+  seriesId          String?                     // Optional FK to Series
+  series            Series?          @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  episodes          Episode[]
+  characters        Character[]
+  scenes            Scene[]
+  props             Prop[]
+  generationCosts   GenerationCost[]
+  imageGenerations  ImageGeneration[]
+  videoGenerations  VideoGeneration[]
+  videoMerges       VideoMerge[]
+  ttsGenerations    TtsGeneration[]
+  members           DramaMember[]
+  comments          Comment[]
+  publishRecords    PublishRecord[]
+  presences         Presence[]
+  resourceLocks     ResourceLock[]
+  activities        Activity[]
+  seriesMembers     SeriesMember[]
 }
 
 // ============ Episode ============

@@ -30,6 +30,12 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
+// Safe JSON parse — returns fallback on error
+function safeJsonParse<T>(str: string | null | undefined, fallback: T): T {
+  if (!str) return fallback
+  try { return JSON.parse(str) as T } catch { return fallback }
+}
+
 // ── Types ──
 
 interface Template {
@@ -248,7 +254,7 @@ export function MarketplacePage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {templates.map(t => {
-              const images = JSON.parse(t.referenceImages || '[]') as string[]
+              const images = safeJsonParse<string[]>(t.referenceImages, [])
               const thumbnail = images[0] || null
               return (
                 <Card
@@ -328,12 +334,12 @@ export function MarketplacePage() {
             <div className="space-y-4">
               {/* Preview images */}
               <div className="grid grid-cols-3 gap-2">
-                {JSON.parse(detailTemplate.referenceImages || '[]').map((url: string, i: number) => (
+                {safeJsonParse<string[]>(detailTemplate.referenceImages, []).map((url: string, i: number) => (
                   <div key={i} className="aspect-square rounded-md bg-muted/30 overflow-hidden">
                     <img src={url} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
-                {JSON.parse(detailTemplate.referenceImages || '[]').length === 0 && (
+                {safeJsonParse<string[]>(detailTemplate.referenceImages, []).length === 0 && (
                   <div className="col-span-3 h-32 rounded-md bg-muted/30 flex items-center justify-center">
                     <Users className="size-10 text-muted-foreground/30" />
                   </div>
@@ -369,7 +375,7 @@ export function MarketplacePage() {
 
               {/* Tags */}
               <div className="flex flex-wrap gap-1">
-                {JSON.parse(detailTemplate.tags || '[]').map((tag: string, i: number) => (
+                {safeJsonParse<string[]>(detailTemplate.tags, []).map((tag: string, i: number) => (
                   <Badge key={i} variant="secondary" className="text-[10px]">{tag}</Badge>
                 ))}
               </div>

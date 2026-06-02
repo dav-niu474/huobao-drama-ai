@@ -1,3 +1,5 @@
+'use client'
+
 import { FileText, Users, Mic, Clapperboard, Image, Video, Layers, Download, MapPin, GanttChart } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { PipelineStepDef, PipelineStepKey, StageKey, StageDef, ProdTabKey } from './types'
