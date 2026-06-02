@@ -11,6 +11,7 @@ import { SettingsView } from '@/components/settings-view'
 import { AssetLibraryView } from '@/components/asset-library-view'
 import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
+import { MarketplacePage } from '@/components/marketplace/marketplace-page'
 import { Loader2 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
@@ -49,6 +50,8 @@ function ViewRouter({ view }: { view: string }) {
       return <SettingsView />
     case 'asset-library':
       return <AssetLibraryView />
+    case 'marketplace':
+      return <MarketplacePage />
     default:
       return <ProjectListView />
   }
@@ -62,6 +65,7 @@ const FULLSCREEN_VIEWS = new Set([
   'script-workbench',
   'asset-workbench',
   'episode-workspace',
+  'marketplace',
 ])
 
 // ════════════════════════════════════════════════════════════

@@ -23,6 +23,8 @@ import {
 } from '@/components/ui/collapsible'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { UserMenu } from '@/components/user-menu'
+import { BudgetPanel } from '@/components/budget-panel'
+import { PlatformConfig } from '@/components/publish/platform-config'
 import {
   ArrowLeft,
   Settings,
@@ -53,6 +55,8 @@ import {
   Check,
   Trash2,
   User,
+  Wallet,
+  Globe,
 } from 'lucide-react'
 
 // ============================================================
@@ -1819,7 +1823,7 @@ export function SettingsView() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className={`w-full sm:w-auto grid ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'} sm:inline-flex h-auto p-1`}>
+              <TabsList className={`w-full sm:w-auto grid ${isAdmin ? 'grid-cols-7' : 'grid-cols-6'} sm:inline-flex h-auto p-1`}>
                 {(Object.keys(CATEGORY_META) as AiCategory[]).map((cat) => {
                   const meta = CATEGORY_META[cat]
                   const activeProvider = providersData[cat]?.find((p) => p.isActive)
@@ -1859,6 +1863,22 @@ export function SettingsView() {
                   )}
                 </TabsTrigger>
                 )}
+                <TabsTrigger
+                  value="budget"
+                  className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
+                >
+                  <Wallet className="size-4" />
+                  <span className="hidden sm:inline">预算控制</span>
+                  <span className="sm:hidden">预算</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="publish"
+                  className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
+                >
+                  <Globe className="size-4" />
+                  <span className="hidden sm:inline">发布平台</span>
+                  <span className="sm:hidden">发布</span>
+                </TabsTrigger>
               </TabsList>
 
               {(Object.keys(CATEGORY_META) as AiCategory[]).map((category) => (
@@ -1928,6 +1948,15 @@ export function SettingsView() {
                 </div>
               </TabsContent>
               )}
+              {/* Budget Control Tab */}
+              <TabsContent value="budget" className="mt-4">
+                <BudgetPanel />
+              </TabsContent>
+
+              {/* Publish Platform Config Tab */}
+              <TabsContent value="publish" className="mt-4">
+                <PlatformConfig />
+              </TabsContent>
             </Tabs>
 
             {/* Bottom info */}

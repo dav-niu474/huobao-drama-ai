@@ -9,47 +9,52 @@ datasource db {
 
 // ============ User (Auth) ============
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
   name          String
-  password      String                    // bcrypt hashed
-  role          String   @default("free") // "free" | "pro" | "admin"
+  password      String // bcrypt hashed
+  role          String    @default("free") // "free" | "pro" | "admin"
   avatar        String?
   emailVerified DateTime?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  dramas Drama[]
-  userProviders UserProvider[]
-  assets Asset[]
-  memberships DramaMember[]
-  comments Comment[]
-  invitedMembers DramaMember[] @relation("InvitedMembers")
+  dramas             Drama[]
+  userProviders      UserProvider[]
+  assets             Asset[]
+  memberships        DramaMember[]
+  comments           Comment[]
+  invitedMembers     DramaMember[]       @relation("InvitedMembers")
+  budgets            Budget[]
+  templatePurchases  TemplatePurchase[]
+  templateReviews    TemplateReview[]
+  publishedTemplates CharacterTemplate[]
+  publishConfigs     PublishConfig[]
 }
 
 // ============ Drama Project ============
 model Drama {
-  id            String   @id @default(cuid())
-  title         String
-  description   String   @default("")
-  genre         String   @default("都市")
-  style         String   @default("realistic")
-  coverImage    String?
-  totalEpisodes Int      @default(0)
-  status        String   @default("draft")
-  userId              String?                    // nullable for backward compat
-  defaultLockedConfig String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
-  styleTemplate       String   @default("")     // Persistent style prefix for all generations (e.g., "cinematic, warm tones")
-  novelSource         String?                    // Novel file path or reference
-  novelParsed         Boolean  @default(false)   // Whether novel has been parsed
-  artStyle            String?                    // Selected art style key (e.g., "realpeople_ancient_chinese")
+  id                  String   @id @default(cuid())
+  title               String
+  description         String   @default("")
+  genre               String   @default("都市")
+  style               String   @default("realistic")
+  coverImage          String?
+  totalEpisodes       Int      @default(0)
+  status              String   @default("draft")
+  userId              String? // nullable for backward compat
+  defaultLockedConfig String   @default("null") // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
+  styleTemplate       String   @default("") // Persistent style prefix for all generations (e.g., "cinematic, warm tones")
+  novelSource         String? // Novel file path or reference
+  novelParsed         Boolean  @default(false) // Whether novel has been parsed
+  artStyle            String? // Selected art style key (e.g., "realpeople_ancient_chinese")
   assetStatus         String   @default("pending") // pending | extracting | ready | partial
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  novel     Novel?
+  user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel            Novel?
   episodes         Episode[]
   characters       Character[]
   scenes           Scene[]
@@ -58,33 +63,35 @@ model Drama {
   imageGenerations ImageGeneration[]
   videoGenerations VideoGeneration[]
   videoMerges      VideoMerge[]
+  ttsGenerations   TtsGeneration[]
   members          DramaMember[]
   comments         Comment[]
+  publishRecords   PublishRecord[]
 }
 
 // ============ Episode ============
 model Episode {
-  id            String   @id @default(cuid())
-  dramaId       String
-  episodeNumber Int
-  title         String   @default("")
-  rawContent    String?
-  scriptContent String?
-  scriptStatus  String   @default("pending")
-  extractStatus String   @default("pending")
-  storyboardStatus String @default("pending")
-  status        String   @default("draft")
-  lockedConfig       String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no lock
-  sourceChapterIds   String   @default("[]")    // JSON: array of chapter indices from novel that feed this episode
-  globalAssetsImported Boolean @default(false)  // Whether global assets have been imported into this episode
-  videoUrl      String?
-  duration      Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  dramaId              String
+  episodeNumber        Int
+  title                String   @default("")
+  rawContent           String?
+  scriptContent        String?
+  scriptStatus         String   @default("pending")
+  extractStatus        String   @default("pending")
+  storyboardStatus     String   @default("pending")
+  status               String   @default("draft")
+  lockedConfig         String   @default("null") // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no lock
+  sourceChapterIds     String   @default("[]") // JSON: array of chapter indices from novel that feed this episode
+  globalAssetsImported Boolean  @default(false) // Whether global assets have been imported into this episode
+  videoUrl             String?
+  duration             Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  drama        Drama        @relation(fields: [dramaId], references: [id], onDelete: Cascade)
-  storyboards  Storyboard[]
-  comments     Comment[]
+  drama       Drama        @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  storyboards Storyboard[]
+  comments    Comment[]
 
   @@unique([dramaId, episodeNumber])
 }
@@ -106,17 +113,17 @@ model Character {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetId     String?               // Reference to Asset if derived from library
+  assetId String? // Reference to Asset if derived from library
 
   // --- Character Consistency Fields ---
-  styleLock            Boolean  @default(false)    // Lock appearance consistency
-  lockedReferenceImage String?                     // Canonical reference image URL for consistency
-  visualFingerprint    String   @default("{}")    // JSON: extracted visual features for consistency prompts
-  episodeIds           String   @default("[]")     // JSON: array of episode IDs where this character appears
+  styleLock            Boolean @default(false) // Lock appearance consistency
+  lockedReferenceImage String? // Canonical reference image URL for consistency
+  visualFingerprint    String  @default("{}") // JSON: extracted visual features for consistency prompts
+  episodeIds           String  @default("[]") // JSON: array of episode IDs where this character appears
 
-  drama       Drama                @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  drama       Drama                 @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   appearances CharacterAppearance[]
-  asset       Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset       Asset?                @relation(fields: [assetId], references: [id], onDelete: SetNull)
 }
 
 // ============ Scene ============
@@ -131,16 +138,16 @@ model Scene {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetId String?                 // Reference to Asset if derived from library
+  assetId String? // Reference to Asset if derived from library
 
   // --- Scene Consistency Fields ---
-  styleLock            Boolean  @default(false)    // Lock scene style consistency
-  lockedReferenceImage String?                     // Canonical reference image URL for consistency
-  episodeIds           String   @default("[]")     // JSON: array of episode IDs where this scene appears
+  styleLock            Boolean @default(false) // Lock scene style consistency
+  lockedReferenceImage String? // Canonical reference image URL for consistency
+  episodeIds           String  @default("[]") // JSON: array of episode IDs where this scene appears
 
-  drama  Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  drama  Drama        @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   images SceneImage[]
-  asset  Asset?      @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset  Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
 }
 
 // ============ Storyboard (Shot) ============
@@ -153,7 +160,7 @@ model Storyboard {
   cameraAngle     String   @default("eye-level")
   cameraMovement  String   @default("static")
   action          String   @default("")
-  description     String   @default("")  // Visual description for the shot
+  description     String   @default("") // Visual description for the shot
   dialogue        String?
   dialogueChar    String?
   duration        Float    @default(3.0)
@@ -167,12 +174,12 @@ model Storyboard {
   composedUrl     String?
   bgmPrompt       String?
   soundEffect     String?
-  referenceImages String?  // JSON array of reference image URLs
+  referenceImages String? // JSON array of reference image URLs
   status          String   @default("pending")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episode  Episode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   comments Comment[]
 }
 
@@ -180,14 +187,14 @@ model Storyboard {
 model CharacterAppearance {
   id               String   @id @default(cuid())
   characterId      String
-  appearanceIndex  Int      @default(0)  // 0 = primary/主形象, 1+ = sub-appearances
-  label            String   @default("")  // e.g., "主形象", "夜晚形态", "战斗形态"
-  description      String   @default("")  // Text description extracted by AI Vision
-  imagePrompt      String   @default("")  // The prompt used for generation
-  imageUrl         String?               // Currently selected image (data URL or path)
+  appearanceIndex  Int      @default(0) // 0 = primary/主形象, 1+ = sub-appearances
+  label            String   @default("") // e.g., "主形象", "夜晚形态", "战斗形态"
+  description      String   @default("") // Text description extracted by AI Vision
+  imagePrompt      String   @default("") // The prompt used for generation
+  imageUrl         String? // Currently selected image (data URL or path)
   imageUrls        String   @default("[]") // JSON array of all generated images
-  selectedIndex    Int      @default(0)   // Which image in imageUrls is selected
-  previousImageUrl String?              // For undo/rollback
+  selectedIndex    Int      @default(0) // Which image in imageUrls is selected
+  previousImageUrl String? // For undo/rollback
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -200,10 +207,10 @@ model CharacterAppearance {
 model SceneImage {
   id          String   @id @default(cuid())
   sceneId     String
-  description String   @default("")  // Text prompt used for generation
-  imageUrl    String?               // Generated image (data URL or path)
-  timeOfDay   String   @default("")  // "day", "night", "dusk", etc.
-  angle       String   @default("")  // "wide", "medium", "close-up"
+  description String   @default("") // Text prompt used for generation
+  imageUrl    String? // Generated image (data URL or path)
+  timeOfDay   String   @default("") // "day", "night", "dusk", etc.
+  angle       String   @default("") // "wide", "medium", "close-up"
   isSelected  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -222,34 +229,38 @@ model ImageGeneration {
   model           String   @default("")
   provider        String   @default("")
   size            String   @default("1024x1024")
-  frameType       String?  // "first_frame", "last_frame", "character_portrait", "scene_establishing", "storyboard_frame"
-  referenceImages String?  // JSON array of reference image URLs used
-  taskId          String?  // Async task ID for polling
-  imageUrl        String?  // Final image URL
-  status          String   @default("pending")  // pending, processing, completed, failed
+  frameType       String? // "first_frame", "last_frame", "character_portrait", "scene_establishing", "storyboard_frame"
+  referenceImages String? // JSON array of reference image URLs used
+  taskId          String? // Async task ID for polling
+  imageUrl        String? // Final image URL
+  status          String   @default("pending") // pending, processing, completed, failed
   errorMsg        String?
-  tokensUsed      Int?     // Estimated tokens consumed
-  generationMs    Int?     // Generation latency in milliseconds
-  costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 1 standard image)
+  tokensUsed      Int? // Estimated tokens consumed
+  generationMs    Int? // Generation latency in milliseconds
+  costCredits     Float    @default(0) // Normalized cost credits (1 credit ≈ 1 standard image)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
+
+  @@index([dramaId, status])
+  @@index([dramaId, createdAt])
+  @@index([dramaId, costCredits])
 }
 
 // ============ AI Provider Configuration ============
 model AiProvider {
-  id          String   @id @default(cuid())
-  category    String   // "llm" | "image" | "video" | "tts"
-  provider    String   // "nvidia" | "openai" | "stability" | "z-ai-sdk" | "siliconflow" | "volcengine" | "fish-audio" | custom
-  name        String   // Display name
-  apiKey      String   @default("")
-  baseUrl     String   @default("")
-  model       String   @default("")
-  isActive    Boolean  @default(false)
-  sort        Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  category  String // "llm" | "image" | "video" | "tts"
+  provider  String // "nvidia" | "openai" | "stability" | "z-ai-sdk" | "siliconflow" | "volcengine" | "fish-audio" | custom
+  name      String // Display name
+  apiKey    String   @default("")
+  baseUrl   String   @default("")
+  model     String   @default("")
+  isActive  Boolean  @default(false)
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([category, provider])
 }
@@ -257,16 +268,16 @@ model AiProvider {
 // ============ User Provider Configuration ============
 // Per-user API key overrides — when set, takes priority over global AiProvider
 model UserProvider {
-  id          String   @id @default(cuid())
-  userId      String
-  category    String   // "llm" | "image" | "video" | "tts"
-  provider    String   // "openai" | "siliconflow" | etc.
-  apiKey      String   @default("")
-  baseUrl     String   @default("")
-  model       String   @default("")
-  isActive    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  category  String // "llm" | "image" | "video" | "tts"
+  provider  String // "openai" | "siliconflow" | etc.
+  apiKey    String   @default("")
+  baseUrl   String   @default("")
+  model     String   @default("")
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -275,41 +286,45 @@ model UserProvider {
 
 // ============ Agent Configuration ============
 model AgentConfig {
-  id          String   @id @default(cuid())
-  agentType   String   @unique  // "script_rewriter" | "extractor" | "storyboard_breaker" | "voice_assigner" | "grid_prompt_generator"
+  id           String   @id @default(cuid())
+  agentType    String   @unique // "script_rewriter" | "extractor" | "storyboard_breaker" | "voice_assigner" | "grid_prompt_generator"
   systemPrompt String?
-  model       String?
-  temperature Float    @default(0.7)
-  maxTokens   Int      @default(4096)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  model        String?
+  temperature  Float    @default(0.7)
+  maxTokens    Int      @default(4096)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ============ Video Generation Tracking ============
 model VideoGeneration {
-  id              String   @id @default(cuid())
-  storyboardId    String?
-  dramaId         String?
-  provider        String   @default("")
-  model           String   @default("")
-  prompt          String   @default("")
-  referenceMode   String?  // "first_frame", "first_last", "text_only"
-  firstFrameUrl   String?
-  lastFrameUrl    String?
-  duration        Int      @default(5)
-  aspectRatio     String   @default("16:9")
-  taskId          String?  // Async task ID for polling
-  videoUrl        String?
-  status          String   @default("pending") // pending, processing, completed, failed
-  errorMsg        String?
-  tokensUsed      Int?     // Estimated tokens consumed
-  generationMs    Int?     // Generation latency in milliseconds
-  costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 5s standard video)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            String   @id @default(cuid())
+  storyboardId  String?
+  dramaId       String?
+  provider      String   @default("")
+  model         String   @default("")
+  prompt        String   @default("")
+  referenceMode String? // "first_frame", "first_last", "text_only"
+  firstFrameUrl String?
+  lastFrameUrl  String?
+  duration      Int      @default(5)
+  aspectRatio   String   @default("16:9")
+  taskId        String? // Async task ID for polling
+  videoUrl      String?
+  status        String   @default("pending") // pending, processing, completed, failed
+  errorMsg      String?
+  tokensUsed    Int? // Estimated tokens consumed
+  generationMs  Int? // Generation latency in milliseconds
+  costCredits   Float    @default(0) // Normalized cost credits (1 credit ≈ 5s standard video)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  drama           Drama?   @relation(fields: [dramaId], references: [id], onDelete: SetNull)
+  drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
+
+  @@index([dramaId, status])
+  @@index([dramaId, createdAt])
+  @@index([dramaId, costCredits])
 }
 
 // ============ Prop (道具) ============
@@ -317,16 +332,16 @@ model Prop {
   id          String   @id @default(cuid())
   dramaId     String
   name        String
-  category    String   @default("other")  // 日常/武器/交通/装饰/信物/科技/其他
+  category    String   @default("other") // 日常/武器/交通/装饰/信物/科技/其他
   description String   @default("")
-  imagePrompt String?                      // AI绘图英文提示词
-  imageUrl    String?                      // 道具图片
+  imagePrompt String? // AI绘图英文提示词
+  imageUrl    String? // 道具图片
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetId String?                     // Reference to Asset if derived from library
+  assetId String? // Reference to Asset if derived from library
 
-  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  drama Drama  @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@unique([dramaId, name])
@@ -334,40 +349,40 @@ model Prop {
 
 // ============ Generation Cost Tracking ============
 model GenerationCost {
-  id          String   @id @default(cuid())
-  dramaId     String
-  episodeId   String?  // null = drama-level
-  category    String   // "image" | "video" | "tts" | "llm"
-  provider    String
-  model       String
-  credits     Float    @default(0)
-  tokensUsed  Int      @default(0)
-  count       Int      @default(1)  // Number of generations
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  dramaId    String
+  episodeId  String? // null = drama-level
+  category   String // "image" | "video" | "tts" | "llm"
+  provider   String
+  model      String
+  credits    Float    @default(0)
+  tokensUsed Int      @default(0)
+  count      Int      @default(1) // Number of generations
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  drama       Drama    @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
 }
 
 // ============ Global Asset Library ============
 model Asset {
   id          String   @id @default(cuid())
   name        String
-  category    String   // "character" | "scene" | "prop"
-  subcategory String?  // Character.role / Prop.category / Scene.timeOfDay
-  tags        String   @default("[]")  // JSON array of tags
-  thumbnail   String?  // Preview image URL
+  category    String // "character" | "scene" | "prop"
+  subcategory String? // Character.role / Prop.category / Scene.timeOfDay
+  tags        String   @default("[]") // JSON array of tags
+  thumbnail   String? // Preview image URL
   userId      String?
   isPublic    Boolean  @default(true)
   usageCount  Int      @default(0)
   description String   @default("")
   imagePrompt String?
-  imageUrls   String   @default("[]")  // JSON array of image URLs
-  data        String   @default("{}")  // Category-specific fields as JSON
+  imageUrls   String   @default("[]") // JSON array of image URLs
+  data        String   @default("{}") // Category-specific fields as JSON
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   characters Character[]
   scenes     Scene[]
   props      Prop[]
@@ -378,8 +393,8 @@ model Novel {
   id            String   @id @default(cuid())
   dramaId       String   @unique
   title         String   @default("")
-  chapters      String   @default("[]")    // JSON: [{ index, title, content }]
-  parsedContent String   @default("{}")    // JSON: parsed events/skeleton data
+  chapters      String   @default("[]") // JSON: [{ index, title, content }]
+  parsedContent String   @default("{}") // JSON: parsed events/skeleton data
   parseStatus   String   @default("pending") // pending | parsing | parsed | failed
   fileSize      Int      @default(0)
   fileName      String   @default("")
@@ -391,15 +406,15 @@ model Novel {
 
 // ============ Video Merge Tracking ============
 model VideoMerge {
-  id          String   @id @default(cuid())
-  episodeId   String
-  dramaId     String?
-  status      String   @default("pending") // pending, processing, completed, failed
-  mergedUrl   String?
-  duration    Int      @default(0)
-  errorMsg    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  episodeId String
+  dramaId   String?
+  status    String   @default("pending") // pending, processing, completed, failed
+  mergedUrl String?
+  duration  Int      @default(0)
+  errorMsg  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }
@@ -409,16 +424,16 @@ model DramaMember {
   id        String   @id @default(cuid())
   dramaId   String
   userId    String
-  role      String   @default("viewer")  // "owner" | "editor" | "viewer"
-  invitedBy String?  // userId of the inviter
-  status    String   @default("active")  // "pending" | "active" | "removed"
+  role      String   @default("viewer") // "owner" | "editor" | "viewer"
+  invitedBy String? // userId of the inviter
+  status    String   @default("active") // "pending" | "active" | "removed"
   joinedAt  DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  drama    Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
-  user     User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inviter  User? @relation("InvitedMembers", fields: [invitedBy], references: [id], onDelete: SetNull)
+  drama   Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter User? @relation("InvitedMembers", fields: [invitedBy], references: [id], onDelete: SetNull)
 
   @@unique([dramaId, userId])
 }
@@ -439,4 +454,169 @@ model Comment {
   episode    Episode?    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   storyboard Storyboard? @relation(fields: [storyboardId], references: [id], onDelete: Cascade)
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ════════════════════════════════════════════════════════════
+// C1: Generation History — TTS generation tracking
+// ════════════════════════════════════════════════════════════
+
+model TtsGeneration {
+  id           String   @id @default(cuid())
+  storyboardId String?
+  characterId  String?
+  dramaId      String?
+  text         String   @default("")
+  voiceId      String?
+  voiceName    String?
+  provider     String   @default("")
+  model        String   @default("")
+  audioUrl     String?
+  duration     Int      @default(0) // Duration in seconds
+  taskId       String?
+  status       String   @default("pending") // pending, processing, completed, failed
+  errorMsg     String?
+  costCredits  Float    @default(0)
+  generationMs Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
+
+  @@index([dramaId, status])
+  @@index([dramaId, createdAt])
+  @@index([dramaId, costCredits])
+}
+
+// ════════════════════════════════════════════════════════════
+// C2: Budget Control & Alerts
+// ════════════════════════════════════════════════════════════
+
+model Budget {
+  id             String   @id @default(cuid())
+  userId         String
+  period         String   @default("monthly") // daily | weekly | monthly
+  limit          Float    @default(1000) // Credit limit
+  currentUsage   Float    @default(0)
+  alertThreshold Int      @default(80) // Percentage (50, 75, 90, 100)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts BudgetAlert[]
+
+  @@index([userId, enabled])
+}
+
+model BudgetAlert {
+  id        String   @id @default(cuid())
+  budgetId  String
+  type      String // "warning" | "exceeded"
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId, read])
+}
+
+// ════════════════════════════════════════════════════════════
+// C3: Digital Actor / Character IP Licensing (Marketplace)
+
+model CharacterTemplate {
+  id              String   @id @default(cuid())
+  creatorId       String
+  name            String
+  description     String   @default("")
+  personality     String   @default("")
+  appearance      String   @default("")
+  referenceImages String   @default("[]") // JSON array of image URLs
+  tags            String   @default("[]") // JSON array of tags
+  category        String   @default("现代") // 古风/现代/科幻/奇幻/职场/校园
+  licenseType     String   @default("free") // free | paid | exclusive
+  price           Float    @default(0)
+  downloadCount   Int      @default(0)
+  rating          Float    @default(0)
+  featured        Boolean  @default(false)
+  published       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  creator   User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  purchases TemplatePurchase[]
+  reviews   TemplateReview[]
+
+  @@index([category, published])
+  @@index([published, featured])
+  @@index([creatorId])
+}
+
+model TemplatePurchase {
+  id          String   @id @default(cuid())
+  templateId  String
+  buyerId     String
+  price       Float    @default(0)
+  licenseType String   @default("free")
+  createdAt   DateTime @default(now())
+
+  template CharacterTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  buyer    User              @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, buyerId])
+  @@index([buyerId])
+}
+
+model TemplateReview {
+  id         String   @id @default(cuid())
+  templateId String
+  userId     String
+  rating     Int      @default(5) // 1-5
+  comment    String   @default("")
+  createdAt  DateTime @default(now())
+
+  template CharacterTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, userId])
+  @@index([templateId])
+}
+
+// ════════════════════════════════════════════════════════════
+// C4: One-Click Publish & Distribution
+// ════════════════════════════════════════════════════════════
+
+model PublishRecord {
+  id              String    @id @default(cuid())
+  dramaId         String
+  episodeId       String?
+  platform        String // youtube | bilibili | douyin | xiaohongshu | custom
+  platformVideoId String?
+  title           String    @default("")
+  description     String    @default("")
+  tags            String    @default("[]") // JSON array
+  status          String    @default("pending") // pending | uploading | published | failed
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  drama           Drama     @relation(fields: [dramaId], references: [id])
+
+  @@index([dramaId, status])
+  @@index([dramaId, platform])
+}
+
+model PublishConfig {
+  id           String   @id @default(cuid())
+  userId       String
+  platform     String // youtube | bilibili | douyin | xiaohongshu | custom
+  accessToken  String   @default("") // Encrypted
+  refreshToken String   @default("") // Encrypted
+  accountInfo  String   @default("{}") // JSON: { name, avatar, id }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([userId])
 }

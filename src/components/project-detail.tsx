@@ -24,13 +24,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
 import { CostStatsPanel } from '@/components/episode/cost-stats-panel'
 import { CollaborationPanel } from '@/components/collaboration-panel'
 import { ProjectDashboard } from '@/components/project-dashboard'
+import { GenerationHistory } from '@/components/generation-history'
+import { PublishDialog } from '@/components/publish-dialog'
+import { PublishRecordsPanel } from '@/components/publish/publish-records-panel'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -390,6 +394,10 @@ export function ProjectDetailView() {
 
   // Dashboard view
   const [showDashboard, setShowDashboard] = useState(false)
+
+  // Generation History & Publish tabs
+  const [detailTab, setDetailTab] = useState<'episodes' | 'history' | 'publish-records'>('episodes')
+  const [publishOpen, setPublishOpen] = useState(false)
 
   // Import from library dialog
   const [importOpen, setImportOpen] = useState(false)
@@ -765,6 +773,33 @@ export function ProjectDetailView() {
                   <Activity className="size-3.5" />
                   <span className="hidden sm:inline">看板</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'history' ? 'episodes' : 'history')}
+                  className={`text-xs gap-1 ${detailTab === 'history' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <History className="size-3.5" />
+                  <span className="hidden sm:inline">生成历史</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'publish-records' ? 'episodes' : 'publish-records')}
+                  className={`text-xs gap-1 ${detailTab === 'publish-records' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <Send className="size-3.5" />
+                  <span className="hidden sm:inline">分发记录</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPublishOpen(true)}
+                  className="text-xs gap-1"
+                >
+                  <Upload className="size-3.5" />
+                  <span className="hidden sm:inline">发布</span>
+                </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">添加集</span>
@@ -795,10 +830,18 @@ export function ProjectDetailView() {
         </div>
       )}
 
-      {/* Episodes list + Collaboration sidebar */}
+      {/* Episodes list / Generation History / Publish Records + Collaboration sidebar */}
       <div className="flex-1 flex overflow-hidden">
         {showDashboard && drama ? (
           <ProjectDashboard dramaId={drama.id} onBack={() => setShowDashboard(false)} />
+        ) : detailTab === 'history' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            <GenerationHistory dramaId={drama.id} />
+          </main>
+        ) : detailTab === 'publish-records' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            <PublishRecordsPanel dramaId={drama.id} />
+          </main>
         ) : (
         <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
         {loading && !drama ? (
