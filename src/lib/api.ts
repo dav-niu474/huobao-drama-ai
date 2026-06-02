@@ -1506,7 +1506,7 @@ export const api = {
       return request<{ comments: any[] }>(`/api/dramas/${dramaId}/comments${qs ? `?${qs}` : ''}`)
     },
 
-    add: (dramaId: string, data: { content: string; episodeId?: string; storyboardId?: string }) =>
+    add: (dramaId: string, data: { content: string; episodeId?: string; storyboardId?: string; parentId?: string; position?: string; mentions?: string }) =>
       request<{ comment: any }>(`/api/dramas/${dramaId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

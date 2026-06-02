@@ -77,7 +77,7 @@ export async function GET(
   }
 }
 
-// POST /api/dramas/[id]/comments — Add a comment
+// POST /api/dramas/[id]/comments — Add a comment (with thread/position/mention support)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -91,14 +91,25 @@ export async function POST(
     if ('error' in access) return access.error
 
     const body = await request.json()
-    const { content, episodeId, storyboardId } = body as {
+    const { content, episodeId, storyboardId, parentId, position, mentions } = body as {
       content: string
       episodeId?: string
       storyboardId?: string
+      parentId?: string
+      position?: string     // JSON: { x: 0.5, y: 0.3 }
+      mentions?: string     // JSON: ["userId1", "userId2"]
     }
 
     if (!content || !content.trim()) {
       return NextResponse.json({ error: '评论内容不能为空' }, { status: 400 })
+    }
+
+    // Validate parentId if provided
+    if (parentId) {
+      const parent = await db.comment.findUnique({ where: { id: parentId } })
+      if (!parent || parent.dramaId !== dramaId) {
+        return NextResponse.json({ error: '父评论不存在' }, { status: 400 })
+      }
     }
 
     const comment = await db.comment.create({
@@ -108,9 +119,26 @@ export async function POST(
         content: content.trim(),
         episodeId: episodeId || null,
         storyboardId: storyboardId || null,
+        parentId: parentId || null,
+        position: position || null,
+        mentions: mentions || '[]',
       },
       include: {
         user: { select: { name: true, avatar: true } },
+      },
+    })
+
+    // Log activity
+    const activityType = parentId ? 'comment_reply' : 'comment_add'
+    const description = parentId ? '回复了评论' : '添加了评论'
+    await db.activity.create({
+      data: {
+        userId: auth.userId,
+        dramaId,
+        episodeId: episodeId || null,
+        type: activityType,
+        description,
+        metadata: JSON.stringify({ commentId: comment.id, contentPreview: content.trim().slice(0, 50) }),
       },
     })
 
