@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
-  directUrl         = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ============ User (Auth) ============
@@ -471,7 +470,7 @@ model Comment {
   episode    Episode?    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   storyboard Storyboard? @relation(fields: [storyboardId], references: [id], onDelete: Cascade)
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent     Comment?    @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  parent     Comment?    @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   replies    Comment[]   @relation("CommentReplies")
 }
 

@@ -1,7 +1,6 @@
 // ============================================================
 // Build script: ensures PostgreSQL schema + generates client + pushes
-// The committed schema.prisma uses PostgreSQL (production source of truth).
-// If pre-dev.js switched it to SQLite for local dev, this restores it.
+// Restores schema from SQLite (local dev) back to PostgreSQL (Vercel)
 // ============================================================
 
 const fs = require('fs')
@@ -24,6 +23,7 @@ function ensurePostgresqlSchema() {
   provider          = "postgresql"
   url               = env("DATABASE_URL")
   directUrl         = env("DIRECT_URL")
+  relationMode      = "prisma"
 }`
     )
 
@@ -63,7 +63,7 @@ if (runtimeUrl) {
   console.warn('[build] WARNING: No PostgreSQL URL found. Database features may not work.')
 }
 
-// Step 3: Generate Prisma client (with PostgreSQL schema)
+// Step 3: Generate Prisma client
 try {
   console.log('[build] Generating Prisma client...')
   execSync('npx prisma generate', {
@@ -79,8 +79,6 @@ try {
 // Step 4: Push schema to database with retry logic
 // This is critical for adding new models (like DramaMember, Comment)
 // to the PostgreSQL database on Vercel.
-// NOTE: prisma db push is non-destructive — it only adds new columns/tables,
-// it does NOT delete existing data or columns.
 if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   const MAX_RETRIES = 3
   let pushSucceeded = false
@@ -91,7 +89,7 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
       execSync('npx prisma db push --skip-generate', {
         stdio: 'pipe',
         env: { ...process.env, DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl },
-        timeout: 60000
+        timeout: 60000  // Increased from 30s to 60s
       })
       console.log('[build] Schema pushed to PostgreSQL successfully')
       pushSucceeded = true
