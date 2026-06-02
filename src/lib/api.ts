@@ -568,6 +568,13 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+
+    reorder: (episodeId: string, orderedIds: string[]) =>
+      request<{ storyboards: Storyboard[] }>(`/api/episodes/${episodeId}/storyboards/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds }),
+      }),
   },
 
   // ---- AI endpoints ----
