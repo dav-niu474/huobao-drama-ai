@@ -75,3 +75,11 @@ data/uploads/
 # Ignore reference project and database
 Toonflow-app/
 db/
+
+# Local workspace copies (never commit)
+*-workspace/
+worklog.md
+.zscripts/dev.pid
+
+# BFG repo cleaner reports
+*.bfg-report/
