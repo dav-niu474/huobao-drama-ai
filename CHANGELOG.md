@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-02
+
+### Added
+- 商业化功能 — 生成历史记录、预算管控与用量统计、角色市场与一键发布
+- Drama.costStats API — 查询项目AI资源消耗明细
+- GenerationCost 数据模型 — 精确追踪LLM/图片/视频/TTS各项消耗
+- Asset 数据模型 — 统一管理角色/场景/道具资产状态
+- 小说(Novel)导入与解析 — 支持 TXT/DOCX/PDF 文件上传、自动提取剧本内容
+- 语音系统三项P0缺陷修复 — 音色分配/语音生成/音色预览
+- MiMo 供应商支持 — 小米 LLM + TTS 接入，8 个预置音色
+- MIT License 文件
+
+### Fixed
+- 修复Vercel登录崩溃 — Prisma schema 与 PostgreSQL 不匹配
+- 恢复原有PostgreSQL接入工作流，修复Drama.seriesId缺失问题
+- 清理误入仓库的本地工作空间文件（collab-workspace等）
+- 移除 .env 文件（含敏感密钥）并修复 .gitignore
+- 修复合并冲突残留 + 构建错误 + 运行时问题
+
+## [0.8.0] - 2026-06-02
+
+### Added
+- 可视化时间线编辑器 — 分镜拖拽排序、转场设置、音轨编辑、字幕叠加
+- 画布协同编辑系统 — SSE实时同步、协作者光标、资源锁定、评论标注
+- 多语言 i18n 支持 — next-intl 集成，zh-CN/en 双语切换
+- 系列化项目管理 — Series 模型，跨项目系列归组与统一管理
+- 语音系统完善 — TTS模型选择器重设计、音色库UI重设计、API修复
+
+### Fixed
+- 修复语音系统三项P0缺陷 — 音色分配/语音生成/音色预览
+- MiMo TTS 使用 Chat Completions 端点替代 /audio/speech
+- 修复 LLM 测试路径检测 TTS 模型 + assistant 消息
+
 ## [0.7.1] - 2026-05-30
 
 ### Added
