@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 // DELETE /api/series/[id]/members/[dramaId] — Remove drama from series
 export async function DELETE(
@@ -8,7 +9,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; dramaId: string }> }
 ) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     if (!session?.user) {
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
