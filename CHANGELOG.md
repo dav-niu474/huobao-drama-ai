@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-06-03
+
+### Fixed
+- 修复生产环境数据库schema不同步 — 14个新表/列缺失导致API 500错误
+- 重写 /api/migrate 端点 — 改用纯SQL DDL替代 `npx prisma db push`（后者在Vercel serverless中无法运行）
+- 修复 /api/dramas 500错误 — Drama.seriesId 列在PostgreSQL中不存在
+- 修复 /api/marketplace/templates 500错误 — CharacterTemplate表不存在
+- 新增数据库迁移支持：DramaMember、Comment、Presence、ResourceLock、Activity、Series、SeriesMember、TtsGeneration、Budget、BudgetAlert、CharacterTemplate、TemplatePurchase、TemplateReview、PublishRecord、PublishConfig
+
 ## [0.9.0] - 2026-06-02
 
 ### Added

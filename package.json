@@ -1,6 +1,6 @@
 {
   "name": "huobao-drama-ai",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "scripts": {
     "dev": "node scripts/pre-dev.js && next dev -p 3000 2>&1 | tee dev.log",
