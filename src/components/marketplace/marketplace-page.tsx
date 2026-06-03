@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -68,29 +69,28 @@ interface TemplateDetail extends Template {
   }>
 }
 
-// ── Category Config ──
-
-const CATEGORIES = [
-  { key: '', label: '全部' },
-  { key: '古风', label: '古风' },
-  { key: '现代', label: '现代' },
-  { key: '科幻', label: '科幻' },
-  { key: '奇幻', label: '奇幻' },
-  { key: '职场', label: '职场' },
-  { key: '校园', label: '校园' },
-]
-
-const SORT_OPTIONS = [
-  { key: 'featured', label: '热门' },
-  { key: 'newest', label: '最新' },
-  { key: 'rating', label: '评分最高' },
-  { key: 'downloads', label: '下载最多' },
-  { key: 'free', label: '免费' },
-]
-
 // ── Main Component ──
 
 export function MarketplacePage() {
+  const tm = useTranslations('marketplace')
+  const tc = useTranslations('common')
+
+  const CATEGORY_KEYS = ['', '古风', '现代', '科幻', '奇幻', '职场', '校园']
+  const CATEGORY_LABEL_KEYS = ['all', 'categoryAncient', 'categoryModern', 'categoryScifi', 'categoryFantasy', 'categoryWorkplace', 'categoryCampus'] as const
+
+  const CATEGORIES = CATEGORY_KEYS.map((key, i) => ({
+    key,
+    label: tm(CATEGORY_LABEL_KEYS[i]),
+  }))
+
+  const SORT_OPTIONS = [
+    { key: 'featured', labelKey: 'sortFeatured' as const },
+    { key: 'newest', labelKey: 'sortNewest' as const },
+    { key: 'rating', labelKey: 'sortRating' as const },
+    { key: 'downloads', labelKey: 'sortDownloads' as const },
+    { key: 'free', labelKey: 'sortFree' as const },
+  ]
+
   const [templates, setTemplates] = useState<Template[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -121,11 +121,11 @@ export function MarketplacePage() {
       setTemplates(data.templates || [])
       setTotal(data.total || 0)
     } catch (err) {
-      toast({ title: '加载失败', description: String(err), variant: 'destructive' })
+      toast({ title: tm('loadFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }, [page, sort, category, search, toast])
+  }, [page, sort, category, search, toast, tm])
 
   useEffect(() => {
     fetchTemplates()
@@ -139,7 +139,7 @@ export function MarketplacePage() {
       const data = await res.json()
       setDetailTemplate(data.template)
     } catch (err) {
-      toast({ title: '加载失败', variant: 'destructive' })
+      toast({ title: tm('loadFailed'), variant: 'destructive' })
     } finally {
       setDetailLoading(false)
     }
@@ -152,16 +152,16 @@ export function MarketplacePage() {
       const data = await res.json()
       if (!res.ok) {
         if (data.error === 'Already purchased') {
-          toast({ title: '已购买此模板' })
+          toast({ title: tm('alreadyPurchased') })
         } else {
           throw new Error(data.error)
         }
       } else {
-        toast({ title: '购买成功！模板已添加到资产库' })
+        toast({ title: tm('purchaseSuccess') })
       }
       fetchTemplates()
     } catch (err) {
-      toast({ title: '购买失败', description: String(err), variant: 'destructive' })
+      toast({ title: tm('purchaseFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setPurchasing(null)
     }
@@ -175,13 +175,13 @@ export function MarketplacePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating: reviewRating, comment: reviewComment }),
       })
-      if (!res.ok) throw new Error('评价失败')
-      toast({ title: '评价已提交' })
+      if (!res.ok) throw new Error(tm('reviewFailed'))
+      toast({ title: tm('reviewSubmitted') })
       setReviewComment('')
       setReviewRating(5)
       handleViewDetail(detailTemplate.id)
     } catch (err) {
-      toast({ title: '评价失败', variant: 'destructive' })
+      toast({ title: tm('reviewFailed'), variant: 'destructive' })
     }
   }
 
@@ -189,7 +189,7 @@ export function MarketplacePage() {
     <div className="flex gap-4 h-full">
       {/* Sidebar - Categories */}
       <div className="w-40 shrink-0 space-y-1 hidden sm:block">
-        <h3 className="text-xs font-medium text-muted-foreground mb-2 px-2">分类</h3>
+        <h3 className="text-xs font-medium text-muted-foreground mb-2 px-2">{tm('category')}</h3>
         {CATEGORIES.map(cat => (
           <button
             key={cat.key}
@@ -212,7 +212,7 @@ export function MarketplacePage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
-              placeholder="搜索角色模板..."
+              placeholder={tm('searchPlaceholder')}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-8 h-8 text-xs"
@@ -225,12 +225,12 @@ export function MarketplacePage() {
             </SelectTrigger>
             <SelectContent>
               {SORT_OPTIONS.map(opt => (
-                <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>
+                <SelectItem key={opt.key} value={opt.key}>{tm(opt.labelKey)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Button size="sm" className="text-xs h-8 gap-1" onClick={() => setPublishOpen(true)}>
-            <Plus className="size-3.5" />发布模板
+            <Plus className="size-3.5" />{tm('publishTemplate')}
           </Button>
         </div>
 
@@ -249,7 +249,7 @@ export function MarketplacePage() {
         ) : templates.length === 0 ? (
           <div className="py-16 text-center text-muted-foreground">
             <Users className="size-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">暂无角色模板</p>
+            <p className="text-sm">{tm('noTemplates')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -277,7 +277,7 @@ export function MarketplacePage() {
                       <h4 className="text-sm font-medium truncate">{t.name}</h4>
                       {t.licenseType === 'free' ? (
                         <Badge className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shrink-0">
-                          <Gift className="size-2.5 mr-0.5" />免费
+                          <Gift className="size-2.5 mr-0.5" />{tm('free')}
                         </Badge>
                       ) : t.licenseType === 'exclusive' ? (
                         <Badge className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20 shrink-0">
@@ -349,19 +349,19 @@ export function MarketplacePage() {
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <span className="text-muted-foreground text-xs">描述</span>
+                  <span className="text-muted-foreground text-xs">{tm('description')}</span>
                   <p className="mt-0.5 text-xs">{detailTemplate.description || '—'}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-xs">性格</span>
+                  <span className="text-muted-foreground text-xs">{tm('personality')}</span>
                   <p className="mt-0.5 text-xs">{detailTemplate.personality || '—'}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-xs">外貌</span>
+                  <span className="text-muted-foreground text-xs">{tm('appearance')}</span>
                   <p className="mt-0.5 text-xs">{detailTemplate.appearance || '—'}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-xs">分类</span>
+                  <span className="text-muted-foreground text-xs">{tm('categoryLabel')}</span>
                   <p className="mt-0.5 text-xs">{detailTemplate.category}</p>
                 </div>
               </div>
@@ -369,7 +369,7 @@ export function MarketplacePage() {
               {/* Stats */}
               <div className="flex items-center gap-4 text-xs">
                 <span className="flex items-center gap-1"><Star className="size-3.5 text-amber-500" />{detailTemplate.rating.toFixed(1)}</span>
-                <span className="flex items-center gap-1"><Download className="size-3.5" />{detailTemplate.downloadCount} 下载</span>
+                <span className="flex items-center gap-1"><Download className="size-3.5" />{detailTemplate.downloadCount} {tm('downloads')}</span>
                 <span className="flex items-center gap-1"><Users className="size-3.5" />{detailTemplate.creator.name}</span>
               </div>
 
@@ -395,7 +395,7 @@ export function MarketplacePage() {
                 ) : (
                   <ShoppingCart className="size-4" />
                 )}
-                {detailTemplate.licenseType === 'free' ? '免费获取' : `购买 ¥${detailTemplate.price}`}
+                {detailTemplate.licenseType === 'free' ? tm('getFree') : tm('purchase', { price: detailTemplate.price })}
               </Button>
 
               <Separator />
@@ -403,10 +403,10 @@ export function MarketplacePage() {
               {/* Reviews */}
               <div>
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                  <MessageSquare className="size-4" />评价 ({detailTemplate.reviews.length})
+                  <MessageSquare className="size-4" />{tm('reviews', { count: detailTemplate.reviews.length })}
                 </h4>
                 {detailTemplate.reviews.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">暂无评价</p>
+                  <p className="text-xs text-muted-foreground py-2">{tm('noReviews')}</p>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {detailTemplate.reviews.map(review => (
@@ -428,7 +428,7 @@ export function MarketplacePage() {
                 {/* Add review */}
                 <div className="mt-3 p-3 rounded-md border border-border/50 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Label className="text-xs">评分</Label>
+                    <Label className="text-xs">{tm('rating')}</Label>
                     <div className="flex gap-0.5">
                       {Array.from({ length: 5 }).map((_, i) => (
                         <button key={i} onClick={() => setReviewRating(i + 1)}>
@@ -439,12 +439,12 @@ export function MarketplacePage() {
                   </div>
                   <div className="flex gap-2">
                     <Input
-                      placeholder="写评价..."
+                      placeholder={tm('writeReview')}
                       value={reviewComment}
                       onChange={e => setReviewComment(e.target.value)}
                       className="text-xs"
                     />
-                    <Button size="sm" onClick={handleReview} className="text-xs shrink-0">提交</Button>
+                    <Button size="sm" onClick={handleReview} className="text-xs shrink-0">{tm('submit')}</Button>
                   </div>
                 </div>
               </div>
@@ -470,6 +470,9 @@ function PublishTemplateDialog({
   onOpenChange: (open: boolean) => void
   onPublished: () => void
 }) {
+  const tm = useTranslations('marketplace')
+  const tc = useTranslations('common')
+
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [personality, setPersonality] = useState('')
@@ -483,7 +486,7 @@ function PublishTemplateDialog({
 
   const handlePublish = async () => {
     if (!name.trim()) {
-      toast({ title: '请输入模板名称', variant: 'destructive' })
+      toast({ title: tm('enterTemplateName'), variant: 'destructive' })
       return
     }
     setSaving(true)
@@ -502,8 +505,8 @@ function PublishTemplateDialog({
           tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         }),
       })
-      if (!res.ok) throw new Error('发布失败')
-      toast({ title: '模板已发布到市场！' })
+      if (!res.ok) throw new Error(tm('publishFailed'))
+      toast({ title: tm('publishSuccess') })
       onOpenChange(false)
       onPublished()
       // Reset form
@@ -516,7 +519,7 @@ function PublishTemplateDialog({
       setPrice(0)
       setTags('')
     } catch (err) {
-      toast({ title: '发布失败', description: String(err), variant: 'destructive' })
+      toast({ title: tm('publishFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -526,68 +529,68 @@ function PublishTemplateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>发布角色模板</DialogTitle>
+          <DialogTitle>{tm('publishCharacterTemplate')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">名称 *</Label>
-            <Input value={name} onChange={e => setName(e.target.value)} className="text-xs" placeholder="角色模板名称" />
+            <Label className="text-xs">{tm('templateName')} *</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} className="text-xs" placeholder={tm('templateNamePlaceholder')} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">描述</Label>
+            <Label className="text-xs">{tm('templateDescription')}</Label>
             <Textarea value={description} onChange={e => setDescription(e.target.value)} className="text-xs" rows={2} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">性格</Label>
+            <Label className="text-xs">{tm('templatePersonality')}</Label>
             <Textarea value={personality} onChange={e => setPersonality(e.target.value)} className="text-xs" rows={2} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">外貌描述</Label>
+            <Label className="text-xs">{tm('templateAppearance')}</Label>
             <Textarea value={appearance} onChange={e => setAppearance(e.target.value)} className="text-xs" rows={2} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">分类</Label>
+              <Label className="text-xs">{tm('templateCategory')}</Label>
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="古风">古风</SelectItem>
-                  <SelectItem value="现代">现代</SelectItem>
-                  <SelectItem value="科幻">科幻</SelectItem>
-                  <SelectItem value="奇幻">奇幻</SelectItem>
-                  <SelectItem value="职场">职场</SelectItem>
-                  <SelectItem value="校园">校园</SelectItem>
+                  <SelectItem value="古风">{tm('categoryAncient')}</SelectItem>
+                  <SelectItem value="现代">{tm('categoryModern')}</SelectItem>
+                  <SelectItem value="科幻">{tm('categoryScifi')}</SelectItem>
+                  <SelectItem value="奇幻">{tm('categoryFantasy')}</SelectItem>
+                  <SelectItem value="职场">{tm('categoryWorkplace')}</SelectItem>
+                  <SelectItem value="校园">{tm('categoryCampus')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">授权类型</Label>
+              <Label className="text-xs">{tm('licenseType')}</Label>
               <Select value={licenseType} onValueChange={setLicenseType}>
                 <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="free">免费</SelectItem>
-                  <SelectItem value="paid">付费</SelectItem>
-                  <SelectItem value="exclusive">独家</SelectItem>
+                  <SelectItem value="free">{tm('free')}</SelectItem>
+                  <SelectItem value="paid">{tm('paid')}</SelectItem>
+                  <SelectItem value="exclusive">{tm('exclusive')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           {licenseType !== 'free' && (
             <div className="space-y-1.5">
-              <Label className="text-xs">价格 (元)</Label>
+              <Label className="text-xs">{tm('priceYuan')}</Label>
               <Input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} className="text-xs" />
             </div>
           )}
           <div className="space-y-1.5">
-            <Label className="text-xs">标签 (逗号分隔)</Label>
-            <Input value={tags} onChange={e => setTags(e.target.value)} className="text-xs" placeholder="古风, 女侠, 飘逸" />
+            <Label className="text-xs">{tm('tagsLabel')}</Label>
+            <Input value={tags} onChange={e => setTags(e.target.value)} className="text-xs" placeholder={tm('tagsPlaceholder')} />
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>{tc('cancel')}</Button>
           <Button size="sm" onClick={handlePublish} disabled={saving}>
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-            发布
+            {tc('create')}
           </Button>
         </div>
       </DialogContent>

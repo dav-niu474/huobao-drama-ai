@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
+import { useTranslations } from 'next-intl'
 import { useAppStore, type DramaDetail, type Episode, type LockedConfig } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -24,7 +25,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send, MoreHorizontal } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
@@ -38,40 +45,48 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 // ── helpers ──────────────────────────────────────────────────
 
-const STYLE_LABELS: Record<string, string> = {
-  realistic: '写实',
-  anime: '动漫',
-  cinematic: '电影感',
-  comic: '漫画',
-  watercolor: '水彩',
-  '3d': '3D',
+const STYLE_ENTRIES: [string, string][] = [
+  ['realistic', 'styleRealistic'],
+  ['anime', 'styleAnime'],
+  ['cinematic', 'styleCinematic'],
+  ['comic', 'styleComic'],
+  ['watercolor', 'styleWatercolor'],
+  ['3d', 'style3d'],
+]
+
+function buildStyleLabels(tp: (key: string) => string): Record<string, string> {
+  const labels: Record<string, string> = {}
+  for (const [key, labelKey] of STYLE_ENTRIES) {
+    labels[key] = tp(labelKey)
+  }
+  return labels
 }
 
-function scriptStatusLabel(status: string): { label: string; color: string } {
+function scriptStatusLabel(status: string, tp: (key: string) => string): { label: string; color: string } {
   switch (status) {
     case 'completed':
-      return { label: '已完成', color: 'bg-emerald-500' }
+      return { label: tp('scriptStatusCompleted'), color: 'bg-emerald-500' }
     case 'processing':
-      return { label: '生成中', color: 'bg-amber-500' }
+      return { label: tp('scriptStatusProcessing'), color: 'bg-amber-500' }
     case 'failed':
-      return { label: '失败', color: 'bg-red-500' }
+      return { label: tp('scriptStatusFailed'), color: 'bg-red-500' }
     default:
-      return { label: '待创作', color: 'bg-zinc-500' }
+      return { label: tp('scriptStatusPending'), color: 'bg-zinc-500' }
   }
 }
 
-function relativeTime(dateStr: string): string {
+function relativeTime(dateStr: string, tc: (key: string, opts?: Record<string, number>) => string): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
   const diff = Math.max(0, now - then)
   const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
+  if (minutes < 1) return tc('justNow')
+  if (minutes < 60) return tc('minutesAgo', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}小时前`
+  if (hours < 24) return tc('hoursAgo', { count: hours })
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}天前`
-  return `${Math.floor(days / 30)}个月前`
+  if (days < 30) return tc('daysAgo', { count: days })
+  return tc('monthsAgo', { count: Math.floor(days / 30) })
 }
 
 function formatDuration(seconds: number): string {
@@ -90,11 +105,15 @@ function isLocked(lockedConfig: string | null | undefined): boolean {
 function EpisodeCard({
   episode,
   onClick,
+  tc,
+  tp,
 }: {
   episode: Episode
   onClick: () => void
+  tc: (key: string, opts?: Record<string, number>) => string
+  tp: (key: string, opts?: Record<string, number>) => string
 }) {
-  const status = scriptStatusLabel(episode.scriptStatus)
+  const status = scriptStatusLabel(episode.scriptStatus, tp)
   const storyboardCount = episode._count?.storyboards ?? 0
   const durationStr = formatDuration(episode.duration)
   const locked = isLocked(episode.lockedConfig)
@@ -117,7 +136,7 @@ function EpisodeCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-medium truncate">
-                {episode.title || `第${episode.episodeNumber}集`}
+                {episode.title || tp('episode', { number: episode.episodeNumber })}
               </h4>
               {/* Lock icon */}
               {locked && (
@@ -133,7 +152,7 @@ function EpisodeCard({
               {storyboardCount > 0 && (
                 <span className="flex items-center gap-1">
                   <Film className="size-3" />
-                  {storyboardCount}镜
+                  {storyboardCount}{tc('shots')}
                 </span>
               )}
               {durationStr && (
@@ -166,7 +185,7 @@ interface StageInfo {
   onClick: () => void
 }
 
-function ThreeStageProgress({ drama }: { drama: DramaDetail }) {
+function ThreeStageProgress({ drama, tc, tp }: { drama: DramaDetail; tc: (key: string, opts?: Record<string, number>) => string; tp: (key: string, opts?: Record<string, number>) => string }) {
   const navigateToScriptWorkbench = useAppStore((s) => s.navigateToScriptWorkbench)
   const navigateToAssetWorkbench = useAppStore((s) => s.navigateToAssetWorkbench)
   const navigateToEpisode = useAppStore((s) => s.navigateToEpisode)
@@ -220,31 +239,31 @@ function ThreeStageProgress({ drama }: { drama: DramaDetail }) {
     {
       key: 'script',
       icon: BookOpen,
-      label: '剧本生成',
+      label: tp('scriptGeneration'),
       status: scriptStage,
       stats: totalEpisodes > 0
-        ? `${episodesWithScript}/${totalEpisodes} 集已生成`
-        : '尚未开始',
+        ? tp('episodesGenerated', { completed: episodesWithScript, total: totalEpisodes })
+        : tp('notStarted'),
       onClick: () => navigateToScriptWorkbench(drama.id),
     },
     {
       key: 'assets',
       icon: Palette,
-      label: '素材管理',
+      label: tp('assetManagement'),
       status: assetStage,
       stats: hasAssets
-        ? `${charCount} 角色, ${sceneCount} 场景, ${propCount} 道具`
-        : '尚未提取',
+        ? tp('charSceneProp', { chars: charCount, scenes: sceneCount, props: propCount })
+        : tp('notExtracted'),
       onClick: () => navigateToAssetWorkbench(drama.id),
     },
     {
       key: 'production',
       icon: Film,
-      label: '管线生产',
+      label: tp('pipelineProduction'),
       status: productionStage,
       stats: totalEpisodes > 0
-        ? `${completedEpisodes}/${totalEpisodes} 集已完成`
-        : '尚未开始',
+        ? tp('episodesCompleted', { completed: completedEpisodes, total: totalEpisodes })
+        : tp('notStarted'),
       onClick: handleNavigateToProduction,
     },
   ]
@@ -256,9 +275,9 @@ function ThreeStageProgress({ drama }: { drama: DramaDetail }) {
   }
 
   const statusLabels: Record<StageStatus, string> = {
-    completed: '已完成',
-    'in-progress': '进行中',
-    pending: '待开始',
+    completed: tc('completed'),
+    'in-progress': tc('inProgress'),
+    pending: tc('pending'),
   }
 
   return (
@@ -343,6 +362,13 @@ export function ProjectDetailView() {
     loading,
   } = useAppStore()
   const { toast } = useToast()
+  const tc = useTranslations('common')
+  const tp = useTranslations('projectDetail')
+  const tn = useTranslations('nav')
+  const tpr = useTranslations('project')
+
+  // Build style labels once
+  const STYLE_LABELS = buildStyleLabels(tpr)
 
   // Add episode dialog
   const [addEpOpen, setAddEpOpen] = useState(false)
@@ -415,11 +441,11 @@ export function ProjectDetailView() {
       const detail = await api.dramas.get(selectedDramaId)
       setCurrentDrama(detail)
     } catch (err) {
-      toast({ title: '加载项目详情失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('loadDetailFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }, [selectedDramaId, setCurrentDrama, setLoading, toast])
+  }, [selectedDramaId, setCurrentDrama, setLoading, toast, tp])
 
   useEffect(() => {
     fetchDrama()
@@ -433,12 +459,12 @@ export function ProjectDetailView() {
       await api.episodes.create(selectedDramaId, {
         title: newEpTitle.trim() || undefined,
       })
-      toast({ title: '集数已添加' })
+      toast({ title: tp('episodeAdded') })
       setAddEpOpen(false)
       setNewEpTitle('')
       fetchDrama()
     } catch (err) {
-      toast({ title: '添加失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('addFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setAdding(false)
     }
@@ -463,9 +489,9 @@ export function ProjectDetailView() {
     try {
       await api.dramas.update(drama.id, { title: editTitle.trim() })
       await fetchDrama()
-      toast({ title: '项目名称已更新' })
+      toast({ title: tp('titleUpdated') })
     } catch (err) {
-      toast({ title: '更新失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('updateFailed'), description: String(err), variant: 'destructive' })
       setEditTitle(drama.title)
     } finally {
       setSavingTitle(false)
@@ -489,11 +515,11 @@ export function ProjectDetailView() {
         body: JSON.stringify({ action: 'lock' }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || '操作失败')
-      toast({ title: data.message || '已锁定全部集数' })
+      if (!res.ok) throw new Error(data.error || tp('operationFailed'))
+      toast({ title: data.message || tp('allEpisodesLocked') })
       fetchDrama()
     } catch (err) {
-      toast({ title: '批量锁定失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('bulkLockFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setBulkLoading(false)
     }
@@ -509,11 +535,11 @@ export function ProjectDetailView() {
         body: JSON.stringify({ action: 'unlock' }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || '操作失败')
-      toast({ title: data.message || '已解锁全部集数' })
+      if (!res.ok) throw new Error(data.error || tp('operationFailed'))
+      toast({ title: data.message || tp('allEpisodesUnlocked') })
       fetchDrama()
     } catch (err) {
-      toast({ title: '批量解锁失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('bulkUnlockFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setBulkLoading(false)
     }
@@ -575,11 +601,11 @@ export function ProjectDetailView() {
     setBatchLoading(true)
     try {
       await api.dramas.startBatchPipeline(selectedDramaId)
-      toast({ title: '批量管线已启动' })
+      toast({ title: tp('batchStarted') })
       setBatchPolling(true)
       fetchBatchStatus()
     } catch (err) {
-      toast({ title: '启动失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('startFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setBatchLoading(false)
     }
@@ -590,10 +616,10 @@ export function ProjectDetailView() {
     setBatchLoading(true)
     try {
       await api.dramas.pauseBatchPipeline(selectedDramaId)
-      toast({ title: '批量管线已暂停' })
+      toast({ title: tp('batchPaused') })
       fetchBatchStatus()
     } catch (err) {
-      toast({ title: '暂停失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('pauseFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setBatchLoading(false)
     }
@@ -604,11 +630,11 @@ export function ProjectDetailView() {
     setBatchLoading(true)
     try {
       await api.dramas.resumeBatchPipeline(selectedDramaId)
-      toast({ title: '批量管线已恢复' })
+      toast({ title: tp('batchResumed') })
       setBatchPolling(true)
       fetchBatchStatus()
     } catch (err) {
-      toast({ title: '恢复失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('resumeFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setBatchLoading(false)
     }
@@ -625,11 +651,11 @@ export function ProjectDetailView() {
       await api.dramas.update(drama.id, {
         defaultLockedConfig: Object.keys(clean).length > 0 ? JSON.stringify(clean) : 'null',
       } as any)
-      toast({ title: '项目默认AI配置已保存' })
+      toast({ title: tp('defaultAiConfigSaved') })
       setLockSettingsOpen(false)
       fetchDrama()
     } catch (err) {
-      toast({ title: '保存失败', description: String(err), variant: 'destructive' })
+      toast({ title: tp('saveFailed'), description: String(err), variant: 'destructive' })
     } finally {
       setSavingLockConfig(false)
     }
@@ -648,13 +674,14 @@ export function ProjectDetailView() {
               className="text-muted-foreground hover:text-foreground -ml-2"
             >
               <ArrowLeft className="size-4" />
-              <span className="hidden sm:inline">返回项目列表</span>
+              <span className="hidden sm:inline">{tn('backToProjects')}</span>
             </Button>
             <UserMenu />
           </div>
 
           {drama && (
-            <div className="flex items-start justify-between gap-4">
+            <div className="space-y-3">
+              {/* Title area - full width */}
               <div className="min-w-0">
                 {isEditingTitle ? (
                   <div className="flex items-center gap-2">
@@ -671,7 +698,7 @@ export function ProjectDetailView() {
                       className="text-xl sm:text-2xl font-bold h-auto py-0 px-1 border-primary/50"
                     />
                     {savingTitle && (
-                      <span className="text-xs text-muted-foreground animate-pulse">保存中...</span>
+                      <span className="text-xs text-muted-foreground animate-pulse">{tc('saving')}</span>
                     )}
                   </div>
                 ) : (
@@ -697,11 +724,14 @@ export function ProjectDetailView() {
                     <MapPin className="size-3" />{drama.scenes?.length ?? drama._count?.scenes ?? 0}
                   </span>
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Film className="size-3" />{drama.episodes?.length ?? drama._count?.episodes ?? 0}集
+                    <Film className="size-3" />{drama.episodes?.length ?? drama._count?.episodes ?? 0}{tc('episodes')}
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+
+              {/* Buttons row - wraps on small screens */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Primary actions */}
                 <Button
                   variant="outline"
                   size="sm"
@@ -709,101 +739,98 @@ export function ProjectDetailView() {
                     const { navigateToScriptWorkbench } = useAppStore.getState()
                     navigateToScriptWorkbench(drama.id)
                   }}
-                  className="text-xs gap-1"
+                  className="h-7 text-xs gap-1"
                 >
                   <Film className="size-3.5" />
-                  <span className="hidden sm:inline">剧本工坊</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCostStatsOpen(true)}
-                  className="text-xs gap-1"
-                >
-                  <Coins className="size-3.5" />
-                  <span className="hidden sm:inline">成本统计</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleOpenLockSettings}
-                  className="text-xs gap-1"
-                >
-                  <Settings2 className="size-3.5" />
-                  <span className="hidden sm:inline">AI锁定</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setImportOpen(true)}
-                  className="text-xs gap-1"
-                >
-                  <Library className="size-3.5" />
-                  <span className="hidden sm:inline">从资产库导入</span>
+                  <span className="hidden sm:inline">{tp('scriptWorkshop')}</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleStartBatch}
                   disabled={batchLoading || batchStatus?.status === 'running'}
-                  className="text-xs gap-1"
+                  className="h-7 text-xs gap-1"
                 >
                   {batchStatus?.status === 'running' ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <Clapperboard className="size-3.5" />
                   )}
-                  <span className="hidden sm:inline">批量生产</span>
+                  <span className="hidden sm:inline">{tp('batchProduction')}</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setCollabOpen(!collabOpen)}
-                  className={`text-xs gap-1 ${collabOpen ? 'border-primary bg-primary/5' : ''}`}
+                  className={`h-7 text-xs gap-1 ${collabOpen ? 'border-primary bg-primary/5' : ''}`}
                 >
                   <Users className="size-3.5" />
-                  <span className="hidden sm:inline">团队</span>
+                  <span className="hidden sm:inline">{tp('team')}</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setShowDashboard(!showDashboard)}
-                  className={`text-xs gap-1 ${showDashboard ? 'border-primary bg-primary/5' : ''}`}
+                  className={`h-7 text-xs gap-1 ${showDashboard ? 'border-primary bg-primary/5' : ''}`}
                 >
                   <Activity className="size-3.5" />
-                  <span className="hidden sm:inline">看板</span>
+                  <span className="hidden sm:inline">{tp('dashboard')}</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setDetailTab(detailTab === 'history' ? 'episodes' : 'history')}
-                  className={`text-xs gap-1 ${detailTab === 'history' ? 'border-primary bg-primary/5' : ''}`}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'history' ? 'border-primary bg-primary/5' : ''}`}
                 >
                   <History className="size-3.5" />
-                  <span className="hidden sm:inline">生成历史</span>
+                  <span className="hidden sm:inline">{tp('generationHistory')}</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setDetailTab(detailTab === 'publish-records' ? 'episodes' : 'publish-records')}
-                  className={`text-xs gap-1 ${detailTab === 'publish-records' ? 'border-primary bg-primary/5' : ''}`}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'publish-records' ? 'border-primary bg-primary/5' : ''}`}
                 >
                   <Send className="size-3.5" />
-                  <span className="hidden sm:inline">分发记录</span>
+                  <span className="hidden sm:inline">{tp('publishRecords')}</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPublishOpen(true)}
-                  className="text-xs gap-1"
+                  className="h-7 text-xs gap-1"
                 >
                   <Upload className="size-3.5" />
-                  <span className="hidden sm:inline">发布</span>
+                  <span className="hidden sm:inline">{tp('publish')}</span>
                 </Button>
-                <Button onClick={() => setAddEpOpen(true)} size="sm" className="amber-glow">
+                <Button onClick={() => setAddEpOpen(true)} size="sm" className="h-7 amber-glow">
                   <Plus className="size-4" />
-                  <span className="hidden sm:inline">添加集</span>
+                  <span className="hidden sm:inline">{tp('addEpisode')}</span>
                 </Button>
+
+                {/* Secondary actions in dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                      <MoreHorizontal className="size-3.5" />
+                      <span className="hidden sm:inline">{tp('moreActions')}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setCostStatsOpen(true)}>
+                      <Coins className="size-4" />
+                      {tp('costStats')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleOpenLockSettings}>
+                      <Settings2 className="size-4" />
+                      {tp('aiLock')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                      <Library className="size-4" />
+                      {tp('importFromLibrary')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           )}
@@ -825,7 +852,7 @@ export function ProjectDetailView() {
       {drama && (
         <div className="border-b border-border/50 bg-muted/20">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-            <ThreeStageProgress drama={drama} />
+            <ThreeStageProgress drama={drama} tc={tc} tp={tp} />
           </div>
         </div>
       )}
@@ -863,11 +890,11 @@ export function ProjectDetailView() {
             {/* Bulk action bar */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>{drama.episodes.length} 集</span>
+                <span>{drama.episodes.length} {tc('episodes')}</span>
                 {drama.episodes.some((ep) => isLocked(ep.lockedConfig)) && (
                   <Badge variant="secondary" className="text-[10px] gap-1 h-5">
                     <Lock className="size-2.5" />
-                    {drama.episodes.filter((ep) => isLocked(ep.lockedConfig)).length} 已锁定
+                    {drama.episodes.filter((ep) => isLocked(ep.lockedConfig)).length} {tp('locked')}
                   </Badge>
                 )}
               </div>
@@ -880,7 +907,7 @@ export function ProjectDetailView() {
                   disabled={bulkLoading}
                 >
                   {bulkLoading ? <Loader2 className="size-3 animate-spin" /> : <Lock className="size-3" />}
-                  锁定全部
+                  {tp('lockAll')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -890,7 +917,7 @@ export function ProjectDetailView() {
                   disabled={bulkLoading}
                 >
                   <LockOpen className="size-3" />
-                  解锁全部
+                  {tp('unlockAll')}
                 </Button>
               </div>
             </div>
@@ -903,17 +930,17 @@ export function ProjectDetailView() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Clapperboard className="size-4 text-primary" />
-                        <h3 className="text-sm font-medium">批量管线</h3>
+                        <h3 className="text-sm font-medium">{tp('batchPipeline')}</h3>
                         <Badge
                           variant={batchStatus.status === 'running' ? 'default' : batchStatus.status === 'completed' ? 'secondary' : batchStatus.status === 'paused' ? 'outline' : 'destructive'}
                           className="text-[10px] px-1.5 py-0"
                         >
-                          {batchStatus.status === 'running' ? '运行中' : batchStatus.status === 'completed' ? '已完成' : batchStatus.status === 'paused' ? '已暂停' : '失败'}
+                          {batchStatus.status === 'running' ? tp('batchRunning') : batchStatus.status === 'completed' ? tp('batchCompleted') : batchStatus.status === 'paused' ? tp('batchPaused') : tc('failed')}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {batchStatus.completedEpisodes}/{batchStatus.totalEpisodes} 集完成 ({batchStatus.progressPercent}%)
-                        {batchStatus.status === 'running' && ` — 当前: 第${batchStatus.currentEpisode}集 ${batchStatus.currentStep}`}
+                        {tp('episodeComplete', { completed: batchStatus.completedEpisodes, total: batchStatus.totalEpisodes })} ({batchStatus.progressPercent}%)
+                        {batchStatus.status === 'running' && ` — ${tp('currentEpisode', { episode: batchStatus.currentEpisode })} ${batchStatus.currentStep}`}
                       </p>
                       {/* Progress bar */}
                       <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
@@ -933,7 +960,7 @@ export function ProjectDetailView() {
                           disabled={batchLoading}
                         >
                           <Pause className="size-3" />
-                          暂停
+                          {tp('pause')}
                         </Button>
                       )}
                       {batchStatus.status === 'paused' && (
@@ -945,7 +972,7 @@ export function ProjectDetailView() {
                           disabled={batchLoading}
                         >
                           <Play className="size-3" />
-                          恢复
+                          {tp('resume')}
                         </Button>
                       )}
                       {batchStatus.status === 'completed' && (
@@ -957,7 +984,7 @@ export function ProjectDetailView() {
                           disabled={batchLoading}
                         >
                           <RefreshCw className="size-3" />
-                          重新执行
+                          {tp('reExecute')}
                         </Button>
                       )}
                       <Button
@@ -967,7 +994,7 @@ export function ProjectDetailView() {
                         onClick={() => setBatchExpanded(!batchExpanded)}
                       >
                         {batchExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-                        详情
+                        {tp('details')}
                       </Button>
                     </div>
                   </div>
@@ -1001,10 +1028,10 @@ export function ProjectDetailView() {
                                 }
                                 className="text-[9px] px-1 py-0 h-4"
                               >
-                                {ep.status === 'completed' ? '完成' :
-                                 ep.status === 'running' ? '运行' :
-                                 ep.status === 'failed' ? '失败' :
-                                 ep.status === 'skipped' ? '跳过' : '等待'}
+                                {ep.status === 'completed' ? tc('completedShort') :
+                                 ep.status === 'running' ? tp('batchRunningShort') :
+                                 ep.status === 'failed' ? tc('failedShort') :
+                                 ep.status === 'skipped' ? tc('skippedShort') : tc('waitingShort')}
                               </Badge>
                             </div>
                             <p className="text-muted-foreground truncate mb-1">
@@ -1012,7 +1039,7 @@ export function ProjectDetailView() {
                             </p>
                             <div className="flex items-center gap-1">
                               <span className="text-muted-foreground">
-                                {ep.completedSteps}/{ep.totalSteps}步
+                                {ep.completedSteps}/{ep.totalSteps}{tc('steps')}
                               </span>
                               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                                 <div
@@ -1046,6 +1073,8 @@ export function ProjectDetailView() {
                   key={ep.id}
                   episode={ep}
                   onClick={() => navigateToEpisode(drama.id, ep.id)}
+                  tc={tc}
+                  tp={tp}
                 />
               ))}
           </div>
@@ -1060,8 +1089,8 @@ export function ProjectDetailView() {
                 <div className="size-14 rounded-full bg-muted flex items-center justify-center">
                   <Plus className="size-7 text-primary" />
                 </div>
-                <p className="text-sm font-medium">添加第一集</p>
-                <p className="text-xs opacity-70">点击开始创作集数</p>
+                <p className="text-sm font-medium">{tp('addFirstEpisode')}</p>
+                <p className="text-xs opacity-70">{tp('clickToStartEpisode')}</p>
               </CardContent>
             </Card>
           </div>
@@ -1080,7 +1109,7 @@ export function ProjectDetailView() {
           >
             <div className="w-80 h-full flex flex-col">
               <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
-                <h3 className="text-sm font-medium">团队协作</h3>
+                <h3 className="text-sm font-medium">{tp('teamCollab')}</h3>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1109,14 +1138,14 @@ export function ProjectDetailView() {
       <Dialog open={addEpOpen} onOpenChange={setAddEpOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>添加集</DialogTitle>
-            <DialogDescription>为「{drama?.title}」添加新集数，留空将自动命名</DialogDescription>
+            <DialogTitle>{tp('addEpisodeTitle')}</DialogTitle>
+            <DialogDescription>{tp('addEpisodeDesc', { title: drama?.title ?? '' })}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2 py-2">
-            <label className="text-sm font-medium">集标题（可选）</label>
+            <label className="text-sm font-medium">{tp('episodeTitleOptional')}</label>
             <Input
-              placeholder="留空则自动命名为「第N集」"
+              placeholder={tp('episodeTitlePlaceholder')}
               value={newEpTitle}
               onChange={(e) => setNewEpTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAddEpisode()}
@@ -1125,10 +1154,10 @@ export function ProjectDetailView() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddEpOpen(false)}>
-              取消
+              {tc('cancel')}
             </Button>
             <Button onClick={handleAddEpisode} disabled={adding}>
-              {adding ? '添加中...' : '创建'}
+              {adding ? tc('addingShort') : tc('create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1149,16 +1178,16 @@ export function ProjectDetailView() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Lock className="size-4 text-amber-500" />
-              项目级AI配置锁定
+              {tp('projectAiConfigLock')}
             </DialogTitle>
             <DialogDescription>
-              设置项目的默认AI模型锁定。新建集数将自动继承此配置，「锁定全部」也会使用此配置。
+              {tp('projectAiConfigLockDesc')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <p className="text-xs text-muted-foreground">
-              选择要锁定的模型后，锁定状态下的集数在执行AI操作时将强制使用锁定的模型，而非全局默认模型。留空表示不锁定该类别。
+              {tp('lockConfigTip')}
             </p>
             <Separator />
 
@@ -1185,7 +1214,7 @@ export function ProjectDetailView() {
 
               {/* Image */}
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium w-16 shrink-0">图片</span>
+                <span className="text-sm font-medium w-16 shrink-0">{tc('edit')}</span>
                 <ModelSelector
                   category="image"
                   value={defaultLockConfig.image || ''}
@@ -1205,7 +1234,7 @@ export function ProjectDetailView() {
 
               {/* Video */}
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium w-16 shrink-0">视频</span>
+                <span className="text-sm font-medium w-16 shrink-0">Video</span>
                 <ModelSelector
                   category="video"
                   value={defaultLockConfig.video || ''}
@@ -1247,10 +1276,10 @@ export function ProjectDetailView() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setLockSettingsOpen(false)}>
-              取消
+              {tc('cancel')}
             </Button>
             <Button onClick={handleSaveDefaultLockConfig} disabled={savingLockConfig}>
-              {savingLockConfig ? '保存中...' : '保存'}
+              {savingLockConfig ? tc('saving') : tc('save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1262,10 +1291,10 @@ export function ProjectDetailView() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Library className="size-5 text-primary" />
-              从资产库导入
+              {tp('importFromLibrary')}
             </DialogTitle>
             <DialogDescription>
-              选择资产导入到当前项目「{drama?.title}」
+              {tp('importFromLibrary')}
             </DialogDescription>
           </DialogHeader>
 
@@ -1277,14 +1306,14 @@ export function ProjectDetailView() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="character">角色</SelectItem>
-                  <SelectItem value="scene">场景</SelectItem>
-                  <SelectItem value="prop">道具</SelectItem>
+                  <SelectItem value="all">{tc('all')}</SelectItem>
+                  <SelectItem value="character">{tp('character')}</SelectItem>
+                  <SelectItem value="scene">{tp('scene')}</SelectItem>
+                  <SelectItem value="prop">{tp('prop')}</SelectItem>
                 </SelectContent>
               </Select>
               <Input
-                placeholder="搜索资产..."
+                placeholder={tp('searchAssets')}
                 value={importSearch}
                 onChange={(e) => setImportSearch(e.target.value)}
                 className="h-8 text-xs"
@@ -1316,7 +1345,7 @@ export function ProjectDetailView() {
                   }).finally(() => setImportLoading(false))
                 }}
               >
-                搜索
+                {tc('search')}
               </Button>
             </div>
 
@@ -1328,7 +1357,7 @@ export function ProjectDetailView() {
                 </div>
               ) : importAssets.length === 0 ? (
                 <p className="text-center py-8 text-sm text-muted-foreground">
-                  暂无资产，请先在资产库中创建
+                  {tp('noAssetsTip')}
                 </p>
               ) : (
                 importAssets.map((asset) => (
@@ -1357,7 +1386,7 @@ export function ProjectDetailView() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium truncate">{asset.name}</span>
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          {asset.category === 'character' ? '角色' : asset.category === 'scene' ? '场景' : '道具'}
+                          {asset.category === 'character' ? tp('character') : asset.category === 'scene' ? tp('scene') : tp('prop')}
                         </Badge>
                       </div>
                       {asset.description && (
@@ -1375,12 +1404,12 @@ export function ProjectDetailView() {
                         try {
                           const result = await api.assets.apply(asset.id, drama!.id)
                           toast({
-                            title: '导入成功',
-                            description: `已将「${result.assetName}」添加到项目`,
+                            title: tp('importSuccess'),
+                            description: tp('importSuccessDesc', { name: result.assetName }),
                           })
                           fetchDrama()
                         } catch (err: any) {
-                          toast({ title: '导入失败', description: err.message, variant: 'destructive' })
+                          toast({ title: tp('importFailed'), description: err.message, variant: 'destructive' })
                         } finally {
                           setApplyingAssetId(null)
                         }
@@ -1391,7 +1420,7 @@ export function ProjectDetailView() {
                       ) : (
                         <Download className="size-3" />
                       )}
-                      导入
+                      {tp('importAction')}
                     </Button>
                   </div>
                 ))
@@ -1401,7 +1430,7 @@ export function ProjectDetailView() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportOpen(false)}>
-              关闭
+              {tc('close')}
             </Button>
           </DialogFooter>
         </DialogContent>

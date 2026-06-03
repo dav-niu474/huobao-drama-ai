@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { signIn } from 'next-auth/react'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,8 @@ export function AuthView() {
   const [tab, setTab] = useState<'login' | 'register'>('login')
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
+  const t = useTranslations('auth')
+  const tn = useTranslations('nav')
 
   // Login form
   const [loginEmail, setLoginEmail] = useState('')
@@ -32,7 +35,7 @@ export function AuthView() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!loginEmail || !loginPassword) {
-      toast({ title: '请输入邮箱和密码', variant: 'destructive' })
+      toast({ title: t('enterEmailAndPassword'), variant: 'destructive' })
       return
     }
     setLoading(true)
@@ -48,8 +51,8 @@ export function AuthView() {
 
       if (!validateRes.ok || !validateData.success) {
         toast({
-          title: '登录失败',
-          description: validateData.error || '邮箱或密码错误',
+          title: t('loginFailed'),
+          description: validateData.error || t('loginError'),
           variant: 'destructive',
         })
         setLoading(false)
@@ -68,7 +71,7 @@ export function AuthView() {
       })
       // Page will redirect — no need to do anything else
     } catch (err: any) {
-      toast({ title: '登录异常', description: err.message || '网络错误', variant: 'destructive' })
+      toast({ title: t('loginAbnormal'), description: err.message || t('networkError'), variant: 'destructive' })
       setLoading(false)
     }
   }
@@ -76,15 +79,15 @@ export function AuthView() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!regEmail || !regName || !regPassword) {
-      toast({ title: '请填写所有必填项', variant: 'destructive' })
+      toast({ title: t('fillAllFields'), variant: 'destructive' })
       return
     }
     if (regPassword.length < 6) {
-      toast({ title: '密码至少6位', variant: 'destructive' })
+      toast({ title: t('passwordMinLength'), variant: 'destructive' })
       return
     }
     if (regPassword !== regConfirm) {
-      toast({ title: '两次密码不一致', variant: 'destructive' })
+      toast({ title: t('passwordMismatch'), variant: 'destructive' })
       return
     }
     setLoading(true)
@@ -96,15 +99,15 @@ export function AuthView() {
       })
       const data = await res.json()
       if (!res.ok) {
-        toast({ title: '注册失败', description: data.error, variant: 'destructive' })
+        toast({ title: t('registerFailed'), description: data.error, variant: 'destructive' })
         return
       }
-      toast({ title: '注册成功', description: '请登录你的账号' })
+      toast({ title: t('registerSuccess'), description: t('pleaseLogin') })
       setTab('login')
       setLoginEmail(regEmail)
       setLoginPassword('')
     } catch (err: any) {
-      toast({ title: '注册异常', description: err.message, variant: 'destructive' })
+      toast({ title: t('registerAbnormal'), description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -125,8 +128,8 @@ export function AuthView() {
           <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-primary/10 border border-primary/10 mb-4">
             <Film className="size-7 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">AI短剧创作平台</h1>
-          <p className="text-sm text-muted-foreground mt-2">从剧本到成片，一站式短剧制作工作台</p>
+          <h1 className="text-2xl font-bold tracking-tight">{tn('appName')}</h1>
+          <p className="text-sm text-muted-foreground mt-2">{t('fromScriptToVideo')}</p>
         </div>
 
         {/* Auth Card */}
@@ -137,13 +140,13 @@ export function AuthView() {
                 value="login"
                 className="h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-sm font-medium transition-all"
               >
-                登录
+                {t('login')}
               </TabsTrigger>
               <TabsTrigger
                 value="register"
                 className="h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-sm font-medium transition-all"
               >
-                注册
+                {t('register')}
               </TabsTrigger>
             </TabsList>
 
@@ -151,12 +154,12 @@ export function AuthView() {
             <TabsContent value="login" className="mt-0">
               <form onSubmit={handleLogin}>
                 <CardHeader className="pb-4 pt-6 px-6">
-                  <CardTitle className="text-lg">欢迎回来</CardTitle>
-                  <CardDescription>登录你的账号继续创作</CardDescription>
+                  <CardTitle className="text-lg">{t('welcomeBack')}</CardTitle>
+                  <CardDescription>{t('loginToContinue')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 px-6">
                   <div className="space-y-2">
-                    <Label htmlFor="login-email" className="text-sm">邮箱</Label>
+                    <Label htmlFor="login-email" className="text-sm">{t('email')}</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
@@ -171,13 +174,13 @@ export function AuthView() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="login-password" className="text-sm">密码</Label>
+                    <Label htmlFor="login-password" className="text-sm">{t('password')}</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
                         id="login-password"
                         type="password"
-                        placeholder="输入密码"
+                        placeholder={t('enterPassword')}
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         className="pl-9"
@@ -197,7 +200,7 @@ export function AuthView() {
                     ) : (
                       <ArrowRight className="size-4 mr-2" />
                     )}
-                    {loading ? '登录中...' : '登录'}
+                    {loading ? t('loggingIn') : t('login')}
                   </Button>
                 </CardFooter>
               </form>
@@ -207,12 +210,12 @@ export function AuthView() {
             <TabsContent value="register" className="mt-0">
               <form onSubmit={handleRegister}>
                 <CardHeader className="pb-4 pt-6 px-6">
-                  <CardTitle className="text-lg">创建账号</CardTitle>
-                  <CardDescription>注册开始你的创作之旅</CardDescription>
+                  <CardTitle className="text-lg">{t('createAccount')}</CardTitle>
+                  <CardDescription>{t('startJourney')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 px-6">
                   <div className="space-y-2">
-                    <Label htmlFor="reg-email" className="text-sm">邮箱</Label>
+                    <Label htmlFor="reg-email" className="text-sm">{t('email')}</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
@@ -227,13 +230,13 @@ export function AuthView() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="reg-name" className="text-sm">用户名</Label>
+                    <Label htmlFor="reg-name" className="text-sm">{t('username')}</Label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
                         id="reg-name"
                         type="text"
-                        placeholder="输入用户名"
+                        placeholder={t('enterUsername')}
                         value={regName}
                         onChange={(e) => setRegName(e.target.value)}
                         className="pl-9"
@@ -241,13 +244,13 @@ export function AuthView() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="reg-password" className="text-sm">密码</Label>
+                    <Label htmlFor="reg-password" className="text-sm">{t('password')}</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
                         id="reg-password"
                         type="password"
-                        placeholder="至少6位密码"
+                        placeholder={t('passwordMin6')}
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
                         className="pl-9"
@@ -256,13 +259,13 @@ export function AuthView() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="reg-confirm" className="text-sm">确认密码</Label>
+                    <Label htmlFor="reg-confirm" className="text-sm">{t('confirmPassword')}</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                       <Input
                         id="reg-confirm"
                         type="password"
-                        placeholder="再次输入密码"
+                        placeholder={t('reEnterPassword')}
                         value={regConfirm}
                         onChange={(e) => setRegConfirm(e.target.value)}
                         className="pl-9"
@@ -282,7 +285,7 @@ export function AuthView() {
                     ) : (
                       <Sparkles className="size-4 mr-2" />
                     )}
-                    {loading ? '注册中...' : '注册'}
+                    {loading ? t('registering') : t('register')}
                   </Button>
                 </CardFooter>
               </form>
@@ -296,19 +299,19 @@ export function AuthView() {
             <div className="size-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center">
               <Sparkles className="size-4 text-primary" />
             </div>
-            <span className="text-[11px] text-muted-foreground leading-tight">AI 智能创作</span>
+            <span className="text-[11px] text-muted-foreground leading-tight">{t('aiCreation')}</span>
           </div>
           <div className="flex flex-col items-center gap-2 p-3 rounded-xl bg-muted/20 border border-border/20">
             <div className="size-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center">
               <Zap className="size-4 text-primary" />
             </div>
-            <span className="text-[11px] text-muted-foreground leading-tight">多模型适配</span>
+            <span className="text-[11px] text-muted-foreground leading-tight">{t('multiModel')}</span>
           </div>
           <div className="flex flex-col items-center gap-2 p-3 rounded-xl bg-muted/20 border border-border/20">
             <div className="size-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center">
               <Shield className="size-4 text-primary" />
             </div>
-            <span className="text-[11px] text-muted-foreground leading-tight">角色权限管理</span>
+            <span className="text-[11px] text-muted-foreground leading-tight">{t('rolePermissions')}</span>
           </div>
         </div>
       </div>

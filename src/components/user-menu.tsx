@@ -36,6 +36,7 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar'
 import { LogOut, User, Settings, Crown, Loader2, Users } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { ROLE_PERMISSIONS, type UserRole } from '@/lib/permissions'
 
 // ============================================================
@@ -45,6 +46,8 @@ import { ROLE_PERMISSIONS, type UserRole } from '@/lib/permissions'
 export function UserMenu() {
   const { data: session } = useSession()
   const { toast } = useToast()
+  const tu = useTranslations('user')
+  const tc = useTranslations('common')
   const [profileOpen, setProfileOpen] = useState(false)
   const [usersOpen, setUsersOpen] = useState(false)
   const [editName, setEditName] = useState('')
@@ -74,12 +77,12 @@ export function UserMenu() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: editName }),
       })
-      if (!res.ok) throw new Error('更新失败')
-      toast({ title: '个人信息已更新' })
+      if (!res.ok) throw new Error(tu('updateFailed'))
+      toast({ title: tu('profileUpdated') })
       setProfileOpen(false)
       // Session will update on next fetch
     } catch (err: any) {
-      toast({ title: '更新失败', description: err.message, variant: 'destructive' })
+      toast({ title: tu('updateFailed'), description: err.message, variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -87,7 +90,7 @@ export function UserMenu() {
 
   const handleSignOut = async () => {
     await signOut({ redirect: false })
-    toast({ title: '已退出登录' })
+    toast({ title: tu('signedOut') })
     window.location.reload()
   }
 
@@ -100,10 +103,10 @@ export function UserMenu() {
       if (res.ok) {
         setUsers(data.users)
       } else {
-        toast({ title: '获取用户列表失败', description: data.error, variant: 'destructive' })
+        toast({ title: tu('getUserListFailed'), description: data.error, variant: 'destructive' })
       }
     } catch (err: any) {
-      toast({ title: '请求失败', variant: 'destructive' })
+      toast({ title: tu('requestFailed'), variant: 'destructive' })
     } finally {
       setLoadingUsers(false)
     }
@@ -120,12 +123,12 @@ export function UserMenu() {
       const data = await res.json()
       if (res.ok) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
-        toast({ title: '角色已更新' })
+        toast({ title: tu('roleUpdated') })
       } else {
-        toast({ title: '更新失败', description: data.error, variant: 'destructive' })
+        toast({ title: tu('updateFailed'), description: data.error, variant: 'destructive' })
       }
     } catch {
-      toast({ title: '更新失败', variant: 'destructive' })
+      toast({ title: tu('updateFailed'), variant: 'destructive' })
     } finally {
       setUpdatingUserId(null)
     }
@@ -142,12 +145,12 @@ export function UserMenu() {
       const data = await res.json()
       if (res.ok) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive } : u))
-        toast({ title: isActive ? '用户已启用' : '用户已禁用' })
+        toast({ title: isActive ? tu('userEnabled') : tu('userDisabled') })
       } else {
-        toast({ title: '操作失败', description: data.error, variant: 'destructive' })
+        toast({ title: tu('updateFailed'), description: data.error, variant: 'destructive' })
       }
     } catch {
-      toast({ title: '操作失败', variant: 'destructive' })
+      toast({ title: tu('updateFailed'), variant: 'destructive' })
     } finally {
       setUpdatingUserId(null)
     }
@@ -189,18 +192,18 @@ export function UserMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleOpenProfile}>
             <User className="size-4 mr-2" />
-            个人信息
+            {tu('profile')}
           </DropdownMenuItem>
           {user.role === 'admin' && (
             <DropdownMenuItem onClick={handleOpenUsers}>
               <Users className="size-4 mr-2" />
-              用户管理
+              {tu('userManagement')}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
             <LogOut className="size-4 mr-2" />
-            退出登录
+            {tu('signOut')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -209,32 +212,32 @@ export function UserMenu() {
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>个人信息</DialogTitle>
-            <DialogDescription>修改你的个人资料</DialogDescription>
+            <DialogTitle>{tu('profile')}</DialogTitle>
+            <DialogDescription>{tu('editProfile')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>邮箱</Label>
+              <Label>{tu('emailLabel')}</Label>
               <Input value={user.email} disabled className="bg-muted" />
             </div>
             <div className="space-y-2">
-              <Label>用户名</Label>
+              <Label>{tu('usernameLabel')}</Label>
               <Input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                placeholder="输入用户名"
+                placeholder={tu('enterUsername')}
               />
             </div>
             <div className="space-y-2">
-              <Label>角色</Label>
+              <Label>{tu('roleLabel')}</Label>
               <Input value={roleInfo.label} disabled className="bg-muted" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProfileOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setProfileOpen(false)}>{tc('cancel')}</Button>
             <Button onClick={handleSaveProfile} disabled={saving}>
               {saving && <Loader2 className="size-4 animate-spin mr-2" />}
-              保存
+              {tc('save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -244,8 +247,8 @@ export function UserMenu() {
       <Dialog open={usersOpen} onOpenChange={setUsersOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>用户管理</DialogTitle>
-            <DialogDescription>管理平台用户角色和状态</DialogDescription>
+            <DialogTitle>{tu('userManagement')}</DialogTitle>
+            <DialogDescription>{tu('manageUsersDesc')}</DialogDescription>
           </DialogHeader>
           <div className="max-h-96 overflow-y-auto custom-scrollbar">
             {loadingUsers ? (
@@ -253,7 +256,7 @@ export function UserMenu() {
                 <Loader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             ) : users.length === 0 ? (
-              <p className="text-center py-8 text-muted-foreground text-sm">暂无用户</p>
+              <p className="text-center py-8 text-muted-foreground text-sm">{tu('noUsers')}</p>
             ) : (
               <div className="space-y-3">
                 {users.map((u) => (
@@ -272,7 +275,7 @@ export function UserMenu() {
                           <span className="text-sm font-medium">{u.name}</span>
                           {!u.isActive && (
                             <Badge variant="outline" className="text-[10px] px-1 py-0 text-destructive border-destructive/30">
-                              已禁用
+                              {tu('disabled')}
                             </Badge>
                           )}
                         </div>
@@ -289,9 +292,9 @@ export function UserMenu() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="free">免费用户</SelectItem>
-                          <SelectItem value="pro">专业版</SelectItem>
-                          <SelectItem value="admin">管理员</SelectItem>
+                          <SelectItem value="free">{tu('freeUser')}</SelectItem>
+                          <SelectItem value="pro">{tu('proUser')}</SelectItem>
+                          <SelectItem value="admin">{tu('admin')}</SelectItem>
                         </SelectContent>
                       </Select>
                       <Button
@@ -301,7 +304,7 @@ export function UserMenu() {
                         onClick={() => handleToggleUserActive(u.id, !u.isActive)}
                         disabled={updatingUserId === u.id || u.id === user.id}
                       >
-                        {u.isActive ? '禁用' : '启用'}
+                        {u.isActive ? tu('disable') : tu('enable')}
                       </Button>
                     </div>
                   </div>

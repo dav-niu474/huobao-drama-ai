@@ -411,7 +411,7 @@ export function SeriesPanel() {
                       <div className="flex items-center gap-2 mt-2">
                         <Badge variant="secondary" className="text-[10px]">
                           <Film className="size-3 mr-1" />
-                          {series.members.length} 剧集
+                          {t('dramaCount', { count: series.members.length })}
                         </Badge>
                       </div>
                     </CardContent>
@@ -579,7 +579,7 @@ export function SeriesPanel() {
                       <AlertTriangle className="size-3.5 text-amber-500 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-foreground">{issue.description}</p>
-                        <p className="text-muted-foreground">影响剧集: {issue.dramas.join(', ')}</p>
+                        <p className="text-muted-foreground">{t('affectedDramas', { dramas: issue.dramas.join(', ') })}</p>
                       </div>
                     </div>
                   ))}

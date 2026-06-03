@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslations } from 'next-intl'
 import { useAppStore } from '@/lib/store'
 import { api, type ProviderConfig, type AiCategory, type ProviderPreset, type ModelOption } from '@/lib/api'
 import { PROVIDER_PRESETS } from '@/lib/provider-presets'
@@ -63,26 +64,26 @@ import {
 // Category metadata
 // ============================================================
 
-const CATEGORY_META: Record<AiCategory, { label: string; icon: React.ReactNode; badge: string }> = {
+const CATEGORY_META: Record<AiCategory, { labelKey: string; icon: React.ReactNode; badgeKey: string }> = {
   llm: {
-    label: 'LLM 语言模型',
+    labelKey: 'llmModel',
     icon: <Sparkles className="size-4" />,
-    badge: '剧本改写 / 提取 / 分镜',
+    badgeKey: 'llmBadge',
   },
   image: {
-    label: '图片生成',
+    labelKey: 'imageGeneration',
     icon: <ImageIcon className="size-4" />,
-    badge: '角色头像 / 分镜首帧',
+    badgeKey: 'imageBadge',
   },
   video: {
-    label: '视频生成',
+    labelKey: 'videoGeneration',
     icon: <Film className="size-4" />,
-    badge: '镜头动画',
+    badgeKey: 'videoBadge',
   },
   tts: {
-    label: '语音合成',
+    labelKey: 'ttsSynthesis',
     icon: <Volume2 className="size-4" />,
-    badge: '角色配音',
+    badgeKey: 'ttsBadge',
   },
 }
 
@@ -119,6 +120,15 @@ const TAG_STYLES: Record<string, string> = {
   '高清': 'bg-teal-500/15 text-teal-600 border-teal-500/20',
 }
 
+const TAG_I18N_KEYS: Record<string, string> = {
+  '推荐': 'tagRecommended',
+  '最新': 'tagNewest',
+  '快速': 'tagFast',
+  '经济': 'tagEconomical',
+  '推理': 'tagReasoning',
+  '高清': 'tagHD',
+}
+
 function ModelSelector({
   models,
   value,
@@ -132,6 +142,8 @@ function ModelSelector({
   defaultModel: string
   disabled?: boolean
 }) {
+  const ts = useTranslations('settings')
+  const tc = useTranslations('common')
   const [showCustom, setShowCustom] = useState(false)
   const [customValue, setCustomValue] = useState(value)
 
@@ -186,7 +198,7 @@ function ModelSelector({
                     <span className="text-xs font-medium truncate">{m.name}</span>
                     {m.id === defaultModel && (
                       <span className="text-[8px] px-1 py-px rounded bg-primary/10 text-primary border border-primary/20 flex-shrink-0 whitespace-nowrap">
-                        默认
+                        {ts('defaultLabel')}
                       </span>
                     )}
                     {m.tags && m.tags.length > 0 && (
@@ -196,7 +208,7 @@ function ModelSelector({
                             key={tag}
                             className={`text-[8px] px-1 py-px rounded border whitespace-nowrap ${TAG_STYLES[tag] ?? 'bg-muted/30 text-muted-foreground border-border/30'}`}
                           >
-                            {tag}
+                            {TAG_I18N_KEYS[tag] ? ts(TAG_I18N_KEYS[tag]) : tag}
                           </span>
                         ))}
                       </span>
@@ -221,11 +233,11 @@ function ModelSelector({
           disabled={disabled}
         >
           <ListChecks className="size-3" />
-          {showCustom ? '收起自定义输入' : '手动输入模型ID'}
+          {showCustom ? ts('collapseCustomInput') : ts('manualInputModelId')}
         </Button>
         {!isKnownModel && value && (
           <span className="text-[10px] text-muted-foreground truncate">
-            当前: <code className="bg-muted/50 px-1 rounded">{value}</code>
+            {ts('currentLabel')}: <code className="bg-muted/50 px-1 rounded">{value}</code>
           </span>
         )}
       </div>
@@ -234,7 +246,7 @@ function ModelSelector({
       {showCustom && (
         <div className="flex gap-2">
           <Input
-            placeholder="输入模型ID，如 meta/llama-3.1-70b-instruct"
+            placeholder={ts('modelIdPlaceholder')}
             value={customValue}
             onChange={(e) => setCustomValue(e.target.value)}
             className="bg-muted/30 border-border/50 text-xs flex-1"
@@ -250,7 +262,7 @@ function ModelSelector({
             disabled={disabled}
             className="text-[10px] h-9"
           >
-            应用
+            {tc('apply')}
           </Button>
         </div>
       )}
@@ -279,6 +291,7 @@ function ProviderCard({
   saving: boolean
   isAdmin: boolean
 }) {
+  const ts = useTranslations('settings')
   const [expanded, setExpanded] = useState(isActive)
   const [expandDone, setExpandDone] = useState(false)
   // Track whether the user has edited the API key since loading
@@ -364,7 +377,7 @@ function ProviderCard({
     } catch (error) {
       setTestResult({
         success: false,
-        error: error instanceof Error ? error.message : '测试失败',
+        error: error instanceof Error ? error.message : ts('testFailed'),
       })
     } finally {
       setTesting(false)
@@ -411,7 +424,7 @@ function ProviderCard({
               </Label>
               {isActive ? (
                 <Badge className="text-[10px] bg-primary/15 text-primary border-primary/20 hover:bg-primary/20">
-                  当前使用
+                  {ts('currentUsing')}
                 </Badge>
               ) : null}
               {hasApiKey ? (
@@ -420,7 +433,7 @@ function ProviderCard({
                   className="text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20 gap-1"
                 >
                   <CheckCircle2 className="size-2.5" />
-                  已配置
+                  {ts('configured')}
                 </Badge>
               ) : (
                 <Badge
@@ -428,7 +441,7 @@ function ProviderCard({
                   className="text-[10px] bg-destructive/10 text-destructive border-destructive/20 gap-1"
                 >
                   <span className="inline-block size-1.5 rounded-full bg-destructive" />
-                  未配置
+                  {ts('notConfigured')}
                 </Badge>
               )}
             </div>
@@ -437,7 +450,7 @@ function ProviderCard({
             </p>
             {isAdmin && preset?.envKey && (
               <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                环境变量: {preset.envKey}
+                {ts('envVariable')}: {preset.envKey}
               </p>
             )}
           </div>
@@ -473,17 +486,17 @@ function ProviderCard({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Key className="size-3" />
-                    API Key
+                    {ts('apiKey')}
                     {!isAdmin && isMaskedKey && (
                       <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-600 border-amber-500/20">
-                        仅管理员可见
+                        {ts('adminOnlyVisible')}
                       </Badge>
                     )}
                   </Label>
                   <div className="relative">
                     <Input
                       type={showKey ? 'text' : 'password'}
-                      placeholder={isAdmin ? 'sk-...' : (isMaskedKey ? '由管理员配置' : 'sk-...')}
+                      placeholder={isAdmin ? 'sk-...' : (isMaskedKey ? ts('adminConfigured') : 'sk-...')}
                       value={isAdmin ? apiKey : (isMaskedKey ? provider.apiKey : apiKey)}
                       onChange={(e) => handleApiKeyChange(e.target.value)}
                       disabled={!isAdmin}
@@ -504,18 +517,18 @@ function ProviderCard({
                   {!hasApiKey && (
                     <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
                       <Info className="size-3 mt-0.5 flex-shrink-0" />
-                      没有API Key？可以复制提示词到其他平台使用
+                      {ts('noApiKeyTip')}
                     </p>
                   )}
                 </div>
 
                 {/* Base URL */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Base URL</Label>
+                  <Label className="text-xs font-medium">{ts('baseUrl')}</Label>
                   <Input
                     placeholder={
                       preset?.defaultBaseUrl
-                        ? `默认: ${preset.defaultBaseUrl}`
+                        ? ts('defaultBaseUrl', { url: preset.defaultBaseUrl })
                         : 'https://api.example.com/v1'
                     }
                     value={baseUrl}
@@ -531,7 +544,7 @@ function ProviderCard({
                       className="text-[10px] h-6"
                       onClick={() => setBaseUrl(preset.defaultBaseUrl)}
                     >
-                      恢复默认 Base URL
+                      {ts('restoreDefaultBaseUrl')}
                     </Button>
                   )}
                 </div>
@@ -540,7 +553,7 @@ function ProviderCard({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Cpu className="size-3" />
-                    模型
+                    {ts('model')}
                   </Label>
                   {/* Model selector with dropdown if available */}
                   {preset?.availableModels && preset.availableModels.length > 0 ? (
@@ -555,7 +568,7 @@ function ProviderCard({
                     <Input
                       placeholder={
                         preset?.defaultModel
-                          ? `默认: ${preset.defaultModel}`
+                          ? ts('defaultModel', { model: preset.defaultModel })
                           : 'model-name'
                       }
                       value={model}
@@ -578,11 +591,11 @@ function ProviderCard({
                       : <XCircle className="size-3.5 flex-shrink-0 mt-0.5" />
                     }
                     <div className="flex-1 min-w-0">
-                      <span className="font-medium">{testResult.success ? '连接成功' : '连接失败'}</span>
+                      <span className="font-medium">{testResult.success ? ts('connectionSuccess') : ts('connectionFailed')}</span>
                       {testResult.model && <span className="text-muted-foreground ml-1">· {testResult.model}</span>}
                       {testResult.latency && <span className="text-muted-foreground ml-1">{testResult.latency}ms</span>}
                       {testResult.responsePreview && (
-                        <p className="text-muted-foreground truncate mt-0.5">响应: {testResult.responsePreview}</p>
+                        <p className="text-muted-foreground truncate mt-0.5">{ts('responseLabel')}: {testResult.responsePreview}</p>
                       )}
                       {testResult.error && (
                         <p className="break-all mt-0.5">{testResult.error}</p>
@@ -606,7 +619,7 @@ function ProviderCard({
                     ) : (
                       <Wifi className="size-3.5" />
                     )}
-                    测试连接
+                    {ts('testConnection')}
                   </Button>
                   <Button
                     size="sm"
@@ -619,7 +632,7 @@ function ProviderCard({
                     ) : (
                       <Save className="size-3.5" />
                     )}
-                    保存配置
+                    {ts('saveConfig')}
                   </Button>
                 </div>
                 )}
@@ -654,6 +667,7 @@ function UserProviderCard({
   onDelete: () => Promise<void>
   saving: boolean
 }) {
+  const ts = useTranslations('settings')
   const [expanded, setExpanded] = useState(false)
   const [expandDone, setExpandDone] = useState(false)
   const [apiKey, setApiKey] = useState(provider?.apiKey ?? '')
@@ -729,7 +743,7 @@ function UserProviderCard({
     } catch (error) {
       setTestResult({
         success: false,
-        error: error instanceof Error ? error.message : '测试失败',
+        error: error instanceof Error ? error.message : ts('testFailed'),
       })
     } finally {
       setTesting(false)
@@ -773,7 +787,7 @@ function UserProviderCard({
               </Label>
               {isActive ? (
                 <Badge className="text-[10px] bg-amber-500/15 text-amber-600 border-amber-500/20 hover:bg-amber-500/20">
-                  当前使用
+                  {ts('currentUsing')}
                 </Badge>
               ) : null}
               {hasConfig ? (
@@ -782,19 +796,19 @@ function UserProviderCard({
                   className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1"
                 >
                   <Zap className="size-2.5" />
-                  自备Key
+                  {ts('selfProvidedKey')}
                 </Badge>
               ) : (
                 <Badge
                   variant="secondary"
                   className="text-[10px] bg-muted/30 text-muted-foreground border-border/30"
                 >
-                  未配置
+                  {ts('notConfigured')}
                 </Badge>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              使用自己的 Key — 优先级高于平台共享 Key
+              {ts('keyPriority')}
             </p>
           </div>
 
@@ -825,7 +839,7 @@ function UserProviderCard({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Key className="size-3" />
-                    我的 API Key
+                    {ts('myApiKey')}
                   </Label>
                   <div className="relative">
                     <Input
@@ -850,18 +864,18 @@ function UserProviderCard({
                   {!apiKey.trim() && (
                     <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
                       <Info className="size-3 mt-0.5 flex-shrink-0" />
-                      输入你自己的 API Key，将优先于平台共享 Key 使用
+                      {ts('myKeyTip')}
                     </p>
                   )}
                 </div>
 
                 {/* Base URL */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Base URL</Label>
+                  <Label className="text-xs font-medium">{ts('baseUrl')}</Label>
                   <Input
                     placeholder={
                       preset?.defaultBaseUrl
-                        ? `默认: ${preset.defaultBaseUrl}`
+                        ? ts('defaultBaseUrl', { url: preset.defaultBaseUrl })
                         : 'https://api.example.com/v1'
                     }
                     value={baseUrl}
@@ -876,7 +890,7 @@ function UserProviderCard({
                       className="text-[10px] h-6"
                       onClick={() => setBaseUrl(preset.defaultBaseUrl)}
                     >
-                      恢复默认 Base URL
+                      {ts('restoreDefaultBaseUrl')}
                     </Button>
                   )}
                 </div>
@@ -885,7 +899,7 @@ function UserProviderCard({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Cpu className="size-3" />
-                    模型
+                    {ts('model')}
                   </Label>
                   {preset?.availableModels && preset.availableModels.length > 0 ? (
                     <ModelSelector
@@ -898,7 +912,7 @@ function UserProviderCard({
                     <Input
                       placeholder={
                         preset?.defaultModel
-                          ? `默认: ${preset.defaultModel}`
+                          ? ts('defaultModel', { model: preset.defaultModel })
                           : 'model-name'
                       }
                       value={model}
@@ -920,11 +934,11 @@ function UserProviderCard({
                       : <XCircle className="size-3.5 flex-shrink-0 mt-0.5" />
                     }
                     <div className="flex-1 min-w-0">
-                      <span className="font-medium">{testResult.success ? '连接成功' : '连接失败'}</span>
+                      <span className="font-medium">{testResult.success ? ts('connectionSuccess') : ts('connectionFailed')}</span>
                       {testResult.model && <span className="text-muted-foreground ml-1">· {testResult.model}</span>}
                       {testResult.latency && <span className="text-muted-foreground ml-1">{testResult.latency}ms</span>}
                       {testResult.responsePreview && (
-                        <p className="text-muted-foreground truncate mt-0.5">响应: {testResult.responsePreview}</p>
+                        <p className="text-muted-foreground truncate mt-0.5">{ts('responseLabel')}: {testResult.responsePreview}</p>
                       )}
                       {testResult.error && (
                         <p className="break-all mt-0.5">{testResult.error}</p>
@@ -944,7 +958,7 @@ function UserProviderCard({
                       className="text-[10px] h-8 gap-1 text-destructive hover:text-destructive"
                     >
                       <Trash2 className="size-3" />
-                      删除我的配置
+                      {ts('deleteMyConfig')}
                     </Button>
                   )}
                   <div className="flex gap-2 ml-auto">
@@ -960,7 +974,7 @@ function UserProviderCard({
                       ) : (
                         <Wifi className="size-3.5" />
                       )}
-                      测试连接
+                      {ts('testConnection')}
                     </Button>
                     <Button
                       size="sm"
@@ -973,7 +987,7 @@ function UserProviderCard({
                       ) : (
                         <Save className="size-3.5" />
                       )}
-                      保存我的配置
+                      {ts('saveMyConfig')}
                     </Button>
                   </div>
                 </div>
@@ -1025,6 +1039,7 @@ function CategoryPanel({
   savingUserProvider: string | null
   hasPlatformDefault?: boolean
 }) {
+  const ts = useTranslations('settings')
   const meta = CATEGORY_META[category]
 
   // Find user-level active provider
@@ -1036,9 +1051,9 @@ function CategoryPanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-primary">{meta.icon}</span>
-          <h2 className="text-base font-bold">{meta.label}</h2>
+          <h2 className="text-base font-bold">{ts(meta.labelKey)}</h2>
           <Badge variant="secondary" className="text-[10px]">
-            {meta.badge}
+            {ts(meta.badgeKey)}
           </Badge>
         </div>
         <Button
@@ -1053,7 +1068,7 @@ function CategoryPanel({
         ) : (
           <Wifi className="size-3.5" />
         )}
-        测试连接
+        {ts('testConnection')}
       </Button>
       </div>
 
@@ -1078,17 +1093,17 @@ function CategoryPanel({
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">
-                    {testResult.success ? '连接成功' : '连接失败'}
+                    {testResult.success ? ts('connectionSuccess') : ts('connectionFailed')}
                   </p>
                   {testResult.provider && (
                     <p className="text-xs text-muted-foreground">
-                      供应商: {testResult.provider}
-                      {testResult.model ? ` · 模型: ${testResult.model}` : ''}
+                      {ts('providerLabel')}: {testResult.provider}
+                      {testResult.model ? ` · ${ts('modelLabel')}: ${testResult.model}` : ''}
                     </p>
                   )}
                   {testResult.responsePreview && (
                     <p className="text-xs text-muted-foreground truncate">
-                      响应: {testResult.responsePreview}
+                      {ts('responseLabel')}: {testResult.responsePreview}
                     </p>
                   )}
                   {testResult.error && (
@@ -1132,28 +1147,28 @@ function CategoryPanel({
       <div className="space-y-3">
         <div className="flex items-center gap-2 pt-2">
           <User className="size-4 text-amber-500" />
-          <h3 className="text-sm font-semibold">我的 API Key</h3>
+          <h3 className="text-sm font-semibold">{ts('myApiKey')}</h3>
           <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20">
-            优先使用
+            {ts('priorityUse')}
           </Badge>
         </div>
         {!isAdmin && hasPlatformDefault ? (
           <p className="text-[11px] text-muted-foreground -mt-1">
-            配置你自己的 API Key，将优先于平台共享 Key 使用。不配置时自动使用平台共享 Key。
+            {ts('userKeyTipWithPlatform')}
           </p>
         ) : !isAdmin ? (
           <p className="text-[11px] text-muted-foreground -mt-1">
-            配置你自己的 API Key 以使用该服务，或联系管理员配置平台共享 Key。
+            {ts('userKeyTipNoPlatform')}
           </p>
         ) : (
           <p className="text-[11px] text-muted-foreground -mt-1">
-            配置你自己的 API Key，将优先于平台共享 Key 使用。未配置时自动使用平台共享 Key。
+            {ts('userKeyTipAdmin')}
           </p>
         )}
         {!isAdmin && hasPlatformDefault && (
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-sky-500/10 border border-sky-500/20">
             <Wifi className="size-3 text-sky-500" />
-            <span className="text-[10px] text-sky-600 font-medium">平台共享 Key 可用</span>
+            <span className="text-[10px] text-sky-600 font-medium">{ts('platformKeyAvailable')}</span>
           </div>
         )}
 
@@ -1185,8 +1200,7 @@ function CategoryPanel({
       <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
         <Copy className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          没有 API Key？没关系！您可以在工作区中复制生成的提示词（Prompt），然后到 ChatGPT、Midjourney
-          等平台手动使用。配置 API Key 后可享受平台内一键生成的便捷体验。
+          {ts('noApiKeyHint')}
         </p>
       </div>
     </div>
@@ -1206,6 +1220,7 @@ function AgentConfigCard({
   saving: boolean
   onSave: (agentType: string, config: Partial<AgentInfo['config']>) => Promise<void>
 }) {
+  const ts = useTranslations('settings')
   const [expanded, setExpanded] = useState(false)
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [toolsExpanded, setToolsExpanded] = useState(false)
@@ -1260,11 +1275,11 @@ function AgentConfigCard({
               </Badge>
               {isActive ? (
                 <Badge className="text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                  已启用
+                  {ts('enabled')}
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="text-[10px]">
-                  已禁用
+                  {ts('disabledLabel')}
                 </Badge>
               )}
             </div>
@@ -1303,17 +1318,17 @@ function AgentConfigCard({
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Cpu className="size-3" />
-                    模型
+                    {ts('model')}
                   </Label>
                   <Input
-                    placeholder="留空则使用 LLM 设置中的默认模型"
+                    placeholder={ts('modelPlaceholder')}
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     onBlur={() => handleSave({ model: model || null })}
                     className="bg-muted/30 border-border/50 text-sm"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    留空表示跟随全局 LLM 设置
+                    {ts('followGlobalLlm')}
                   </p>
                 </div>
 
@@ -1333,8 +1348,8 @@ function AgentConfigCard({
                     className="w-full"
                   />
                   <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>精确 (0)</span>
-                    <span>创意 (2)</span>
+                    <span>{ts('precise')}</span>
+                    <span>{ts('creative')}</span>
                   </div>
                 </div>
 
@@ -1357,10 +1372,10 @@ function AgentConfigCard({
                 <Collapsible open={promptExpanded} onOpenChange={setPromptExpanded}>
                   <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium w-full hover:text-foreground transition-colors">
                     <Sparkles className="size-3 text-primary" />
-                    系统提示词 (System Prompt)
+                    {ts('systemPrompt')}
                     {hasCustomPrompt && (
                       <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-600 border-amber-500/20">
-                        已自定义
+                        {ts('customized')}
                       </Badge>
                     )}
                     <ChevronDown className={`size-3 ml-auto transition-transform ${promptExpanded ? 'rotate-180' : ''}`} />
@@ -1382,7 +1397,7 @@ function AgentConfigCard({
                           disabled={!hasCustomPrompt}
                         >
                           <RotateCcw className="size-3" />
-                          恢复默认提示词
+                          {ts('resetDefaultPrompt')}
                         </Button>
                         <Button
                           type="button"
@@ -1392,7 +1407,7 @@ function AgentConfigCard({
                           disabled={saving}
                         >
                           {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
-                          保存提示词
+                          {ts('savePrompt')}
                         </Button>
                       </div>
                     </div>
@@ -1403,7 +1418,7 @@ function AgentConfigCard({
                 <Collapsible open={toolsExpanded} onOpenChange={setToolsExpanded}>
                   <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium w-full hover:text-foreground transition-colors">
                     <Wrench className="size-3 text-primary" />
-                    可用工具
+                    {ts('availableTools')}
                     <Badge variant="secondary" className="text-[9px] px-1 py-0">
                       {agent.tools.length}
                     </Badge>
@@ -1422,7 +1437,7 @@ function AgentConfigCard({
                         </div>
                       ))}
                       {agent.tools.length === 0 && (
-                        <p className="text-[11px] text-muted-foreground">该 Agent 暂无可用工具</p>
+                        <p className="text-[11px] text-muted-foreground">{ts('noTools')}</p>
                       )}
                     </div>
                   </CollapsibleContent>
@@ -1433,7 +1448,7 @@ function AgentConfigCard({
                   <Collapsible open={skillExpanded} onOpenChange={setSkillExpanded}>
                     <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium w-full hover:text-foreground transition-colors">
                       <Star className="size-3 text-primary" />
-                      SKILL.md 专业技能指南
+                      {ts('skillGuide')}
                       <ChevronDown className={`size-3 ml-auto transition-transform ${skillExpanded ? 'rotate-180' : ''}`} />
                     </CollapsibleTrigger>
                     <CollapsibleContent>
@@ -1461,6 +1476,8 @@ function AgentConfigCard({
 export function SettingsView() {
   const { navigateToProjects } = useAppStore()
   const { toast } = useToast()
+  const ts = useTranslations('settings')
+  const tc = useTranslations('common')
 
   // Admin state — determined by API response
   const [isAdmin, setIsAdmin] = useState(false)
@@ -1533,7 +1550,7 @@ export function SettingsView() {
         setUserProvidersData(userProviders.providers as Record<string, ProviderConfig[]>)
       } catch (err) {
         toast({
-          title: '加载设置失败',
+          title: ts('loadSettingsFailed'),
           description: String(err),
           variant: 'destructive',
         })
@@ -1562,16 +1579,16 @@ export function SettingsView() {
           isActive: true,
         })
         updateProvidersFromResponse(result.providers)
-        toast({ title: '已切换供应商' })
+        toast({ title: ts('providerSwitched') })
       } catch (err) {
         toast({
-          title: '切换失败',
+          title: ts('switchFailed'),
           description: String(err),
           variant: 'destructive',
         })
       }
     },
-    [toast, updateProvidersFromResponse]
+    [toast, updateProvidersFromResponse, ts]
   )
 
   // Handle saving provider config
@@ -1590,10 +1607,10 @@ export function SettingsView() {
           isActive: config.isActive,
         })
         updateProvidersFromResponse(result.providers)
-        toast({ title: '配置已保存' })
+        toast({ title: ts('configSaved') })
       } catch (err) {
         toast({
-          title: '保存失败',
+          title: ts('saveFailed'),
           description: String(err),
           variant: 'destructive',
         })
@@ -1601,7 +1618,7 @@ export function SettingsView() {
         setSavingProvider(null)
       }
     },
-    [toast, updateProvidersFromResponse]
+    [toast, updateProvidersFromResponse, ts]
   )
 
   // Handle saving user provider config
@@ -1612,10 +1629,10 @@ export function SettingsView() {
       try {
         const result = await api.userProvider.save(data)
         setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
-        toast({ title: '我的配置已保存' })
+        toast({ title: ts('myConfigSaved') })
       } catch (err) {
         toast({
-          title: '保存失败',
+          title: ts('saveFailed'),
           description: String(err),
           variant: 'destructive',
         })
@@ -1623,7 +1640,7 @@ export function SettingsView() {
         setSavingUserProvider(null)
       }
     },
-    [toast]
+    [toast, ts]
   )
 
   // Handle deleting user provider config
@@ -1632,16 +1649,16 @@ export function SettingsView() {
       try {
         const result = await api.userProvider.delete(data)
         setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
-        toast({ title: '我的配置已删除' })
+        toast({ title: ts('myConfigDeleted') })
       } catch (err) {
         toast({
-          title: '删除失败',
+          title: ts('deleteFailed'),
           description: String(err),
           variant: 'destructive',
         })
       }
     },
-    [toast]
+    [toast, ts]
   )
 
   // Handle setting active user provider
@@ -1661,7 +1678,7 @@ export function SettingsView() {
             isActive: true,
           })
           setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
-          toast({ title: '已切换我的供应商' })
+          toast({ title: ts('myProviderSwitched') })
         } else {
           // No config yet, just toggle active state — user needs to input key first
           // Still deactivate other user providers in this category
@@ -1677,17 +1694,17 @@ export function SettingsView() {
             })
             setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
           }
-          toast({ title: '请先输入 API Key 并保存', description: '展开供应商卡片，输入你的 API Key 后点击保存' })
+          toast({ title: ts('enterApiKeyFirst'), description: ts('enterApiKeyDesc') })
         }
       } catch (err) {
         toast({
-          title: '切换失败',
+          title: ts('switchFailed'),
           description: String(err),
           variant: 'destructive',
         })
       }
     },
-    [toast, userProvidersData]
+    [toast, userProvidersData, ts]
   )
 
   // Handle saving agent config
@@ -1703,10 +1720,10 @@ export function SettingsView() {
               : a
           )
         )
-        toast({ title: 'Agent 配置已保存' })
+        toast({ title: ts('agentConfigSaved') })
       } catch (err) {
         toast({
-          title: '保存 Agent 配置失败',
+          title: ts('agentConfigSaveFailed'),
           description: String(err),
           variant: 'destructive',
         })
@@ -1714,7 +1731,7 @@ export function SettingsView() {
         setAgentSaving(null)
       }
     },
-    [toast]
+    [toast, ts]
   )
 
   // Handle test connection
@@ -1736,12 +1753,12 @@ export function SettingsView() {
           setTestResults((prev) => ({ ...prev, [category]: result }))
           if (result.success) {
             toast({
-              title: '连接成功',
-              description: result.model ? `模型: ${result.model}` : undefined,
+              title: ts('connectionSuccess'),
+              description: result.model ? `${ts('modelLabel')}: ${result.model}` : undefined,
             })
           } else {
             toast({
-              title: '连接失败',
+              title: ts('connectionFailed'),
               description: result.error,
               variant: 'destructive',
             })
@@ -1753,7 +1770,7 @@ export function SettingsView() {
           }
           setTestResults((prev) => ({ ...prev, [category]: errorResult }))
           toast({
-            title: '连接失败',
+            title: ts('connectionFailed'),
             description: String(err),
             variant: 'destructive',
           })
@@ -1779,7 +1796,7 @@ export function SettingsView() {
         }
       }
     },
-    [toast, providersData]
+    [toast, providersData, ts]
   )
 
   return (
@@ -1795,11 +1812,11 @@ export function SettingsView() {
               className="text-muted-foreground hover:text-foreground -ml-2"
             >
               <ArrowLeft className="size-4" />
-              <span className="hidden sm:inline">返回</span>
+              <span className="hidden sm:inline">{tc('back')}</span>
             </Button>
             <Separator orientation="vertical" className="h-5" />
             <Settings className="size-5 text-primary" />
-            <h1 className="text-xl font-bold">平台设置</h1>
+            <h1 className="text-xl font-bold">{ts('platformSettings')}</h1>
           </div>
           <UserMenu />
         </div>
@@ -1812,7 +1829,7 @@ export function SettingsView() {
           <div className="flex items-center justify-center py-20">
             <div className="text-center space-y-3">
               <Loader2 className="size-8 animate-spin text-primary mx-auto" />
-              <p className="text-sm text-muted-foreground">正在加载设置...</p>
+              <p className="text-sm text-muted-foreground">{ts('loadingSettings')}</p>
             </div>
           </div>
         ) : (
@@ -1836,9 +1853,9 @@ export function SettingsView() {
                       className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
                     >
                       {meta.icon}
-                      <span className="hidden sm:inline">{meta.label}</span>
+                      <span className="hidden sm:inline">{ts(meta.labelKey)}</span>
                       <span className="sm:hidden">
-                        {cat === 'llm' ? 'LLM' : cat === 'tts' ? 'TTS' : cat === 'image' ? '图片' : '视频'}
+                        {cat === 'llm' ? 'LLM' : cat === 'tts' ? 'TTS' : cat === 'image' ? ts('tabImage') : ts('tabVideo')}
                       </span>
                       {hasUserKey ? (
                         <span className="inline-block size-1.5 rounded-full bg-amber-500" />
@@ -1856,8 +1873,8 @@ export function SettingsView() {
                   className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
                 >
                   <Bot className="size-4" />
-                  <span className="hidden sm:inline">Agent配置</span>
-                  <span className="sm:hidden">Agent</span>
+                  <span className="hidden sm:inline">{ts('agentConfig')}</span>
+                  <span className="sm:hidden">{ts('agentConfigShort')}</span>
                   {agentsList.some((a) => a.config.isActive) && (
                     <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
                   )}
@@ -1868,16 +1885,16 @@ export function SettingsView() {
                   className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
                 >
                   <Wallet className="size-4" />
-                  <span className="hidden sm:inline">预算控制</span>
-                  <span className="sm:hidden">预算</span>
+                  <span className="hidden sm:inline">{ts('budgetControl')}</span>
+                  <span className="sm:hidden">{ts('budgetShort')}</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="publish"
                   className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
                 >
                   <Globe className="size-4" />
-                  <span className="hidden sm:inline">发布平台</span>
-                  <span className="sm:hidden">发布</span>
+                  <span className="hidden sm:inline">{ts('publishPlatform')}</span>
+                  <span className="sm:hidden">{ts('publishShort')}</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -1911,9 +1928,9 @@ export function SettingsView() {
                   {/* Header */}
                   <div className="flex items-center gap-2">
                     <Bot className="size-4 text-primary" />
-                    <h2 className="text-base font-bold">Agent 配置</h2>
+                    <h2 className="text-base font-bold">{ts('agentConfig')}</h2>
                     <Badge variant="secondary" className="text-[10px]">
-                      {agentsList.length} 个 Agent
+                      {ts('agentCount', { count: agentsList.length })}
                     </Badge>
                   </div>
 
@@ -1931,7 +1948,7 @@ export function SettingsView() {
                       <div className="flex items-center justify-center py-12">
                         <div className="text-center">
                           <Bot className="size-10 text-muted-foreground/30 mx-auto mb-3" />
-                          <p className="text-sm text-muted-foreground">正在加载 Agent 配置...</p>
+                          <p className="text-sm text-muted-foreground">{ts('loadingAgentConfig')}</p>
                         </div>
                       </div>
                     )}
@@ -1941,8 +1958,7 @@ export function SettingsView() {
                   <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
                     <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Agent 是短剧创作管线中的AI专家，每个Agent负责特定任务（改写、提取、分镜等）。
-                      您可以自定义每个Agent的系统提示词、模型、温度等参数来优化输出效果。
+                      {ts('agentDescription')}
                     </p>
                   </div>
                 </div>
@@ -1965,11 +1981,11 @@ export function SettingsView() {
                 <p className="text-xs text-muted-foreground flex items-start gap-1.5">
                   <Info className="size-3.5 mt-0.5 flex-shrink-0" />
                   {isAdmin
-                    ? 'API Key 等敏感信息仅保存在服务端，普通用户无法查看完整密钥'
-                    : '您可以配置自己的 API Key（优先使用），未配置时自动使用平台共享 Key'}
+                    ? ts('adminKeyInfo')
+                    : ts('userKeyInfo')}
                 </p>
                 <p className="text-[10px] text-muted-foreground/60">
-                  配置完成后可返回项目开始创作
+                  {ts('configCompleteHint')}
                 </p>
               </div>
             </div>

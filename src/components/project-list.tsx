@@ -44,6 +44,7 @@ import { ScriptUploadDialog } from '@/components/script-upload-dialog'
 
 // ── helpers ──────────────────────────────────────────────────
 
+const GENRE_KEYS = ['genreUrban', 'genreAncient', 'genreMystery', 'genreScifi', 'genreSweet', 'genreRevenge', 'genreInspirational', 'genreCampus'] as const
 const GENRE_VALUES = ['都市', '古装', '悬疑', '科幻', '甜宠', '复仇', '励志', '校园']
 const STYLE_ENTRIES: [string, string][] = [
   ['realistic', 'styleRealistic'],
@@ -96,12 +97,14 @@ function ProjectCard({
   drama,
   onClick,
   onDelete,
-  t,
+  tc,
+  tp,
 }: {
   drama: Drama
   onClick: () => void
   onDelete: () => void
-  t: any
+  tc: any  // common namespace
+  tp: any  // project namespace
 }) {
   const [hovered, setHovered] = useState(false)
 
@@ -147,7 +150,7 @@ function ProjectCard({
               <MapPin className="size-3" />{sceneCount}
             </span>
             <span className="flex items-center gap-1">
-              <Film className="size-3" />{epCount}{t('common.episodes')}
+              <Film className="size-3" />{epCount}{tc('episodes')}
             </span>
           </div>
 
@@ -156,7 +159,7 @@ function ProjectCard({
             <div className="space-y-1">
               <Progress value={progressPercent} className="h-1.5" />
               <p className="text-[10px] text-muted-foreground text-right">
-                {t('project.percentComplete', { percent: progressPercent })}
+                {tp('percentComplete', { percent: progressPercent })}
               </p>
             </div>
           )}
@@ -164,7 +167,7 @@ function ProjectCard({
           {/* Time */}
           <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <Clock className="size-3" />
-            <span>{relativeTime(drama.updatedAt, t)}</span>
+            <span>{relativeTime(drama.updatedAt, tc)}</span>
           </div>
         </CardContent>
 
@@ -298,16 +301,16 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={navigateToAssetLibrary} title="资产库">
+            <Button variant="outline" size="icon" onClick={navigateToAssetLibrary} title={tn('assetLibrary')}>
               <Library className="size-4" />
             </Button>
-            <Button variant="outline" size="icon" onClick={navigateToMarketplace} title="角色市场">
+            <Button variant="outline" size="icon" onClick={navigateToMarketplace} title={tn('marketplace')}>
               <Store className="size-4" />
             </Button>
-            <Button variant="outline" size="icon" onClick={navigateToSeries} title="系列管理">
+            <Button variant="outline" size="icon" onClick={navigateToSeries} title={tn('series')}>
               <Layers className="size-4" />
             </Button>
-            <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
+            <Button variant="outline" size="icon" onClick={navigateToSettings} title={tn('settings')}>
               <Settings className="size-4" />
             </Button>
             <LanguageSwitcher />
@@ -377,7 +380,8 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
                 drama={drama}
                 onClick={() => navigateToProject(drama.id)}
                 onDelete={() => setDeleteTarget(drama)}
-                t={tp}
+                tc={tc}
+                tp={tp}
               />
             ))}
 
@@ -423,9 +427,9 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {GENRE_VALUES.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
+                  {GENRE_KEYS.map((key, i) => (
+                    <SelectItem key={GENRE_VALUES[i]} value={GENRE_VALUES[i]}>
+                      {tp(key)}
                     </SelectItem>
                   ))}
                 </SelectContent>

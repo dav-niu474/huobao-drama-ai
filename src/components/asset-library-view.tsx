@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { useAppStore, type Asset } from '@/lib/store'
 import { api } from '@/lib/api'
@@ -59,18 +60,14 @@ import { UserMenu } from '@/components/user-menu'
 
 // ── Category config ──────────────────────────────────────────
 
-const CATEGORIES = [
-  { value: 'character', label: '角色', icon: UserCircle },
-  { value: 'scene', label: '场景', icon: MapPin },
-  { value: 'prop', label: '道具', icon: Package },
+const CATEGORY_CONFIG = [
+  { value: 'character', icon: UserCircle, labelKey: 'character' as const },
+  { value: 'scene', icon: MapPin, labelKey: 'scene' as const },
+  { value: 'prop', icon: Package, labelKey: 'prop' as const },
 ] as const
 
-function categoryLabel(cat: string): string {
-  return CATEGORIES.find((c) => c.value === cat)?.label ?? cat
-}
-
 function categoryIcon(cat: string) {
-  return CATEGORIES.find((c) => c.value === cat)?.icon ?? Package
+  return CATEGORY_CONFIG.find((c) => c.value === cat)?.icon ?? Package
 }
 
 // ── Asset Card ───────────────────────────────────────────────
@@ -88,11 +85,18 @@ function AssetCard({
   onApply: (dramaId: string) => void
   dramas: { id: string; title: string }[]
 }) {
+  const ta = useTranslations('assetLibrary')
+  const tc = useTranslations('common')
+
   const [applying, setApplying] = useState(false)
   const [showApplyMenu, setShowApplyMenu] = useState(false)
   const Icon = categoryIcon(asset.category)
   const tags = JSON.parse(asset.tags || '[]') as string[]
   const imageUrls = JSON.parse(asset.imageUrls || '[]') as string[]
+
+  const categoryLabel = CATEGORY_CONFIG.find((c) => c.value === asset.category)
+    ? ta(CATEGORY_CONFIG.find((c) => c.value === asset.category)!.labelKey)
+    : asset.category
 
   const handleApply = async (dramaId: string) => {
     setApplying(true)
@@ -125,7 +129,7 @@ function AssetCard({
             variant="secondary"
             className="absolute top-2 left-2 text-[10px] px-1.5 py-0 bg-background/80 backdrop-blur-sm"
           >
-            {categoryLabel(asset.category)}
+            {categoryLabel}
           </Badge>
           {/* Visibility badge */}
           <div className="absolute top-2 right-2">
@@ -173,7 +177,7 @@ function AssetCard({
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
             <span className="text-[10px] text-muted-foreground flex items-center gap-1">
               <Eye className="size-3" />
-              {asset.usageCount} 次使用
+              {ta('usageCount', { count: asset.usageCount })}
             </span>
             <div className="flex items-center gap-1">
               <Button
@@ -182,7 +186,7 @@ function AssetCard({
                 className="size-6 p-0"
                 onClick={() => setShowApplyMenu(!showApplyMenu)}
                 disabled={applying}
-                title="应用到项目"
+                title={ta('applyToProject')}
               >
                 {applying ? (
                   <Loader2 className="size-3 animate-spin" />
@@ -195,7 +199,7 @@ function AssetCard({
                 size="sm"
                 className="size-6 p-0 text-muted-foreground hover:text-destructive"
                 onClick={onDelete}
-                title="删除"
+                title={tc('delete')}
               >
                 <Trash2 className="size-3" />
               </Button>
@@ -209,7 +213,7 @@ function AssetCard({
               animate={{ opacity: 1, height: 'auto' }}
               className="mt-2 border-t border-border/30 pt-2"
             >
-              <p className="text-[10px] text-muted-foreground mb-1">应用到项目：</p>
+              <p className="text-[10px] text-muted-foreground mb-1">{ta('applyToProjectColon')}</p>
               <div className="max-h-32 overflow-y-auto space-y-1">
                 {dramas.map((drama) => (
                   <button
@@ -246,12 +250,19 @@ function AssetDetailDialog({
   onApply: (dramaId: string) => void
   dramas: { id: string; title: string }[]
 }) {
+  const ta = useTranslations('assetLibrary')
+  const tc = useTranslations('common')
+
   if (!asset) return null
 
   const Icon = categoryIcon(asset.category)
   const tags = JSON.parse(asset.tags || '[]') as string[]
   const imageUrls = JSON.parse(asset.imageUrls || '[]') as string[]
   const data = JSON.parse(asset.data || '{}') as Record<string, any>
+
+  const categoryLabel = CATEGORY_CONFIG.find((c) => c.value === asset.category)
+    ? ta(CATEGORY_CONFIG.find((c) => c.value === asset.category)!.labelKey)
+    : asset.category
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -261,11 +272,11 @@ function AssetDetailDialog({
             <Icon className="size-5 text-primary" />
             {asset.name}
             <Badge variant="secondary" className="text-[10px]">
-              {categoryLabel(asset.category)}
+              {categoryLabel}
             </Badge>
           </DialogTitle>
           <DialogDescription>
-            资产详情 — 可应用到项目中复用
+            {ta('detailDescription')}
           </DialogDescription>
         </DialogHeader>
 
@@ -280,22 +291,22 @@ function AssetDetailDialog({
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <span className="text-muted-foreground">创建者：</span>
-              <span>{asset.user?.name || '未知'}</span>
+              <span className="text-muted-foreground">{ta('creator')}</span>
+              <span>{asset.user?.name || ta('unknown')}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">使用次数：</span>
+              <span className="text-muted-foreground">{ta('usageCountLabel')}</span>
               <span>{asset.usageCount}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">可见性：</span>
+              <span className="text-muted-foreground">{ta('visibility')}</span>
               <span className="flex items-center gap-1">
                 {asset.isPublic ? <Globe className="size-3" /> : <Lock className="size-3" />}
-                {asset.isPublic ? '公开' : '私有'}
+                {asset.isPublic ? ta('public') : ta('private')}
               </span>
             </div>
             <div>
-              <span className="text-muted-foreground">子类别：</span>
+              <span className="text-muted-foreground">{ta('subcategory')}</span>
               <span>{asset.subcategory || '—'}</span>
             </div>
           </div>
@@ -303,7 +314,7 @@ function AssetDetailDialog({
           {/* Tags */}
           {tags.length > 0 && (
             <div>
-              <span className="text-xs text-muted-foreground block mb-1">标签</span>
+              <span className="text-xs text-muted-foreground block mb-1">{ta('tags')}</span>
               <div className="flex flex-wrap gap-1.5">
                 {tags.map((tag) => (
                   <Badge key={tag} variant="outline" className="text-[11px]">
@@ -317,7 +328,7 @@ function AssetDetailDialog({
           {/* Description */}
           {asset.description && (
             <div>
-              <span className="text-xs text-muted-foreground block mb-1">描述</span>
+              <span className="text-xs text-muted-foreground block mb-1">{ta('descriptionLabel')}</span>
               <p className="text-sm leading-relaxed">{asset.description}</p>
             </div>
           )}
@@ -326,7 +337,7 @@ function AssetDetailDialog({
           {asset.imagePrompt && (
             <div className="rounded-md bg-primary/5 border border-primary/10 px-3 py-2">
               <span className="text-[10px] font-medium text-primary/70 uppercase tracking-wide block mb-0.5">
-                形象提示词
+                {ta('imagePrompt')}
               </span>
               <p className="text-xs text-foreground leading-relaxed">{asset.imagePrompt}</p>
             </div>
@@ -335,7 +346,7 @@ function AssetDetailDialog({
           {/* Category-specific data */}
           {Object.keys(data).length > 0 && (
             <div>
-              <span className="text-xs text-muted-foreground block mb-1">详细属性</span>
+              <span className="text-xs text-muted-foreground block mb-1">{ta('detailedAttributes')}</span>
               <div className="rounded-md bg-muted/40 px-3 py-2 space-y-1">
                 {Object.entries(data).map(([key, value]) => {
                   if (key === 'appearances' || key === 'images') return null // Skip complex nested
@@ -354,7 +365,7 @@ function AssetDetailDialog({
           {/* All images */}
           {imageUrls.length > 0 && (
             <div>
-              <span className="text-xs text-muted-foreground block mb-1">图片 ({imageUrls.length})</span>
+              <span className="text-xs text-muted-foreground block mb-1">{ta('images', { count: imageUrls.length })}</span>
               <div className="grid grid-cols-3 gap-2">
                 {imageUrls.map((url, i) => (
                   <div key={i} className="rounded-md overflow-hidden border border-border/50">
@@ -369,7 +380,7 @@ function AssetDetailDialog({
         <DialogFooter>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              关闭
+              {tc('close')}
             </Button>
             <Button
               variant="destructive"
@@ -377,12 +388,12 @@ function AssetDetailDialog({
               onClick={onDelete}
             >
               <Trash2 className="size-3.5" />
-              删除
+              {tc('delete')}
             </Button>
             {dramas.length > 0 && (
               <Select onValueChange={(dramaId) => onApply(dramaId)}>
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="应用到项目..." />
+                  <SelectValue placeholder={ta('applyToProjectPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {dramas.map((drama) => (
@@ -411,6 +422,8 @@ function CreateAssetDialog({
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }) {
+  const ta = useTranslations('assetLibrary')
+  const tc = useTranslations('common')
   const { toast } = useToast()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -430,7 +443,7 @@ function CreateAssetDialog({
         imagePrompt: imagePrompt || undefined,
         isPublic,
       })
-      toast({ title: '资产创建成功' })
+      toast({ title: ta('createSuccess') })
       setName('')
       setCategory('character')
       setDescription('')
@@ -439,7 +452,7 @@ function CreateAssetDialog({
       onOpenChange(false)
       onSuccess()
     } catch (err: any) {
-      toast({ title: '创建失败', description: err.message, variant: 'destructive' })
+      toast({ title: ta('createFailed'), description: err.message, variant: 'destructive' })
     } finally {
       setCreating(false)
     }
@@ -449,68 +462,68 @@ function CreateAssetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新建资产</DialogTitle>
-          <DialogDescription>创建可跨项目复用的角色、场景或道具模板</DialogDescription>
+          <DialogTitle>{ta('createNewAsset')}</DialogTitle>
+          <DialogDescription>{ta('createAssetDescription')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label>名称 *</Label>
+            <Label>{ta('nameRequired')} *</Label>
             <Input
-              placeholder="输入资产名称"
+              placeholder={ta('enterAssetName')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
             />
           </div>
           <div className="space-y-2">
-            <Label>类别 *</Label>
+            <Label>{ta('categoryRequired')} *</Label>
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="character">角色</SelectItem>
-                <SelectItem value="scene">场景</SelectItem>
-                <SelectItem value="prop">道具</SelectItem>
+                <SelectItem value="character">{ta('character')}</SelectItem>
+                <SelectItem value="scene">{ta('scene')}</SelectItem>
+                <SelectItem value="prop">{ta('prop')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>描述</Label>
+            <Label>{ta('descriptionLabel')}</Label>
             <Textarea
-              placeholder="描述此资产..."
+              placeholder={ta('descriptionPlaceholder')}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
             />
           </div>
           <div className="space-y-2">
-            <Label>形象提示词</Label>
+            <Label>{ta('imagePromptLabel')}</Label>
             <Textarea
-              placeholder="AI 绘图提示词..."
+              placeholder={ta('imagePromptPlaceholder')}
               value={imagePrompt}
               onChange={(e) => setImagePrompt(e.target.value)}
               rows={2}
             />
           </div>
           <div className="flex items-center gap-3">
-            <Label>可见性</Label>
+            <Label>{ta('visibilityLabel')}</Label>
             <Select value={isPublic ? 'public' : 'private'} onValueChange={(v) => setIsPublic(v === 'public')}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="public">公开</SelectItem>
-                <SelectItem value="private">私有</SelectItem>
+                <SelectItem value="public">{ta('public')}</SelectItem>
+                <SelectItem value="private">{ta('private')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tc('cancel')}</Button>
           <Button onClick={handleCreate} disabled={!name.trim() || creating}>
             {creating && <Loader2 className="size-4 animate-spin mr-2" />}
-            创建
+            {tc('create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -521,6 +534,8 @@ function CreateAssetDialog({
 // ── Main AssetLibraryView ────────────────────────────────────
 
 export function AssetLibraryView() {
+  const ta = useTranslations('assetLibrary')
+  const tc = useTranslations('common')
   const { navigateToProjects, dramas } = useAppStore()
   const { toast } = useToast()
 
@@ -554,11 +569,11 @@ export function AssetLibraryView() {
       setAssets(result.assets)
       setTotal(result.total)
     } catch (err: any) {
-      toast({ title: '加载资产库失败', description: err.message, variant: 'destructive' })
+      toast({ title: ta('loadFailed'), description: err.message, variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }, [category, search, page, toast])
+  }, [category, search, page, toast, ta])
 
   useEffect(() => {
     fetchAssets()
@@ -575,11 +590,11 @@ export function AssetLibraryView() {
     try {
       const result = await api.assets.apply(assetId, dramaId)
       toast({
-        title: '应用成功',
-        description: `已将「${result.assetName}」添加到项目`,
+        title: ta('applySuccess'),
+        description: ta('applySuccessDesc', { name: result.assetName }),
       })
     } catch (err: any) {
-      toast({ title: '应用失败', description: err.message, variant: 'destructive' })
+      toast({ title: ta('applyFailed'), description: err.message, variant: 'destructive' })
     } finally {
       setApplying(null)
     }
@@ -591,11 +606,11 @@ export function AssetLibraryView() {
     setDeleting(true)
     try {
       await api.assets.delete(deleteTarget.id)
-      toast({ title: '资产已删除' })
+      toast({ title: ta('assetDeleted') })
       setDeleteTarget(null)
       fetchAssets()
     } catch (err: any) {
-      toast({ title: '删除失败', description: err.message, variant: 'destructive' })
+      toast({ title: ta('deleteFailed'), description: err.message, variant: 'destructive' })
     } finally {
       setDeleting(false)
     }
@@ -617,10 +632,10 @@ export function AssetLibraryView() {
               <ArrowLeft className="size-4" />
             </Button>
             <Library className="size-6 text-primary" />
-            <h1 className="text-xl sm:text-2xl font-bold">资产库</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">{ta('title')}</h1>
             {total > 0 && (
               <Badge variant="secondary" className="text-xs">
-                {total} 个资产
+                {ta('assetCount', { count: total })}
               </Badge>
             )}
           </div>
@@ -630,7 +645,7 @@ export function AssetLibraryView() {
               className="amber-glow"
             >
               <Plus className="size-4" />
-              <span className="hidden sm:inline">新建资产</span>
+              <span className="hidden sm:inline">{ta('newAsset')}</span>
             </Button>
             <UserMenu />
           </div>
@@ -643,18 +658,18 @@ export function AssetLibraryView() {
           {/* Category tabs */}
           <Tabs value={category} onValueChange={setCategory}>
             <TabsList className="h-8">
-              <TabsTrigger value="all" className="text-xs px-3">全部</TabsTrigger>
+              <TabsTrigger value="all" className="text-xs px-3">{ta('all')}</TabsTrigger>
               <TabsTrigger value="character" className="text-xs px-3">
                 <UserCircle className="size-3.5 mr-1" />
-                角色
+                {ta('character')}
               </TabsTrigger>
               <TabsTrigger value="scene" className="text-xs px-3">
                 <MapPin className="size-3.5 mr-1" />
-                场景
+                {ta('scene')}
               </TabsTrigger>
               <TabsTrigger value="prop" className="text-xs px-3">
                 <Package className="size-3.5 mr-1" />
-                道具
+                {ta('prop')}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -663,7 +678,7 @@ export function AssetLibraryView() {
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
-              placeholder="搜索资产..."
+              placeholder={ta('searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 text-xs pl-8"
@@ -707,8 +722,8 @@ export function AssetLibraryView() {
                 <div className="size-14 rounded-full bg-muted flex items-center justify-center">
                   <Plus className="size-7 text-primary" />
                 </div>
-                <p className="text-sm font-medium">资产库为空</p>
-                <p className="text-xs opacity-70">创建第一个可复用的角色、场景或道具模板</p>
+                <p className="text-sm font-medium">{ta('emptyTitle')}</p>
+                <p className="text-xs opacity-70">{ta('emptyDescription')}</p>
               </CardContent>
             </Card>
           </div>
@@ -737,10 +752,10 @@ export function AssetLibraryView() {
               disabled={page === 1}
               onClick={() => setPage(page - 1)}
             >
-              上一页
+              {ta('previousPage')}
             </Button>
             <span className="text-xs text-muted-foreground">
-              第 {page} / {Math.ceil(total / 20)} 页
+              {ta('pageInfo', { page, totalPages: Math.ceil(total / 20) })}
             </span>
             <Button
               variant="outline"
@@ -748,7 +763,7 @@ export function AssetLibraryView() {
               disabled={page >= Math.ceil(total / 20)}
               onClick={() => setPage(page + 1)}
             >
-              下一页
+              {ta('nextPage')}
             </Button>
           </div>
         )}
@@ -784,19 +799,19 @@ export function AssetLibraryView() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogTitle>{ta('deleteConfirm')}</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要删除资产「{deleteTarget?.name}」吗？此操作不可撤销，但已应用到项目中的角色/场景/道具不会被删除。
+              {ta('deleteWarning', { name: deleteTarget?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tc('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={deleting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {deleting ? '删除中...' : '确认删除'}
+              {deleting ? ta('deleting') : ta('confirmDelete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

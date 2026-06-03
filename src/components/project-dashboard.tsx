@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { api } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -85,27 +86,18 @@ interface DashboardData {
   }>
 }
 
-const STYLE_LABELS: Record<string, string> = {
-  realistic: '写实',
-  anime: '动漫',
-  cinematic: '电影感',
-  comic: '漫画',
-  watercolor: '水彩',
-  '3d': '3D',
-}
-
-function relativeTime(dateStr: string): string {
+function relativeTime(dateStr: string, tc: (key: string, params?: Record<string, number>) => string): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
   const diff = Math.max(0, now - then)
   const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
+  if (minutes < 1) return tc('justNow')
+  if (minutes < 60) return tc('minutesAgo', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}小时前`
+  if (hours < 24) return tc('hoursAgo', { count: hours })
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}天前`
-  return `${Math.floor(days / 30)}个月前`
+  if (days < 30) return tc('daysAgo', { count: days })
+  return tc('monthsAgo', { count: Math.floor(days / 30) })
 }
 
 function getProgressColor(value: number): string {
@@ -120,17 +112,17 @@ function getProgressIndicatorClass(value: number): string {
   return '[&>div]:bg-red-500'
 }
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, tc: (key: string) => string) {
   switch (status) {
     case 'completed':
-      return <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">已完成</Badge>
+      return <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">{tc('completed')}</Badge>
     case 'in-progress':
     case 'processing':
-      return <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">进行中</Badge>
+      return <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">{tc('inProgress')}</Badge>
     case 'failed':
-      return <Badge variant="destructive" className="text-[10px]">失败</Badge>
+      return <Badge variant="destructive" className="text-[10px]">{tc('failed')}</Badge>
     default:
-      return <Badge variant="outline" className="text-[10px]">草稿</Badge>
+      return <Badge variant="outline" className="text-[10px]">{tc('pending')}</Badge>
   }
 }
 
@@ -142,12 +134,14 @@ function AssetStatCard({
   completed,
   total,
   color,
+  readyLabel,
 }: {
   icon: typeof Image
   label: string
   completed: number
   total: number
   color: string
+  readyLabel: string
 }) {
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0
   return (
@@ -165,7 +159,7 @@ function AssetStatCard({
           </div>
         </div>
         <Progress value={percent} className={`h-1.5 ${getProgressIndicatorClass(percent)}`} />
-        <p className="text-[10px] text-muted-foreground mt-1 text-right">{percent}% 就绪</p>
+        <p className="text-[10px] text-muted-foreground mt-1 text-right">{percent}% {readyLabel}</p>
       </CardContent>
     </Card>
   )
@@ -180,9 +174,23 @@ export function ProjectDashboard({
   dramaId: string
   onBack: () => void
 }) {
+  const tc = useTranslations('common')
+  const tp = useTranslations('projectDetail')
+  const tproj = useTranslations('project')
+
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Style labels using translations
+  const STYLE_LABELS: Record<string, string> = {
+    realistic: tproj('styleRealistic'),
+    anime: tproj('styleAnime'),
+    cinematic: tproj('styleCinematic'),
+    comic: tproj('styleComic'),
+    watercolor: tproj('styleWatercolor'),
+    '3d': tproj('style3d'),
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -207,7 +215,7 @@ export function ProjectDashboard({
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="size-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">加载看板数据...</p>
+          <p className="text-sm text-muted-foreground">{tp('loadingDashboard')}</p>
         </div>
       </div>
     )
@@ -217,9 +225,9 @@ export function ProjectDashboard({
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <p className="text-sm text-destructive">加载失败: {error}</p>
+          <p className="text-sm text-destructive">{tp('loadDetailFailed')}: {error}</p>
           <Button variant="outline" size="sm" onClick={onBack}>
-            <ArrowLeft className="size-4" /> 返回
+            <ArrowLeft className="size-4" /> {tc('back')}
           </Button>
         </div>
       </div>
@@ -249,12 +257,12 @@ export function ProjectDashboard({
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
               <ArrowLeft className="size-4" />
-              <span className="hidden sm:inline">返回</span>
+              <span className="hidden sm:inline">{tc('back')}</span>
             </Button>
             <div>
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Activity className="size-5 text-primary" />
-                项目看板
+                {tp('dashboard')}
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">{drama.title}</p>
             </div>
@@ -274,42 +282,42 @@ export function ProjectDashboard({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               {/* Overall progress */}
               <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">整体进度</p>
+                <p className="text-sm font-medium text-muted-foreground">{tp('overallProgress')}</p>
                 <div className="flex items-end gap-2">
                   <span className="text-3xl font-bold">{overallProgress}%</span>
                   <Progress value={overallProgress} className={`flex-1 h-2 ${getProgressIndicatorClass(overallProgress)}`} />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {completedEpisodes}/{episodes.length} 集已完成
+                  {tp('episodesCompleted', { completed: completedEpisodes, total: episodes.length })}
                 </p>
               </div>
 
               {/* Asset readiness */}
               <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">素材就绪</p>
+                <p className="text-sm font-medium text-muted-foreground">{tp('assetsReady')}</p>
                 <div className="flex items-end gap-2">
                   <span className="text-3xl font-bold">{assetPercent}%</span>
                   <Progress value={assetPercent} className={`flex-1 h-2 ${getProgressIndicatorClass(assetPercent)}`} />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {readyAssets}/{totalAssets} 素材已生成
+                  {readyAssets}/{totalAssets} {tp('assetsGenerated')}
                 </p>
               </div>
 
               {/* Team */}
               <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">团队</p>
+                <p className="text-sm font-medium text-muted-foreground">{tp('team')}</p>
                 <div className="flex items-center gap-2">
                   <Users className="size-5 text-primary" />
                   <span className="text-3xl font-bold">{team.totalMembers}</span>
-                  <span className="text-sm text-muted-foreground">成员</span>
+                  <span className="text-sm text-muted-foreground">{tp('members')}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>所有者: {team.ownerName}</span>
+                  <span>{tp('owner')} {team.ownerName}</span>
                   <span>·</span>
-                  <span>编辑 {team.roles.editor}</span>
+                  <span>{tp('editor')} {team.roles.editor}</span>
                   <span>·</span>
-                  <span>查看 {team.roles.viewer}</span>
+                  <span>{tp('viewer')} {team.roles.viewer}</span>
                 </div>
               </div>
             </div>
@@ -320,26 +328,26 @@ export function ProjectDashboard({
         <div>
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <Clapperboard className="size-4 text-primary" />
-            剧集管线进度
+            {tp('episodePipelineProgress')}
           </h3>
           <Card className="py-0 gap-0">
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-16">集数</TableHead>
-                    <TableHead>标题</TableHead>
-                    <TableHead className="w-48">进度</TableHead>
-                    <TableHead className="w-28">当前步骤</TableHead>
-                    <TableHead className="w-20">状态</TableHead>
-                    <TableHead className="w-16 text-center">视频</TableHead>
+                    <TableHead className="w-16">{tp('episodeNumber')}</TableHead>
+                    <TableHead>{tp('title')}</TableHead>
+                    <TableHead className="w-48">{tp('progress')}</TableHead>
+                    <TableHead className="w-28">{tp('currentStep')}</TableHead>
+                    <TableHead className="w-20">{tp('status')}</TableHead>
+                    <TableHead className="w-16 text-center">{tp('video')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {episodes.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        暂无集数
+                        {tp('noEpisodes')}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -351,7 +359,7 @@ export function ProjectDashboard({
                           </span>
                         </TableCell>
                         <TableCell className="font-medium text-sm truncate max-w-[200px]">
-                          {ep.title || `第${ep.episodeNumber}集`}
+                          {ep.title || tp('episode', { number: ep.episodeNumber })}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -369,7 +377,7 @@ export function ProjectDashboard({
                             {ep.currentStep || '—'}
                           </span>
                         </TableCell>
-                        <TableCell>{getStatusBadge(ep.status)}</TableCell>
+                        <TableCell>{getStatusBadge(ep.status, tc)}</TableCell>
                         <TableCell className="text-center">
                           {ep.hasVideo ? (
                             <CheckCircle2 className="size-4 text-emerald-500 inline" />
@@ -390,50 +398,56 @@ export function ProjectDashboard({
         <div>
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <ImageIcon className="size-4 text-primary" />
-            素材统计
+            {tp('assetStatistics')}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <AssetStatCard
               icon={Users}
-              label="角色图片"
+              label={tp('characterImages')}
               completed={assets.charactersWithImages}
               total={assets.totalCharacters}
               color="bg-sky-500"
+              readyLabel={tp('ready')}
             />
             <AssetStatCard
               icon={Image}
-              label="场景图片"
+              label={tp('sceneImages')}
               completed={assets.scenesWithImages}
               total={assets.totalScenes}
               color="bg-emerald-500"
+              readyLabel={tp('ready')}
             />
             <AssetStatCard
               icon={Package}
-              label="道具图片"
+              label={tp('propImages')}
               completed={assets.propsWithImages}
               total={assets.totalProps}
               color="bg-orange-500"
+              readyLabel={tp('ready')}
             />
             <AssetStatCard
               icon={Film}
-              label="分镜帧图"
+              label={tp('storyboardFrames')}
               completed={assets.storyboardsWithFrames}
               total={assets.totalStoryboards}
               color="bg-violet-500"
+              readyLabel={tp('ready')}
             />
             <AssetStatCard
               icon={Video}
-              label="视频生成"
+              label={tp('videoGeneration')}
               completed={assets.storyboardsWithVideos}
               total={assets.totalStoryboards}
               color="bg-rose-500"
+              readyLabel={tp('ready')}
             />
             <AssetStatCard
               icon={Mic}
-              label="配音生成"
+              label={tp('ttsGeneration')}
               completed={assets.storyboardsWithTts}
               total={assets.totalStoryboards}
               color="bg-teal-500"
+              readyLabel={tp('ready')}
             />
           </div>
         </div>
@@ -444,7 +458,7 @@ export function ProjectDashboard({
           <div>
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
               <DollarSign className="size-4 text-primary" />
-              成本消耗
+              {tp('costConsumption')}
             </h3>
             <Card className="py-0 gap-0">
               <CardContent className="p-4 space-y-4">
@@ -453,15 +467,15 @@ export function ProjectDashboard({
                     <DollarSign className="size-5 text-primary" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">总消耗积分</p>
+                    <p className="text-xs text-muted-foreground">{tp('totalCreditsUsed')}</p>
                     <p className="text-2xl font-bold">{costs.totalCredits.toFixed(1)}</p>
                   </div>
                 </div>
                 <div className="space-y-2">
                   {[
-                    { label: '图片', value: costs.byCategory.image, color: 'bg-sky-500' },
-                    { label: '视频', value: costs.byCategory.video, color: 'bg-rose-500' },
-                    { label: '配音', value: costs.byCategory.tts, color: 'bg-teal-500' },
+                    { label: tp('image'), value: costs.byCategory.image, color: 'bg-sky-500' },
+                    { label: tp('video'), value: costs.byCategory.video, color: 'bg-rose-500' },
+                    { label: tp('dubbing'), value: costs.byCategory.tts, color: 'bg-teal-500' },
                     { label: 'LLM', value: costs.byCategory.llm, color: 'bg-amber-500' },
                   ].map((cat) => (
                     <div key={cat.label} className="flex items-center gap-2">
@@ -487,13 +501,13 @@ export function ProjectDashboard({
           <div>
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
               <Activity className="size-4 text-primary" />
-              最近活动
+              {tp('recentActivity')}
             </h3>
             <Card className="py-0 gap-0">
               <CardContent className="p-0">
                 {recentActivity.length === 0 ? (
                   <div className="py-8 text-center text-sm text-muted-foreground">
-                    暂无活动记录
+                    {tp('noActivity')}
                   </div>
                 ) : (
                   <div className="divide-y divide-border/50 max-h-64 overflow-y-auto">
@@ -505,10 +519,10 @@ export function ProjectDashboard({
                         tts: <Mic className="size-3.5 text-teal-500" />,
                       }
                       const typeLabel = {
-                        comment: '评论',
-                        image: '图片',
-                        video: '视频',
-                        tts: '配音',
+                        comment: tp('comment'),
+                        image: tp('image'),
+                        video: tp('video'),
+                        tts: tp('dubbing'),
                       }
                       return (
                         <div key={idx} className="flex items-start gap-3 px-4 py-3">
@@ -525,7 +539,7 @@ export function ProjectDashboard({
                                 {activity.userName}
                               </span>
                               <span className="text-[10px] text-muted-foreground">
-                                {relativeTime(activity.createdAt)}
+                                {relativeTime(activity.createdAt, tc)}
                               </span>
                             </div>
                           </div>
