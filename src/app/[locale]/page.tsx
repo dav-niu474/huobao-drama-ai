@@ -108,7 +108,7 @@ function AuthGuard() {
       </div>
       {!isFullscreen && (
         <footer className="shrink-0 border-t border-border/50 py-4 text-center text-xs text-muted-foreground">
-          <span className="opacity-70">AI短剧创作平台 &copy; {new Date().getFullYear()}</span>
+          <span className="opacity-80">AI短剧创作平台 &copy; {new Date().getFullYear()}</span>
         </footer>
       )}
     </div>

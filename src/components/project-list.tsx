@@ -290,13 +290,13 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
             <Film className="size-6 text-primary" />
             <h1 className="text-xl sm:text-2xl font-bold">{tn('appName')}</h1>
             {dramas.length > 0 && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="outline" className="text-xs text-muted-foreground border-border/60">
                 {tp('projectCount', { count: dramas.length })}
               </Badge>
             )}
-            {perms.role !== 'pro' && perms.role !== 'admin' && (
+            {perms.role !== 'pro' && perms.role !== 'admin' && perms.maxProjects > 0 && (
               <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30 bg-amber-500/10">
-                {perms.maxProjects > 0 ? tp('projectLimit', { current: dramas.length, max: perms.maxProjects }) : ''}
+                {tp('projectLimit', { current: dramas.length, max: perms.maxProjects })}
               </Badge>
             )}
           </div>
@@ -373,7 +373,7 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
           </div>
         ) : (
           /* Project grid */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {dramas.map((drama) => (
               <ProjectCard
                 key={drama.id}
@@ -390,9 +390,14 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
               className="border-dashed border-2 border-border/30 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
               onClick={() => setCreateOpen(true)}
             >
-              <CardContent className="p-6 flex flex-col items-center justify-center gap-2 text-muted-foreground min-h-[200px]">
-                <Plus className="size-6 text-primary/60" />
-                <p className="text-xs">{tp('newProjectShort')}</p>
+              <CardContent className="p-6 flex flex-col items-center justify-center gap-3 text-muted-foreground min-h-[200px]">
+                <div className="size-12 rounded-full bg-muted/60 flex items-center justify-center">
+                  <Plus className="size-6 text-primary/60" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium">{tp('newProjectShort')}</p>
+                  <p className="text-[11px] opacity-60 mt-0.5">{tc('create')}</p>
+                </div>
               </CardContent>
             </Card>
           </div>

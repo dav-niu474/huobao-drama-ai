@@ -210,11 +210,15 @@ export function MarketplacePage() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0 space-y-4">
-        {/* Back button & Search & Sort */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={navigateToProjects} className="gap-1.5 text-xs shrink-0">
+        {/* Breadcrumb-style back button */}
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={navigateToProjects} className="gap-1.5 text-xs text-muted-foreground hover:text-foreground -ml-2">
             <ArrowLeft className="size-3.5" />{tn('backToProjects')}
           </Button>
+        </div>
+
+        {/* Search & Sort toolbar */}
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
@@ -253,9 +257,12 @@ export function MarketplacePage() {
             ))}
           </div>
         ) : templates.length === 0 ? (
-          <div className="py-16 text-center text-muted-foreground">
-            <Users className="size-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">{tm('noTemplates')}</p>
+          <div className="py-20 text-center">
+            <div className="size-16 rounded-full bg-muted/40 flex items-center justify-center mx-auto mb-4">
+              <Users className="size-8 text-muted-foreground/40" />
+            </div>
+            <p className="text-sm text-muted-foreground font-medium">{tm('noTemplates')}</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">💡 {tm('publishTemplate')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

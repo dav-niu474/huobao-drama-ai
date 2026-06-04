@@ -281,12 +281,12 @@ function ThreeStageProgress({ drama, tc, tp }: { drama: DramaDetail; tc: (key: s
   }
 
   return (
-    <div className="flex items-center gap-2 sm:gap-0">
+    <div className="flex items-center gap-3 sm:gap-0">
       {stages.map((stage, idx) => {
         const colors = statusColors[stage.status]
         const Icon = stage.icon
         return (
-          <div key={stage.key} className="flex items-center gap-2 sm:gap-0 flex-1">
+          <div key={stage.key} className="flex items-center gap-3 sm:gap-0 flex-1">
             {/* Stage Card */}
             <button
               onClick={stage.onClick}
@@ -338,7 +338,7 @@ function ThreeStageProgress({ drama, tc, tp }: { drama: DramaDetail; tc: (key: s
 
             {/* Arrow connector */}
             {idx < stages.length - 1 && (
-              <div className="hidden sm:flex items-center px-1">
+              <div className="hidden sm:flex items-center px-1.5">
                 <ArrowRight className="size-4 text-muted-foreground/40" />
               </div>
             )}
@@ -666,7 +666,7 @@ export function ProjectDetailView() {
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-border/50 bg-background/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center justify-between gap-3">
             <Button
               variant="ghost"
               size="sm"
@@ -680,7 +680,7 @@ export function ProjectDetailView() {
           </div>
 
           {drama && (
-            <div className="space-y-3">
+            <div className="space-y-3 mt-4 pt-3 border-t border-border/30">
               {/* Title area - full width */}
               <div className="min-w-0">
                 {isEditingTitle ? (
@@ -1080,12 +1080,12 @@ export function ProjectDetailView() {
           </div>
         ) : drama ? (
           /* Empty state */
-          <div className="flex items-center justify-center py-24">
+          <div className="flex items-center justify-center py-32">
             <Card
               className="w-full max-w-sm border-dashed border-2 border-border/50 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
               onClick={() => setAddEpOpen(true)}
             >
-              <CardContent className="p-8 flex flex-col items-center gap-4 text-muted-foreground">
+              <CardContent className="p-10 flex flex-col items-center gap-5 text-muted-foreground">
                 <div className="size-14 rounded-full bg-muted flex items-center justify-center">
                   <Plus className="size-7 text-primary" />
                 </div>
