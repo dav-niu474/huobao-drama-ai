@@ -30,6 +30,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { useAppStore } from '@/lib/store'
 
 // Safe JSON parse — returns fallback on error
 function safeJsonParse<T>(str: string | null | undefined, fallback: T): T {
@@ -74,6 +75,8 @@ interface TemplateDetail extends Template {
 export function MarketplacePage() {
   const tm = useTranslations('marketplace')
   const tc = useTranslations('common')
+  const tn = useTranslations('nav')
+  const navigateToProjects = useAppStore((s) => s.navigateToProjects)
 
   const CATEGORY_KEYS = ['', '古风', '现代', '科幻', '奇幻', '职场', '校园']
   const CATEGORY_LABEL_KEYS = ['all', 'categoryAncient', 'categoryModern', 'categoryScifi', 'categoryFantasy', 'categoryWorkplace', 'categoryCampus'] as const
@@ -207,8 +210,11 @@ export function MarketplacePage() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0 space-y-4">
-        {/* Search & Sort */}
+        {/* Back button & Search & Sort */}
         <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={navigateToProjects} className="gap-1.5 text-xs shrink-0">
+            <ArrowLeft className="size-3.5" />{tn('backToProjects')}
+          </Button>
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input

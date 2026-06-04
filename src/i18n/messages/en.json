@@ -40,7 +40,10 @@
     "skippedShort": "Skipped",
     "waitingShort": "Waiting",
     "steps": " steps",
-    "all": "All"
+    "all": "All",
+    "retry": "Retry",
+    "somethingWentWrong": "Something went wrong",
+    "errorDescription": "An error occurred on this page. Please try again."
   },
   "nav": {
     "appName": "AI Short Drama Studio",

@@ -214,6 +214,7 @@ interface AppStore {
   workspaceModels: WorkspaceModels
   setWorkspaceModel: (category: keyof WorkspaceModels, model: string) => void
   initWorkspaceModels: (models: Partial<WorkspaceModels>) => void
+  hydrateWorkspaceModels: () => void
 
   // Episode-level locked config
   episodeLockedConfig: LockedConfig | null
@@ -331,7 +332,8 @@ export const useAppStore = create<AppStore>((set) => ({
     set({ currentEpisode: episode }),
 
   // Workspace model selection (persisted to localStorage)
-  workspaceModels: loadWorkspaceModels(),
+  // Use server-safe default to avoid hydration mismatch; hydrated via hydrateWorkspaceModels()
+  workspaceModels: { llm: '', image: '', video: '', tts: '' },
   setWorkspaceModel: (category, model) =>
     set((state) => {
       const updated = { ...state.workspaceModels, [category]: model }
@@ -349,6 +351,10 @@ export const useAppStore = create<AppStore>((set) => ({
       try { localStorage.setItem('workspaceModels', JSON.stringify(updated)) } catch {}
       return { workspaceModels: updated }
     }),
+  hydrateWorkspaceModels: () => {
+    const hydrated = loadWorkspaceModels()
+    set({ workspaceModels: hydrated })
+  },
 
   // Episode-level locked config
   episodeLockedConfig: null,

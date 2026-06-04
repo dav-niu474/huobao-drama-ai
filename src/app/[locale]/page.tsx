@@ -64,6 +64,7 @@ const FULLSCREEN_VIEWS = new Set([
 function AuthGuard() {
   const { data: session, status } = useSession()
   const view = useAppStore((s) => s.view)
+  const hydrateWorkspaceModels = useAppStore((s) => s.hydrateWorkspaceModels)
   const t = useTranslations('common')
 
   // ★ 保险：一旦 session 曾经存在过，就绝不卸载 ViewRouter
@@ -74,6 +75,11 @@ function AuthGuard() {
       hasEverHadSession.current = true
     }
   }, [session])
+
+  // Hydrate workspaceModels from localStorage after mount to avoid SSR mismatch
+  useEffect(() => {
+    hydrateWorkspaceModels()
+  }, [hydrateWorkspaceModels])
 
   // 首次加载（从未拿到过 session）：显示 loading
   if (status === 'loading' && !hasEverHadSession.current) {

@@ -137,7 +137,7 @@ function ProjectCard({
               {drama.genre}
             </Badge>
             <Badge variant="outline" className="text-[11px] px-2 py-0">
-              {getStyleLabel(drama.style, t)}
+              {getStyleLabel(drama.style, tp)}
             </Badge>
           </div>
 

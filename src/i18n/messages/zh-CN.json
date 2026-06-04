@@ -40,7 +40,10 @@
     "skippedShort": "跳过",
     "waitingShort": "等待",
     "steps": "步",
-    "all": "全部"
+    "all": "全部",
+    "retry": "重试",
+    "somethingWentWrong": "出了点问题",
+    "errorDescription": "页面遇到了一个错误，请尝试重试。"
   },
   "nav": {
     "appName": "AI短剧创作平台",
