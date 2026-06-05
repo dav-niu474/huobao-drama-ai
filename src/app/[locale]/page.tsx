@@ -53,7 +53,6 @@ const FULLSCREEN_VIEWS = new Set([
   'script-workbench',
   'asset-workbench',
   'episode-workspace',
-  'marketplace',
   'series',
 ])
 

@@ -167,7 +167,7 @@
     "episodesCompleted": "{completed}/{total} eps completed",
     "batchStarted": "Batch pipeline started",
     "startFailed": "Start failed",
-    "batchPaused": "Batch pipeline paused",
+    "batchPaused": "Paused",
     "pauseFailed": "Pause failed",
     "batchResumed": "Batch pipeline resumed",
     "resumeFailed": "Resume failed",
@@ -206,7 +206,6 @@
     "scriptStatusPending": "Pending",
     "batchRunning": "Running",
     "batchCompleted": "Completed",
-    "batchPaused": "Paused",
     "batchRunningShort": "Running",
     "overallProgress": "Overall Progress",
     "assetsReady": "Assets Ready",
@@ -558,7 +557,10 @@
     "tagsPlaceholder": "Period, Heroine, Elegant",
     "publishFailed": "Publish failed",
     "publishSuccess": "Template published to marketplace!",
-    "categoryLabel": "Category"
+    "categoryLabel": "Category",
+    "title": "Character Marketplace",
+    "templateCount": "{count} templates",
+    "featured": "Featured"
   },
   "assetLibrary": {
     "title": "Asset Library",

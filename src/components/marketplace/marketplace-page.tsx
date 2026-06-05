@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
+import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,19 +18,20 @@ import {
   Star,
   Download,
   Users,
-  Tag,
   Eye,
   ShoppingCart,
   ArrowLeft,
   Loader2,
   Crown,
   Gift,
-  Lock,
   MessageSquare,
   Plus,
+  Store,
+  X,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useAppStore } from '@/lib/store'
+import { UserMenu } from '@/components/user-menu'
 
 // Safe JSON parse — returns fallback on error
 function safeJsonParse<T>(str: string | null | undefined, fallback: T): T {
@@ -189,46 +190,69 @@ export function MarketplacePage() {
   }
 
   return (
-    <div className="flex gap-4 h-full">
-      {/* Sidebar - Categories */}
-      <div className="w-40 shrink-0 space-y-1 hidden sm:block">
-        <h3 className="text-xs font-medium text-muted-foreground mb-2 px-2">{tm('category')}</h3>
-        {CATEGORIES.map(cat => (
-          <button
-            key={cat.key}
-            onClick={() => { setCategory(cat.key); setPage(1) }}
-            className={`w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors ${
-              category === cat.key
-                ? 'bg-primary/10 text-primary font-medium'
-                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Main content */}
-      <div className="flex-1 min-w-0 space-y-4">
-        {/* Breadcrumb-style back button */}
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={navigateToProjects} className="gap-1.5 text-xs text-muted-foreground hover:text-foreground -ml-2">
-            <ArrowLeft className="size-3.5" />{tn('backToProjects')}
-          </Button>
+    <div className="flex-1 flex flex-col">
+      {/* Header — same pattern as asset-library */}
+      <header className="sticky top-0 z-10 border-b border-border/50 bg-background/80 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={navigateToProjects}>
+              <ArrowLeft className="size-4" />
+            </Button>
+            <Store className="size-6 text-primary" />
+            <h1 className="text-xl sm:text-2xl font-bold">{tm('title')}</h1>
+            {total > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {tm('templateCount', { count: total })}
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" className="amber-glow" onClick={() => setPublishOpen(true)}>
+              <Plus className="size-4" />
+              <span className="hidden sm:inline">{tm('publishTemplate')}</span>
+            </Button>
+            <UserMenu />
+          </div>
         </div>
+      </header>
 
-        {/* Search & Sort toolbar */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 max-w-sm">
+      {/* Filters — same pattern as asset-library */}
+      <div className="border-b border-border/30 bg-background/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
+          {/* Category tabs */}
+          <Tabs value={category} onValueChange={(v) => { setCategory(v); setPage(1) }}>
+            <TabsList className="h-8">
+              {CATEGORIES.map(cat => (
+                <TabsTrigger key={cat.key} value={cat.key} className="text-xs px-3">
+                  {cat.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
               placeholder={tm('searchPlaceholder')}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-8 h-8 text-xs"
+              className="h-8 text-xs pl-8"
               onKeyDown={e => e.key === 'Enter' && fetchTemplates()}
             />
+            {search && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-0.5 top-1/2 -translate-y-1/2 size-6 p-0"
+                onClick={() => setSearch('')}
+              >
+                <X className="size-3" />
+              </Button>
+            )}
           </div>
+
+          {/* Sort */}
           <Select value={sort} onValueChange={setSort}>
             <SelectTrigger className="w-28 h-8 text-xs">
               <SelectValue />
@@ -239,99 +263,147 @@ export function MarketplacePage() {
               ))}
             </SelectContent>
           </Select>
-          <Button size="sm" className="text-xs h-8 gap-1" onClick={() => setPublishOpen(true)}>
-            <Plus className="size-3.5" />{tm('publishTemplate')}
-          </Button>
         </div>
+      </div>
 
-        {/* Template Grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="py-0 gap-0">
-                <CardContent className="p-3">
-                  <div className="h-32 shimmer rounded-md mb-2" />
-                  <div className="h-3 w-20 shimmer rounded" />
+      {/* Content */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+        {loading && templates.length === 0 ? (
+          /* Loading skeleton */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Card key={i} className="overflow-hidden py-0 gap-0">
+                <div className="h-40 shimmer" />
+                <CardContent className="p-3 space-y-2">
+                  <div className="h-4 w-3/4 shimmer rounded" />
+                  <div className="h-3 w-1/2 shimmer rounded" />
                 </CardContent>
               </Card>
             ))}
           </div>
         ) : templates.length === 0 ? (
-          <div className="py-20 text-center">
-            <div className="size-16 rounded-full bg-muted/40 flex items-center justify-center mx-auto mb-4">
-              <Users className="size-8 text-muted-foreground/40" />
-            </div>
-            <p className="text-sm text-muted-foreground font-medium">{tm('noTemplates')}</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">💡 {tm('publishTemplate')}</p>
+          /* Empty state */
+          <div className="flex items-center justify-center py-24">
+            <Card className="w-full max-w-sm border-dashed border-2 border-border/50 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
+              onClick={() => setPublishOpen(true)}
+            >
+              <CardContent className="p-8 flex flex-col items-center gap-4 text-muted-foreground">
+                <div className="size-14 rounded-full bg-muted flex items-center justify-center">
+                  <Users className="size-7 text-primary" />
+                </div>
+                <p className="text-sm font-medium">{tm('noTemplates')}</p>
+                <p className="text-xs opacity-70">{tm('publishTemplate')}</p>
+              </CardContent>
+            </Card>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          /* Template grid */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {templates.map(t => {
               const images = safeJsonParse<string[]>(t.referenceImages, [])
               const thumbnail = images[0] || null
               return (
-                <Card
-                  key={t.id}
-                  className="py-0 gap-0 cursor-pointer hover:border-primary/40 transition-all group"
-                  onClick={() => handleViewDetail(t.id)}
-                >
-                  <CardContent className="p-3">
+                <motion.div key={t.id} whileHover={{ y: -4 }} layout>
+                  <Card
+                    className="cursor-pointer group border-border/60 hover:border-primary/40 hover:shadow-[0_0_16px_oklch(0.72_0.15_75/0.2)] transition-all duration-300 py-0 gap-0 overflow-hidden"
+                    onClick={() => handleViewDetail(t.id)}
+                  >
                     {/* Thumbnail */}
-                    <div className="h-36 rounded-md bg-muted/30 flex items-center justify-center overflow-hidden mb-2">
+                    <div className="relative h-40 bg-muted/40 overflow-hidden">
                       {thumbnail ? (
                         <img src={thumbnail} alt={t.name} className="w-full h-full object-cover" />
                       ) : (
-                        <Users className="size-10 text-muted-foreground/30" />
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Users className="size-10 text-muted-foreground/30" />
+                        </div>
                       )}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <h4 className="text-sm font-medium truncate">{t.name}</h4>
-                      {t.licenseType === 'free' ? (
-                        <Badge className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shrink-0">
-                          <Gift className="size-2.5 mr-0.5" />{tm('free')}
-                        </Badge>
-                      ) : t.licenseType === 'exclusive' ? (
-                        <Badge className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20 shrink-0">
-                          <Crown className="size-2.5 mr-0.5" />¥{t.price}
-                        </Badge>
-                      ) : (
-                        <Badge className="text-[9px] shrink-0">
-                          ¥{t.price}
-                        </Badge>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-muted-foreground truncate">{t.description || t.appearance}</p>
-
-                    {/* Stats */}
-                    <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
-                      <span className="flex items-center gap-0.5">
-                        <Star className="size-2.5 text-amber-500" />{t.rating.toFixed(1)}
-                      </span>
-                      <span className="flex items-center gap-0.5">
-                        <Download className="size-2.5" />{t.downloadCount}
-                      </span>
-                      <span className="flex items-center gap-0.5">
-                        <Eye className="size-2.5" />{t._count.purchases}
-                      </span>
-                    </div>
-
-                    {/* Creator */}
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <div className="size-4 rounded-full bg-muted flex items-center justify-center">
-                        <Users className="size-2.5 text-muted-foreground" />
+                      {/* License badge */}
+                      <div className="absolute top-2 right-2">
+                        {t.licenseType === 'free' ? (
+                          <Badge className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 backdrop-blur-sm">
+                            <Gift className="size-2.5 mr-0.5" />{tm('free')}
+                          </Badge>
+                        ) : t.licenseType === 'exclusive' ? (
+                          <Badge className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20 backdrop-blur-sm">
+                            <Crown className="size-2.5 mr-0.5" />¥{t.price}
+                          </Badge>
+                        ) : (
+                          <Badge className="text-[10px] backdrop-blur-sm">
+                            ¥{t.price}
+                          </Badge>
+                        )}
                       </div>
-                      <span className="text-[10px] text-muted-foreground">{t.creator.name}</span>
                     </div>
-                  </CardContent>
-                </Card>
+
+                    <CardContent className="p-3">
+                      {/* Name */}
+                      <h4 className="text-sm font-semibold truncate">{t.name}</h4>
+
+                      {/* Description */}
+                      {t.description && (
+                        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{t.description}</p>
+                      )}
+
+                      {/* Stats */}
+                      <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-0.5">
+                          <Star className="size-3 text-amber-500" />{t.rating.toFixed(1)}
+                        </span>
+                        <span className="flex items-center gap-0.5">
+                          <Download className="size-3" />{t.downloadCount}
+                        </span>
+                        <span className="flex items-center gap-0.5">
+                          <Eye className="size-3" />{t._count.purchases}
+                        </span>
+                      </div>
+
+                      {/* Creator */}
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
+                        <div className="flex items-center gap-1.5">
+                          <div className="size-5 rounded-full bg-muted flex items-center justify-center">
+                            <Users className="size-3 text-muted-foreground" />
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">{t.creator.name}</span>
+                        </div>
+                        {t.featured && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                            <Crown className="size-2.5 mr-0.5 text-amber-500" />{tm('featured')}
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               )
             })}
           </div>
         )}
-      </div>
+
+        {/* Pagination */}
+        {total > 20 && (
+          <div className="flex items-center justify-center gap-2 mt-6">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 1}
+              onClick={() => setPage(page - 1)}
+            >
+              {tc('previous')}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {page} / {Math.ceil(total / 20)}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= Math.ceil(total / 20)}
+              onClick={() => setPage(page + 1)}
+            >
+              {tc('next')}
+            </Button>
+          </div>
+        )}
+      </main>
 
       {/* Detail Modal */}
       <Dialog open={!!detailTemplate} onOpenChange={() => setDetailTemplate(null)}>
@@ -522,7 +594,6 @@ function PublishTemplateDialog({
       toast({ title: tm('publishSuccess') })
       onOpenChange(false)
       onPublished()
-      // Reset form
       setName('')
       setDescription('')
       setPersonality('')

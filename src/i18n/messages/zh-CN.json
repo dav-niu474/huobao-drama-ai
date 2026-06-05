@@ -508,6 +508,9 @@
     "noShotPrompt": "该镜头没有图片提示词"
   },
   "marketplace": {
+    "title": "角色市场",
+    "templateCount": "{count} 个模板",
+    "featured": "精选",
     "category": "分类",
     "all": "全部",
     "categoryAncient": "古风",
