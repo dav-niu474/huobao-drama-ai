@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
+// i18n not used in this component
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -257,7 +257,6 @@ function DLQSection({
 // ── Main Dashboard ─────────────────────────────────────────────
 
 export function QueueDashboard() {
-  const { t } = useTranslation()
   const [status, setStatus] = useState<QueueStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [retrying, setRetrying] = useState<Set<string>>(new Set())

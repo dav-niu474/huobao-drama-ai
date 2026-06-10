@@ -15,6 +15,13 @@ import { AssetWorkbench } from '@/components/asset-workbench'
 import { MarketplacePage } from '@/components/marketplace/marketplace-page'
 import { SeriesPanel } from '@/components/series-panel'
 import { ModuleSidebar } from '@/components/module-sidebar'
+import { CreativeWorkspace } from '@/components/creative-workspace'
+import { ScriptWorkbenchV2 } from '@/components/script-workbench-v2'
+import { AssetWorkbenchV2 } from '@/components/asset-workbench-v2'
+import { CharacterBibleView } from '@/components/character-bible-view'
+import { WorldMapView } from '@/components/world-map-view'
+import { QueueDashboardView } from '@/components/queue-dashboard-view'
+import { ArtStyleView } from '@/components/art-style-view'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Loader2 } from 'lucide-react'
 
@@ -42,6 +49,20 @@ function ViewRouter({ view }: { view: string }) {
       return <MarketplacePage />
     case 'series':
       return <SeriesPanel />
+    case 'creative-workspace':
+      return <CreativeWorkspace />
+    case 'script-v2':
+      return <ScriptWorkbenchV2 />
+    case 'asset-v2':
+      return <AssetWorkbenchV2 />
+    case 'character-bible':
+      return <CharacterBibleView />
+    case 'world-map':
+      return <WorldMapView />
+    case 'queue-dashboard':
+      return <QueueDashboardView />
+    case 'art-style':
+      return <ArtStyleView />
     default:
       return <ProjectListView />
   }
@@ -56,6 +77,10 @@ const FULLSCREEN_VIEWS = new Set([
   'asset-workbench',
   'episode-workspace',
   'series',
+  'script-v2',
+  'asset-v2',
+  'character-bible',
+  'world-map',
 ])
 
 // ════════════════════════════════════════════════════════════

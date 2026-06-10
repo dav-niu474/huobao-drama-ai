@@ -13,6 +13,11 @@ import {
   Library,
   Store,
   Layers,
+  BookOpen,
+  Users,
+  Map,
+  Activity,
+  Paintbrush,
 } from 'lucide-react'
 import { useAppStore, type AppModule, type AppView, getModuleForView } from '@/lib/store'
 import {
@@ -72,7 +77,15 @@ const MODULES: ModuleDef[] = [
     id: 'creative',
     labelKey: 'creativeModule',
     icon: Sparkles,
-    views: [], // placeholder until creative space is built
+    views: [
+      { view: 'creative-workspace', labelKey: 'creativeWorkspace', icon: Sparkles },
+      { view: 'script-v2', labelKey: 'scriptV2', icon: BookOpen },
+      { view: 'asset-v2', labelKey: 'assetV2', icon: Palette },
+      { view: 'character-bible', labelKey: 'characterBibleNav', icon: Users },
+      { view: 'world-map', labelKey: 'worldMapNav', icon: Map },
+      { view: 'queue-dashboard', labelKey: 'queueDashboardNav', icon: Activity },
+      { view: 'art-style', labelKey: 'artStyleNav', icon: Paintbrush },
+    ],
   },
 ]
 
@@ -143,6 +156,13 @@ export function ModuleSidebar() {
   const navigateToAssetLibrary = useAppStore((s) => s.navigateToAssetLibrary)
   const navigateToMarketplace = useAppStore((s) => s.navigateToMarketplace)
   const navigateToSeries = useAppStore((s) => s.navigateToSeries)
+  const navigateToCreativeWorkspace = useAppStore((s) => s.navigateToCreativeWorkspace)
+  const navigateToScriptV2 = useAppStore((s) => s.navigateToScriptV2)
+  const navigateToAssetV2 = useAppStore((s) => s.navigateToAssetV2)
+  const navigateToCharacterBible = useAppStore((s) => s.navigateToCharacterBible)
+  const navigateToWorldMap = useAppStore((s) => s.navigateToWorldMap)
+  const navigateToQueueDashboard = useAppStore((s) => s.navigateToQueueDashboard)
+  const navigateToArtStyle = useAppStore((s) => s.navigateToArtStyle)
   const { state } = useSidebar()
   const isCollapsed = state === 'collapsed'
 
@@ -157,6 +177,13 @@ export function ModuleSidebar() {
     'asset-library': navigateToAssetLibrary,
     'marketplace': navigateToMarketplace,
     'series': navigateToSeries,
+    'creative-workspace': navigateToCreativeWorkspace,
+    'script-v2': navigateToScriptV2,
+    'asset-v2': navigateToAssetV2,
+    'character-bible': navigateToCharacterBible,
+    'world-map': navigateToWorldMap,
+    'queue-dashboard': navigateToQueueDashboard,
+    'art-style': navigateToArtStyle,
   }
 
   // Derive the active module from current view (for consistency)
@@ -222,22 +249,7 @@ export function ModuleSidebar() {
           </SidebarGroup>
         ))}
 
-        {/* Creative module placeholder */}
-        {currentModule === 'creative' && (
-          <SidebarGroup>
-            <SidebarGroupLabel>{t('creativeModule')}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <div className="px-2 py-4 text-center">
-                <Sparkles className="size-8 mx-auto text-muted-foreground/50 mb-2" />
-                {!isCollapsed && (
-                  <p className="text-xs text-muted-foreground/70">
-                    Coming soon...
-                  </p>
-                )}
-              </div>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        {/* Creative module placeholder — replaced with real views above */}
       </SidebarContent>
 
       {/* ── Footer: Settings + User ── */}

@@ -23,10 +23,10 @@ import {
   ArrowRight,
   Filter,
   Search,
-  Input,
   Lock,
   Unlock,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 
 // ── Types ──────────────────────────────────────────────────
 
