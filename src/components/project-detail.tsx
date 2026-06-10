@@ -42,6 +42,7 @@ import { GenerationHistory } from '@/components/generation-history'
 import { PublishDialog } from '@/components/publish-dialog'
 import { PublishRecordsPanel } from '@/components/publish/publish-records-panel'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { PhaseTracker } from '@/components/phase-tracker'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -848,11 +849,11 @@ export function ProjectDetailView() {
         </div>
       </header>
 
-      {/* Three-Stage Progress */}
+      {/* Phase Tracker (8-phase orchestrator) */}
       {drama && (
         <div className="border-b border-border/50 bg-muted/20">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-            <ThreeStageProgress drama={drama} tc={tc} tp={tp} />
+            <PhaseTracker dramaId={drama.id} />
           </div>
         </div>
       )}

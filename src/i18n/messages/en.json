@@ -56,7 +56,17 @@
     "marketplace": "Marketplace",
     "uploadScript": "Upload Script",
     "newProject": "New Project",
-    "backToProjects": "Back to Projects"
+    "backToProjects": "Back to Projects",
+    "projectModule": "Project Management",
+    "assetModule": "Asset Management",
+    "creativeModule": "Creative Space",
+    "projects": "Projects",
+    "projectDetail": "Project Detail",
+    "scriptWorkbench": "Script Workbench",
+    "assetWorkbench": "Asset Workbench",
+    "episodeWorkspace": "Episode Workspace",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
   },
   "auth": {
     "login": "Login",
@@ -616,5 +626,29 @@
     "deleteWarning": "Are you sure you want to delete asset '{name}'? This action cannot be undone, but characters/scenes/props already applied to projects will not be deleted.",
     "deleting": "Deleting...",
     "confirmDelete": "Confirm Delete"
+  },
+  "orchestrator": {
+    "title": "Creation Progress",
+    "M1": "Content Planning",
+    "M2": "Asset Preparation",
+    "M3": "Production Output",
+    "novel_upload": "Novel Upload",
+    "novel_analysis": "Full Analysis",
+    "show_planning": "Show Planning",
+    "script_writing": "Script Writing",
+    "asset_extraction": "Asset Extraction",
+    "art_direction": "Art Direction",
+    "production": "Production",
+    "export": "Export",
+    "locked": "Locked",
+    "active": "In Progress",
+    "completed": "Completed",
+    "advance": "Advance to Next Phase",
+    "advanceConfirm": "Confirm advancement? This action is irreversible.",
+    "advanceSuccess": "Advanced to next phase",
+    "advanceError": "Failed to advance",
+    "status_locked": "Locked",
+    "status_active": "In Progress",
+    "status_completed": "Completed"
   }
 }

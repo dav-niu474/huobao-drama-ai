@@ -14,6 +14,8 @@ import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
 import { MarketplacePage } from '@/components/marketplace/marketplace-page'
 import { SeriesPanel } from '@/components/series-panel'
+import { ModuleSidebar } from '@/components/module-sidebar'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { Loader2 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
@@ -101,16 +103,26 @@ function AuthGuard() {
   const isFullscreen = FULLSCREEN_VIEWS.has(view)
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
-      <div className={`flex-1 min-h-0 ${isFullscreen ? 'overflow-hidden' : 'overflow-auto'}`}>
-        <ViewRouter view={view} key={view} />
-      </div>
-      {!isFullscreen && (
-        <footer className="shrink-0 border-t border-border/50 py-4 text-center text-xs text-muted-foreground">
-          <span className="opacity-80">AI短剧创作平台 &copy; {new Date().getFullYear()}</span>
-        </footer>
-      )}
-    </div>
+    <SidebarProvider defaultOpen>
+      <ModuleSidebar />
+      <SidebarInset>
+        <div className="flex flex-col h-screen">
+          {!isFullscreen && (
+            <header className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0 md:hidden">
+              <SidebarTrigger />
+            </header>
+          )}
+          <div className={`flex-1 min-h-0 ${isFullscreen ? 'overflow-hidden' : 'overflow-auto'}`}>
+            <ViewRouter view={view} key={view} />
+          </div>
+          {!isFullscreen && (
+            <footer className="shrink-0 border-t border-border/50 py-4 text-center text-xs text-muted-foreground">
+              <span className="opacity-80">AI短剧创作平台 &copy; {new Date().getFullYear()}</span>
+            </footer>
+          )}
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
 

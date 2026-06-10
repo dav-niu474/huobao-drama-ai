@@ -175,6 +175,35 @@ export interface Asset {
 export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'marketplace' | 'series'
 
 // ============================================================
+// Module type for three-module navigation
+// ============================================================
+
+export type AppModule = 'project' | 'asset' | 'creative'
+
+export const VIEW_MODULE_MAP: Record<AppView, AppModule> = {
+  'projects': 'project',
+  'project-detail': 'project',
+  'script-workbench': 'project',
+  'asset-workbench': 'project',
+  'episode-workspace': 'project',
+  'asset-library': 'asset',
+  'marketplace': 'asset',
+  'settings': 'project', // settings is shared
+  'series': 'project',
+}
+
+export const MODULE_DEFAULT_VIEW: Record<AppModule, AppView> = {
+  'project': 'projects',
+  'asset': 'asset-library',
+  'creative': 'projects', // placeholder until creative space is built
+}
+
+/** Helper to get the module a view belongs to */
+export function getModuleForView(view: AppView): AppModule {
+  return VIEW_MODULE_MAP[view]
+}
+
+// ============================================================
 // Store interface
 // ============================================================
 
@@ -190,6 +219,7 @@ interface AppStore {
   view: AppView
   selectedDramaId: string | null
   selectedEpisodeId: string | null
+  activeModule: AppModule
 
   // Navigation actions
   navigateToProjects: () => void
@@ -201,6 +231,7 @@ interface AppStore {
   navigateToAssetWorkbench: (dramaId: string) => void
   navigateToMarketplace: () => void
   navigateToSeries: () => void
+  setActiveModule: (module: AppModule) => void
 
   // Drama data cache
   dramas: Drama[]
@@ -242,11 +273,12 @@ function loadWorkspaceModels(): WorkspaceModels {
   return { llm: '', image: '', video: '', tts: '' }
 }
 
-export const useAppStore = create<AppStore>((set) => ({
+export const useAppStore = create<AppStore>((set, get) => ({
   // Navigation state
   view: 'projects',
   selectedDramaId: null,
   selectedEpisodeId: null,
+  activeModule: 'project' as AppModule,
 
   // Navigation actions
   navigateToProjects: () =>
@@ -257,6 +289,7 @@ export const useAppStore = create<AppStore>((set) => ({
       currentDrama: null,
       currentEpisode: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToProject: (dramaId: string) =>
@@ -266,6 +299,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedEpisodeId: null,
       currentEpisode: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToEpisode: (dramaId: string, episodeId: string) =>
@@ -273,6 +307,7 @@ export const useAppStore = create<AppStore>((set) => ({
       view: 'episode-workspace',
       selectedDramaId: dramaId,
       selectedEpisodeId: episodeId,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToSettings: () =>
@@ -281,6 +316,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: null,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToAssetLibrary: () =>
@@ -288,6 +324,7 @@ export const useAppStore = create<AppStore>((set) => ({
       view: 'asset-library',
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'asset' as AppModule,
     }),
 
   navigateToScriptWorkbench: (dramaId: string) =>
@@ -296,6 +333,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: dramaId,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToAssetWorkbench: (dramaId: string) =>
@@ -304,6 +342,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: dramaId,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToMarketplace: () =>
@@ -312,6 +351,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: null,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'asset' as AppModule,
     }),
 
   navigateToSeries: () =>
@@ -320,7 +360,30 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: null,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
+
+  // Module navigation action
+  setActiveModule: (module: AppModule) => {
+    const state = get()
+    const currentModule = getModuleForView(state.view)
+    if (currentModule !== module) {
+      // Switch to the module's default view
+      const defaultView = MODULE_DEFAULT_VIEW[module]
+      const navActions: Record<AppView, () => void> = {
+        'projects': state.navigateToProjects,
+        'project-detail': state.navigateToProjects,
+        'script-workbench': state.navigateToProjects,
+        'asset-workbench': state.navigateToProjects,
+        'episode-workspace': state.navigateToProjects,
+        'settings': state.navigateToSettings,
+        'asset-library': state.navigateToAssetLibrary,
+        'marketplace': state.navigateToMarketplace,
+        'series': state.navigateToSeries,
+      }
+      navActions[defaultView]()
+    }
+  },
 
   // Drama data cache
   dramas: [],
