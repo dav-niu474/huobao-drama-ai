@@ -10,6 +10,10 @@ import type {
   Asset,
   Season,
   GenerationMode,
+  ArtStyle,
+  AssetVersion,
+  WorldRegion,
+  WorldLocation,
 } from './store'
 
 // ============================================================
@@ -1725,6 +1729,154 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dramaId }),
+      }),
+
+    // Art style filter
+    listByArtStyle: (artStyle: string) =>
+      request<{ assets: Asset[]; total: number }>(`/api/assets/art-style-filter?artStyle=${encodeURIComponent(artStyle)}`),
+
+    // Batch operations
+    batch: (action: 'delete' | 'export', ids: string[]) =>
+      request<{ success: boolean; affected: number }>('/api/assets/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids }),
+      }),
+
+    // Version management
+    versions: {
+      list: (assetId: string) =>
+        request<{ versions: AssetVersion[] }>(`/api/assets/${assetId}/versions`),
+
+      create: (assetId: string, changeDescription?: string) =>
+        request<{ version: AssetVersion }>(`/api/assets/${assetId}/versions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ changeDescription }),
+        }),
+
+      rollback: (assetId: string, versionId: string) =>
+        request<{ success: boolean; asset: Asset }>(`/api/assets/${assetId}/versions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'rollback', versionId }),
+        }),
+    },
+  },
+
+  // ---- Art Styles ----
+  artStyles: {
+    list: () =>
+      request<{ artStyles: ArtStyle[] }>('/api/art-styles').then((r) => r.artStyles),
+
+    get: (id: string) =>
+      request<{ artStyle: ArtStyle }>(`/api/art-styles/${id}`).then((r) => r.artStyle),
+
+    create: (data: {
+      key: string
+      name: string
+      category?: string
+      description?: string
+      prefixMd?: string
+      styleMeta?: Record<string, any>
+      previewUrl?: string
+      isActive?: boolean
+    }) =>
+      request<{ artStyle: ArtStyle }>('/api/art-styles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (id: string, data: {
+      name?: string
+      category?: string
+      description?: string
+      prefixMd?: string
+      styleMeta?: Record<string, any>
+      previewUrl?: string
+      isActive?: boolean
+    }) =>
+      request<{ artStyle: ArtStyle }>(`/api/art-styles/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: string) =>
+      fetch(`/api/art-styles/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete art style failed: ${r.status}`)
+      }),
+
+    sync: () =>
+      request<{ synced: number; created: number; updated: number }>('/api/art-styles?action=sync'),
+  },
+
+  // ---- World Map ----
+  worldMap: {
+    // Regions
+    listRegions: (dramaId: string) =>
+      request<{ regions: WorldRegion[] }>(`/api/dramas/${dramaId}/world-regions`).then((r) => r.regions),
+
+    createRegion: (dramaId: string, data: {
+      name: string
+      description?: string
+      atmosphere?: string
+      musicStyle?: string
+    }) =>
+      request<{ region: WorldRegion }>(`/api/dramas/${dramaId}/world-regions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    updateRegion: (regionId: string, data: {
+      name?: string
+      description?: string
+      atmosphere?: string
+      musicStyle?: string
+    }) =>
+      request<{ region: WorldRegion }>(`/api/world-regions/${regionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    deleteRegion: (regionId: string) =>
+      fetch(`/api/world-regions/${regionId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete region failed: ${r.status}`)
+      }),
+
+    // Locations
+    listLocations: (regionId: string) =>
+      request<{ locations: WorldLocation[] }>(`/api/world-regions/${regionId}/locations`).then((r) => r.locations),
+
+    createLocation: (regionId: string, data: {
+      name: string
+      description?: string
+      timeOfDayOptions?: string[]
+    }) =>
+      request<{ location: WorldLocation }>(`/api/world-regions/${regionId}/locations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    updateLocation: (locationId: string, data: {
+      name?: string
+      description?: string
+      timeOfDayOptions?: string[]
+      imageUrl?: string
+    }) =>
+      request<{ location: WorldLocation }>(`/api/world-locations/${locationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    deleteLocation: (locationId: string) =>
+      fetch(`/api/world-locations/${locationId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete location failed: ${r.status}`)
       }),
   },
 

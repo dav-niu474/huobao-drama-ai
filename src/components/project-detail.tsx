@@ -46,6 +46,9 @@ import { PublishDialog } from '@/components/publish-dialog'
 import { PublishRecordsPanel } from '@/components/publish/publish-records-panel'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { PhaseTracker } from '@/components/phase-tracker'
+import { ArtStyleManagement } from '@/components/art-style-management'
+import { WorldMap } from '@/components/world-map'
+import { CharacterBible } from '@/components/character-bible'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -426,7 +429,7 @@ export function ProjectDetailView() {
   const [showDashboard, setShowDashboard] = useState(false)
 
   // Generation History & Publish tabs
-  const [detailTab, setDetailTab] = useState<'episodes' | 'history' | 'publish-records'>('episodes')
+  const [detailTab, setDetailTab] = useState<'episodes' | 'history' | 'publish-records' | 'world-map' | 'art-styles' | 'character-bible'>('episodes')
   const [publishOpen, setPublishOpen] = useState(false)
 
   // Show Planner Dialog
@@ -810,6 +813,33 @@ export function ProjectDetailView() {
                   <Upload className="size-3.5" />
                   <span className="hidden sm:inline">{tp('publish')}</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'art-styles' ? 'episodes' : 'art-styles')}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'art-styles' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <Palette className="size-3.5" />
+                  <span className="hidden sm:inline">{tp('artStyles') || 'Art Styles'}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'world-map' ? 'episodes' : 'world-map')}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'world-map' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <MapPin className="size-3.5" />
+                  <span className="hidden sm:inline">{tp('worldMap') || 'World Map'}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'character-bible' ? 'episodes' : 'character-bible')}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'character-bible' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <BookOpen className="size-3.5" />
+                  <span className="hidden sm:inline">{tp('characterBible') || 'Characters'}</span>
+                </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="h-7 amber-glow">
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">{tp('addEpisode')}</span>
@@ -886,6 +916,28 @@ export function ProjectDetailView() {
         ) : detailTab === 'publish-records' && drama ? (
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
             <PublishRecordsPanel dramaId={drama.id} />
+          </main>
+        ) : detailTab === 'world-map' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            <WorldMap dramaId={drama.id} />
+          </main>
+        ) : detailTab === 'art-styles' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            <ArtStyleManagement />
+          </main>
+        ) : detailTab === 'character-bible' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            {drama.characters && drama.characters.length > 0 ? (
+              <div className="space-y-4">
+                {drama.characters.map((char) => (
+                  <CharacterBible key={char.id} characterId={char.id} dramaId={drama.id} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">No characters yet. Extract assets first.</p>
+              </div>
+            )}
           </main>
         ) : (
         <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">

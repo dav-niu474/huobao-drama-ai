@@ -23,6 +23,8 @@ export async function GET(req: NextRequest) {
     const category = searchParams.get('category') || undefined
     const search = searchParams.get('search') || undefined
     const tag = searchParams.get('tag') || undefined
+    const artStyle = searchParams.get('artStyle') || undefined
+    const weightTier = searchParams.get('weightTier') || undefined
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20')))
     const skip = (page - 1) * limit
@@ -50,6 +52,16 @@ export async function GET(req: NextRequest) {
     if (tag) {
       // Tags stored as JSON array in string — use contains for simple matching
       where.tags = { contains: tag }
+    }
+
+    if (artStyle) {
+      // Filter by art style in data JSON
+      where.data = { contains: artStyle }
+    }
+
+    if (weightTier) {
+      // Filter by weight tier in data JSON (character assets)
+      where.data = { contains: `"weightTier":"${weightTier}"` }
     }
 
     const [assets, total] = await Promise.all([

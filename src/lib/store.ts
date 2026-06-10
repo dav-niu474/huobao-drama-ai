@@ -221,6 +221,100 @@ export interface Asset {
   createdAt: string
   updatedAt: string
   user?: { id: string; name: string } | null
+  // Version info
+  versionCount?: number
+  currentVersion?: number
+}
+
+// ============================================================
+// Art Style types
+// ============================================================
+
+export interface ArtStyle {
+  id: string
+  key: string
+  name: string
+  category: string // "2D" | "3D" | "realpeople"
+  description: string | null
+  prefixMd: string | null
+  styleMeta: string | null // JSON: {tone, palette, influences}
+  previewUrl: string | null
+  isActive: boolean
+  isBuiltin: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================
+// Asset Version types
+// ============================================================
+
+export interface AssetVersion {
+  id: string
+  assetId: string
+  version: number
+  snapshot: string // JSON snapshot of asset data at this version
+  changeDescription: string | null
+  createdBy: string | null
+  createdAt: string
+}
+
+// ============================================================
+// World Map types
+// ============================================================
+
+export interface WorldRegion {
+  id: string
+  dramaId: string
+  name: string
+  description: string
+  atmosphere: string
+  musicStyle: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorldLocation {
+  id: string
+  regionId: string
+  name: string
+  description: string
+  timeOfDayOptions: string // JSON array: ["dawn","morning","noon","afternoon","dusk","night"]
+  imageUrl: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================
+// Character Bible types
+// ============================================================
+
+export interface IdentityAnchors {
+  face: string        // 脸型
+  hair: string        // 发型
+  colorScheme: string // 配色
+  clothing: string    // 服饰
+  signatureItems: string // 标志物
+  sceneEmbed: string  // 场景嵌入
+}
+
+export interface CharacterBible {
+  characterId: string
+  name: string
+  role: string
+  identityAnchors: IdentityAnchors
+  fullBodyUrl: string | null
+  threeViewsUrl: string | null
+  headshotUrl: string | null
+  wardrobeUrls: string[] // Array of wardrobe image URLs
+  consistencyTimeline: Array<{
+    episodeId: string
+    episodeNumber: number
+    description: string
+    imageUrl: string | null
+  }>
 }
 
 export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'marketplace' | 'series'

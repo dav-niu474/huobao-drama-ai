@@ -13,13 +13,12 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -30,15 +29,6 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from '@/components/ui/alert-dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
 import {
   Library,
   UserCircle,
@@ -55,8 +45,14 @@ import {
   Lock,
   Eye,
   X,
+  LayoutGrid,
+  List,
+  CheckSquare,
+  Square,
+  Palette,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
+import { AssetDetailDrawer } from '@/components/asset-detail-drawer'
 
 // ── Category config ──────────────────────────────────────────
 
@@ -70,6 +66,13 @@ function categoryIcon(cat: string) {
   return CATEGORY_CONFIG.find((c) => c.value === cat)?.icon ?? Package
 }
 
+// Weight tier badge colors
+const TIER_COLORS: Record<string, string> = {
+  A: 'bg-amber-100 text-amber-800 border-amber-200',
+  B: 'bg-blue-100 text-blue-800 border-blue-200',
+  C: 'bg-zinc-100 text-zinc-800 border-zinc-200',
+}
+
 // ── Asset Card ───────────────────────────────────────────────
 
 function AssetCard({
@@ -78,12 +81,18 @@ function AssetCard({
   onDelete,
   onApply,
   dramas,
+  viewMode,
+  selected,
+  onToggleSelect,
 }: {
   asset: Asset
   onSelect: () => void
   onDelete: () => void
   onApply: (dramaId: string) => void
   dramas: { id: string; title: string }[]
+  viewMode: 'grid' | 'list'
+  selected: boolean
+  onToggleSelect: () => void
 }) {
   const ta = useTranslations('assetLibrary')
   const tc = useTranslations('common')
@@ -93,6 +102,7 @@ function AssetCard({
   const Icon = categoryIcon(asset.category)
   const tags = JSON.parse(asset.tags || '[]') as string[]
   const imageUrls = JSON.parse(asset.imageUrls || '[]') as string[]
+  const data = JSON.parse(asset.data || '{}') as Record<string, any>
 
   const categoryLabel = CATEGORY_CONFIG.find((c) => c.value === asset.category)
     ? ta(CATEGORY_CONFIG.find((c) => c.value === asset.category)!.labelKey)
@@ -108,119 +118,137 @@ function AssetCard({
     }
   }
 
+  // Version indicator
+  const versions = data.__versions || []
+  const versionBadge = versions.length > 0 ? (
+    <Badge variant="outline" className="text-[9px] px-1 py-0 bg-background/80">
+      v{versions.length}
+    </Badge>
+  ) : null
+
+  // Weight tier badge
+  const weightTier = data.weightTier
+  const weightBadge = weightTier && asset.category === 'character' ? (
+    <Badge className={`text-[9px] px-1 py-0 ${TIER_COLORS[weightTier] || ''}`}>
+      {weightTier}
+    </Badge>
+  ) : null
+
+  if (viewMode === 'list') {
+    return (
+      <Card className="group border-border/60 hover:border-primary/40 transition-all py-0 gap-0">
+        <CardContent className="p-3 flex items-center gap-3">
+          <button onClick={onToggleSelect} className="shrink-0">
+            {selected ? <CheckSquare className="size-4 text-primary" /> : <Square className="size-4 text-muted-foreground/40" />}
+          </button>
+          {asset.thumbnail ? (
+            <img src={asset.thumbnail} alt={asset.name} className="size-10 rounded object-cover" />
+          ) : (
+            <div className="size-10 rounded bg-muted/40 flex items-center justify-center shrink-0">
+              <Icon className="size-5 text-muted-foreground/40" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium truncate cursor-pointer hover:text-primary" onClick={onSelect}>{asset.name}</span>
+              {weightBadge}
+              {versionBadge}
+            </div>
+            <p className="text-[11px] text-muted-foreground truncate">{asset.description || categoryLabel}</p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button variant="ghost" size="sm" className="size-7 p-0" onClick={() => setShowApplyMenu(!showApplyMenu)} disabled={applying}>
+              {applying ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+            </Button>
+            <Button variant="ghost" size="sm" className="size-7 p-0 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+              <Trash2 className="size-3" />
+            </Button>
+          </div>
+          {showApplyMenu && dramas.length > 0 && (
+            <div className="absolute right-0 top-full mt-1 bg-background border rounded shadow-lg z-10 max-h-32 overflow-y-auto">
+              {dramas.map((drama) => (
+                <button key={drama.id} className="w-full text-left text-xs px-3 py-1.5 hover:bg-primary/10" onClick={() => handleApply(drama.id)}>
+                  {drama.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <motion.div whileHover={{ y: -2 }} layout>
-      <Card className="group border-border/60 hover:border-primary/40 hover:shadow-[0_0_12px_oklch(0.72_0.15_75/0.15)] transition-all duration-200 py-0 gap-0 overflow-hidden">
-        {/* Thumbnail */}
+      <Card className={`group border-border/60 hover:border-primary/40 hover:shadow-[0_0_12px_oklch(0.72_0.15_75/0.15)] transition-all duration-200 py-0 gap-0 overflow-hidden ${selected ? 'ring-2 ring-primary/30' : ''}`}>
         <div className="relative h-32 bg-muted/40 overflow-hidden">
           {asset.thumbnail ? (
-            <img
-              src={asset.thumbnail}
-              alt={asset.name}
-              className="w-full h-full object-cover"
-            />
+            <img src={asset.thumbnail} alt={asset.name} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <Icon className="size-10 text-muted-foreground/40" />
             </div>
           )}
-          {/* Category badge */}
-          <Badge
-            variant="secondary"
-            className="absolute top-2 left-2 text-[10px] px-1.5 py-0 bg-background/80 backdrop-blur-sm"
+          {/* Selection checkbox */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSelect() }}
+            className="absolute bottom-1.5 left-1.5 z-10"
           >
+            {selected ? <CheckSquare className="size-4 text-primary bg-background/80 rounded-sm" /> : <Square className="size-4 text-background/60 hover:text-background" />}
+          </button>
+          {/* Category badge */}
+          <Badge variant="secondary" className="absolute top-2 left-2 text-[10px] px-1.5 py-0 bg-background/80 backdrop-blur-sm">
             {categoryLabel}
           </Badge>
-          {/* Visibility badge */}
-          <div className="absolute top-2 right-2">
-            {asset.isPublic ? (
-              <Globe className="size-3.5 text-muted-foreground/60" />
-            ) : (
-              <Lock className="size-3.5 text-muted-foreground/60" />
-            )}
+          {/* Weight tier + version badges */}
+          <div className="absolute top-2 right-2 flex gap-1">
+            {weightBadge}
+            {versionBadge}
+          </div>
+          {/* Visibility */}
+          <div className="absolute bottom-1.5 right-1.5">
+            {asset.isPublic ? <Globe className="size-3.5 text-muted-foreground/60" /> : <Lock className="size-3.5 text-muted-foreground/60" />}
           </div>
         </div>
 
         <CardContent className="p-3">
-          {/* Name */}
-          <h3
-            className="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors"
-            onClick={onSelect}
-          >
+          <h3 className="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors" onClick={onSelect}>
             {asset.name}
           </h3>
 
-          {/* Tags */}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {tags.slice(0, 3).map((tag) => (
-                <Badge key={tag} variant="outline" className="text-[9px] px-1 py-0">
-                  {tag}
-                </Badge>
+                <Badge key={tag} variant="outline" className="text-[9px] px-1 py-0">{tag}</Badge>
               ))}
-              {tags.length > 3 && (
-                <Badge variant="outline" className="text-[9px] px-1 py-0">
-                  +{tags.length - 3}
-                </Badge>
-              )}
+              {tags.length > 3 && <Badge variant="outline" className="text-[9px] px-1 py-0">+{tags.length - 3}</Badge>}
             </div>
           )}
 
-          {/* Description */}
           {asset.description && (
-            <p className="text-[11px] text-muted-foreground mt-1.5 line-clamp-2">
-              {asset.description}
-            </p>
+            <p className="text-[11px] text-muted-foreground mt-1.5 line-clamp-2">{asset.description}</p>
           )}
 
-          {/* Footer: usage count + actions */}
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
             <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-              <Eye className="size-3" />
-              {ta('usageCount', { count: asset.usageCount })}
+              <Eye className="size-3" />{ta('usageCount', { count: asset.usageCount })}
             </span>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="size-6 p-0"
-                onClick={() => setShowApplyMenu(!showApplyMenu)}
-                disabled={applying}
-                title={ta('applyToProject')}
-              >
-                {applying ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <Download className="size-3" />
-                )}
+              <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => setShowApplyMenu(!showApplyMenu)} disabled={applying}>
+                {applying ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="size-6 p-0 text-muted-foreground hover:text-destructive"
-                onClick={onDelete}
-                title={tc('delete')}
-              >
+              <Button variant="ghost" size="sm" className="size-6 p-0 text-muted-foreground hover:text-destructive" onClick={onDelete}>
                 <Trash2 className="size-3" />
               </Button>
             </div>
           </div>
 
-          {/* Apply to project dropdown */}
           {showApplyMenu && dramas.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="mt-2 border-t border-border/30 pt-2"
-            >
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-2 border-t border-border/30 pt-2">
               <p className="text-[10px] text-muted-foreground mb-1">{ta('applyToProjectColon')}</p>
               <div className="max-h-32 overflow-y-auto space-y-1">
                 {dramas.map((drama) => (
-                  <button
-                    key={drama.id}
-                    className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-primary/10 transition-colors truncate"
-                    onClick={() => handleApply(drama.id)}
-                  >
+                  <button key={drama.id} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-primary/10 transition-colors truncate" onClick={() => handleApply(drama.id)}>
                     {drama.title}
                   </button>
                 ))}
@@ -233,195 +261,9 @@ function AssetCard({
   )
 }
 
-// ── Asset Detail Dialog ──────────────────────────────────────
-
-function AssetDetailDialog({
-  asset,
-  open,
-  onOpenChange,
-  onDelete,
-  onApply,
-  dramas,
-}: {
-  asset: Asset | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onDelete: () => void
-  onApply: (dramaId: string) => void
-  dramas: { id: string; title: string }[]
-}) {
-  const ta = useTranslations('assetLibrary')
-  const tc = useTranslations('common')
-
-  if (!asset) return null
-
-  const Icon = categoryIcon(asset.category)
-  const tags = JSON.parse(asset.tags || '[]') as string[]
-  const imageUrls = JSON.parse(asset.imageUrls || '[]') as string[]
-  const data = JSON.parse(asset.data || '{}') as Record<string, any>
-
-  const categoryLabel = CATEGORY_CONFIG.find((c) => c.value === asset.category)
-    ? ta(CATEGORY_CONFIG.find((c) => c.value === asset.category)!.labelKey)
-    : asset.category
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Icon className="size-5 text-primary" />
-            {asset.name}
-            <Badge variant="secondary" className="text-[10px]">
-              {categoryLabel}
-            </Badge>
-          </DialogTitle>
-          <DialogDescription>
-            {ta('detailDescription')}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          {/* Thumbnail */}
-          {asset.thumbnail && (
-            <div className="rounded-lg overflow-hidden border border-border/50">
-              <img src={asset.thumbnail} alt={asset.name} className="w-full max-h-64 object-contain bg-muted/30" />
-            </div>
-          )}
-
-          {/* Meta */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <span className="text-muted-foreground">{ta('creator')}</span>
-              <span>{asset.user?.name || ta('unknown')}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">{ta('usageCountLabel')}</span>
-              <span>{asset.usageCount}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">{ta('visibility')}</span>
-              <span className="flex items-center gap-1">
-                {asset.isPublic ? <Globe className="size-3" /> : <Lock className="size-3" />}
-                {asset.isPublic ? ta('public') : ta('private')}
-              </span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">{ta('subcategory')}</span>
-              <span>{asset.subcategory || '—'}</span>
-            </div>
-          </div>
-
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div>
-              <span className="text-xs text-muted-foreground block mb-1">{ta('tags')}</span>
-              <div className="flex flex-wrap gap-1.5">
-                {tags.map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-[11px]">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Description */}
-          {asset.description && (
-            <div>
-              <span className="text-xs text-muted-foreground block mb-1">{ta('descriptionLabel')}</span>
-              <p className="text-sm leading-relaxed">{asset.description}</p>
-            </div>
-          )}
-
-          {/* Image Prompt */}
-          {asset.imagePrompt && (
-            <div className="rounded-md bg-primary/5 border border-primary/10 px-3 py-2">
-              <span className="text-[10px] font-medium text-primary/70 uppercase tracking-wide block mb-0.5">
-                {ta('imagePrompt')}
-              </span>
-              <p className="text-xs text-foreground leading-relaxed">{asset.imagePrompt}</p>
-            </div>
-          )}
-
-          {/* Category-specific data */}
-          {Object.keys(data).length > 0 && (
-            <div>
-              <span className="text-xs text-muted-foreground block mb-1">{ta('detailedAttributes')}</span>
-              <div className="rounded-md bg-muted/40 px-3 py-2 space-y-1">
-                {Object.entries(data).map(([key, value]) => {
-                  if (key === 'appearances' || key === 'images') return null // Skip complex nested
-                  if (typeof value === 'object') return null
-                  return (
-                    <div key={key} className="flex gap-2 text-xs">
-                      <span className="text-muted-foreground min-w-[60px]">{key}:</span>
-                      <span className="text-foreground">{String(value)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* All images */}
-          {imageUrls.length > 0 && (
-            <div>
-              <span className="text-xs text-muted-foreground block mb-1">{ta('images', { count: imageUrls.length })}</span>
-              <div className="grid grid-cols-3 gap-2">
-                {imageUrls.map((url, i) => (
-                  <div key={i} className="rounded-md overflow-hidden border border-border/50">
-                    <img src={url} alt={`${asset.name} - ${i + 1}`} className="w-full h-20 object-cover" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              {tc('close')}
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={onDelete}
-            >
-              <Trash2 className="size-3.5" />
-              {tc('delete')}
-            </Button>
-            {dramas.length > 0 && (
-              <Select onValueChange={(dramaId) => onApply(dramaId)}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder={ta('applyToProjectPlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {dramas.map((drama) => (
-                    <SelectItem key={drama.id} value={drama.id}>
-                      {drama.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 // ── Create Asset Dialog ──────────────────────────────────────
 
-function CreateAssetDialog({
-  open,
-  onOpenChange,
-  onSuccess,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSuccess: () => void
-}) {
+function CreateAssetDialog({ open, onOpenChange, onSuccess }: { open: boolean; onOpenChange: (open: boolean) => void; onSuccess: () => void }) {
   const ta = useTranslations('assetLibrary')
   const tc = useTranslations('common')
   const { toast } = useToast()
@@ -436,21 +278,10 @@ function CreateAssetDialog({
     if (!name.trim()) return
     setCreating(true)
     try {
-      await api.assets.create({
-        name: name.trim(),
-        category,
-        description,
-        imagePrompt: imagePrompt || undefined,
-        isPublic,
-      })
+      await api.assets.create({ name: name.trim(), category, description, imagePrompt: imagePrompt || undefined, isPublic })
       toast({ title: ta('createSuccess') })
-      setName('')
-      setCategory('character')
-      setDescription('')
-      setImagePrompt('')
-      setIsPublic(true)
-      onOpenChange(false)
-      onSuccess()
+      setName(''); setCategory('character'); setDescription(''); setImagePrompt(''); setIsPublic(true)
+      onOpenChange(false); onSuccess()
     } catch (err: any) {
       toast({ title: ta('createFailed'), description: err.message, variant: 'destructive' })
     } finally {
@@ -459,75 +290,33 @@ function CreateAssetDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{ta('createNewAsset')}</DialogTitle>
-          <DialogDescription>{ta('createAssetDescription')}</DialogDescription>
-        </DialogHeader>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{ta('createNewAsset')}</AlertDialogTitle>
+          <AlertDialogDescription>{ta('createAssetDescription')}</AlertDialogDescription>
+        </AlertDialogHeader>
         <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label>{ta('nameRequired')} *</Label>
-            <Input
-              placeholder={ta('enterAssetName')}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>{ta('categoryRequired')} *</Label>
-            <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="character">{ta('character')}</SelectItem>
-                <SelectItem value="scene">{ta('scene')}</SelectItem>
-                <SelectItem value="prop">{ta('prop')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>{ta('descriptionLabel')}</Label>
-            <Textarea
-              placeholder={ta('descriptionPlaceholder')}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>{ta('imagePromptLabel')}</Label>
-            <Textarea
-              placeholder={ta('imagePromptPlaceholder')}
-              value={imagePrompt}
-              onChange={(e) => setImagePrompt(e.target.value)}
-              rows={2}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Label>{ta('visibilityLabel')}</Label>
-            <Select value={isPublic ? 'public' : 'private'} onValueChange={(v) => setIsPublic(v === 'public')}>
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="public">{ta('public')}</SelectItem>
-                <SelectItem value="private">{ta('private')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Input placeholder={ta('enterAssetName')} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreate()} />
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="character">{ta('character')}</SelectItem>
+              <SelectItem value="scene">{ta('scene')}</SelectItem>
+              <SelectItem value="prop">{ta('prop')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input placeholder={ta('descriptionPlaceholder')} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <Input placeholder={ta('imagePromptPlaceholder')} value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{tc('cancel')}</Button>
-          <Button onClick={handleCreate} disabled={!name.trim() || creating}>
-            {creating && <Loader2 className="size-4 animate-spin mr-2" />}
-            {tc('create')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{tc('cancel')}</AlertDialogCancel>
+          <AlertDialogAction onClick={handleCreate} disabled={!name.trim() || creating}>
+            {creating && <Loader2 className="size-4 animate-spin mr-2" />} {tc('create')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -545,16 +334,31 @@ export function AssetLibraryView() {
   const [category, setCategory] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+
+  // Art style sub-filter
+  const [artStyleFilter, setArtStyleFilter] = useState<string>('all')
+  const [artStyleOptions, setArtStyleOptions] = useState<{ key: string; name: string }[]>([])
 
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [applying, setApplying] = useState<string | null>(null)
 
-  // Drama list for apply dropdown
+  // Batch selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchDeleting, setBatchDeleting] = useState(false)
+
   const dramaList = dramas.map((d) => ({ id: d.id, title: d.title }))
+
+  // Fetch art styles for sub-filter
+  useEffect(() => {
+    api.artStyles.list().then((styles) => {
+      setArtStyleOptions(styles.filter((s) => s.isActive).map((s) => ({ key: s.key, name: s.name })))
+    }).catch(() => {})
+  }, [])
 
   // Fetch assets
   const fetchAssets = useCallback(async () => {
@@ -575,24 +379,47 @@ export function AssetLibraryView() {
     }
   }, [category, search, page, toast, ta])
 
-  useEffect(() => {
-    fetchAssets()
-  }, [fetchAssets])
+  useEffect(() => { fetchAssets() }, [fetchAssets])
+  useEffect(() => { setPage(1) }, [category, search])
 
-  // Reset page on filter change
-  useEffect(() => {
-    setPage(1)
-  }, [category, search])
+  // Batch delete
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return
+    setBatchDeleting(true)
+    try {
+      await api.assets.batch('delete', Array.from(selectedIds))
+      toast({ title: ta('assetDeleted') })
+      setSelectedIds(new Set())
+      fetchAssets()
+    } catch (err: any) {
+      toast({ title: ta('deleteFailed'), description: err.message, variant: 'destructive' })
+    } finally {
+      setBatchDeleting(false)
+    }
+  }
 
-  // Handle apply asset to drama
+  // Batch export
+  const handleBatchExport = async () => {
+    if (selectedIds.size === 0) return
+    try {
+      const result = await api.assets.batch('export', Array.from(selectedIds))
+      // Download as JSON
+      const blob = new Blob([JSON.stringify(result.assets, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = 'assets-export.json'; a.click()
+      URL.revokeObjectURL(url)
+      toast({ title: ta('exportSuccess', { count: result.affected }) })
+    } catch (err: any) {
+      toast({ title: ta('exportFailed'), description: err.message, variant: 'destructive' })
+    }
+  }
+
   const handleApply = async (assetId: string, dramaId: string) => {
     setApplying(assetId)
     try {
       const result = await api.assets.apply(assetId, dramaId)
-      toast({
-        title: ta('applySuccess'),
-        description: ta('applySuccessDesc', { name: result.assetName }),
-      })
+      toast({ title: ta('applySuccess'), description: ta('applySuccessDesc', { name: result.assetName }) })
     } catch (err: any) {
       toast({ title: ta('applyFailed'), description: err.message, variant: 'destructive' })
     } finally {
@@ -600,15 +427,13 @@ export function AssetLibraryView() {
     }
   }
 
-  // Handle delete
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
     try {
       await api.assets.delete(deleteTarget.id)
       toast({ title: ta('assetDeleted') })
-      setDeleteTarget(null)
-      fetchAssets()
+      setDeleteTarget(null); fetchAssets()
     } catch (err: any) {
       toast({ title: ta('deleteFailed'), description: err.message, variant: 'destructive' })
     } finally {
@@ -616,10 +441,20 @@ export function AssetLibraryView() {
     }
   }
 
-  // Select asset for detail view
-  const handleSelectAsset = (asset: Asset) => {
-    setSelectedAsset(asset)
-    setDetailOpen(true)
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    if (selectedIds.size === assets.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(assets.map((a) => a.id)))
+    }
   }
 
   return (
@@ -633,19 +468,20 @@ export function AssetLibraryView() {
             </Button>
             <Library className="size-6 text-primary" />
             <h1 className="text-xl sm:text-2xl font-bold">{ta('title')}</h1>
-            {total > 0 && (
-              <Badge variant="secondary" className="text-xs">
-                {ta('assetCount', { count: total })}
-              </Badge>
-            )}
+            {total > 0 && <Badge variant="secondary" className="text-xs">{ta('assetCount', { count: total })}</Badge>}
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              onClick={() => setCreateOpen(true)}
-              className="amber-glow"
-            >
-              <Plus className="size-4" />
-              <span className="hidden sm:inline">{ta('newAsset')}</span>
+            {/* View toggle */}
+            <div className="flex border border-border/50 rounded-md overflow-hidden">
+              <Button variant={viewMode === 'grid' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 rounded-none" onClick={() => setViewMode('grid')}>
+                <LayoutGrid className="size-3.5" />
+              </Button>
+              <Button variant={viewMode === 'list' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 rounded-none" onClick={() => setViewMode('list')}>
+                <List className="size-3.5" />
+              </Button>
+            </div>
+            <Button onClick={() => setCreateOpen(true)} className="amber-glow">
+              <Plus className="size-4" /><span className="hidden sm:inline">{ta('newAsset')}</span>
             </Button>
             <UserMenu />
           </div>
@@ -655,41 +491,36 @@ export function AssetLibraryView() {
       {/* Filters */}
       <div className="border-b border-border/30 bg-background/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
-          {/* Category tabs */}
           <Tabs value={category} onValueChange={setCategory}>
             <TabsList className="h-8">
               <TabsTrigger value="all" className="text-xs px-3">{ta('all')}</TabsTrigger>
-              <TabsTrigger value="character" className="text-xs px-3">
-                <UserCircle className="size-3.5 mr-1" />
-                {ta('character')}
-              </TabsTrigger>
-              <TabsTrigger value="scene" className="text-xs px-3">
-                <MapPin className="size-3.5 mr-1" />
-                {ta('scene')}
-              </TabsTrigger>
-              <TabsTrigger value="prop" className="text-xs px-3">
-                <Package className="size-3.5 mr-1" />
-                {ta('prop')}
-              </TabsTrigger>
+              <TabsTrigger value="character" className="text-xs px-3"><UserCircle className="size-3.5 mr-1" />{ta('character')}</TabsTrigger>
+              <TabsTrigger value="scene" className="text-xs px-3"><MapPin className="size-3.5 mr-1" />{ta('scene')}</TabsTrigger>
+              <TabsTrigger value="prop" className="text-xs px-3"><Package className="size-3.5 mr-1" />{ta('prop')}</TabsTrigger>
             </TabsList>
           </Tabs>
 
-          {/* Search */}
+          {/* Art style sub-filter */}
+          {artStyleOptions.length > 0 && (
+            <Select value={artStyleFilter} onValueChange={setArtStyleFilter}>
+              <SelectTrigger className="w-40 h-8 text-xs">
+                <Palette className="size-3 mr-1" />
+                <SelectValue placeholder={ta('artStyleFilter')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{ta('allStyles')}</SelectItem>
+                {artStyleOptions.map((s) => (
+                  <SelectItem key={s.key} value={s.key}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <Input
-              placeholder={ta('searchPlaceholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 text-xs pl-8"
-            />
+            <Input placeholder={ta('searchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 text-xs pl-8" />
             {search && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-0.5 top-1/2 -translate-y-1/2 size-6 p-0"
-                onClick={() => setSearch('')}
-              >
+              <Button variant="ghost" size="sm" className="absolute right-0.5 top-1/2 -translate-y-1/2 size-6 p-0" onClick={() => setSearch('')}>
                 <X className="size-3" />
               </Button>
             )}
@@ -697,120 +528,110 @@ export function AssetLibraryView() {
         </div>
       </div>
 
+      {/* Batch actions bar */}
+      {selectedIds.size > 0 && (
+        <div className="bg-primary/5 border-b border-primary/20 px-4 sm:px-6 py-2 flex items-center gap-3">
+          <span className="text-xs font-medium">{ta('selectedCount', { count: selectedIds.size })}</span>
+          <Button variant="outline" size="sm" className="h-6 text-[11px]" onClick={selectAll}>
+            {selectedIds.size === assets.length ? ta('deselectAll') : ta('selectAll')}
+          </Button>
+          <Button variant="outline" size="sm" className="h-6 text-[11px]" onClick={handleBatchExport}>
+            {ta('exportSelected')}
+          </Button>
+          <Button variant="destructive" size="sm" className="h-6 text-[11px]" onClick={handleBatchDelete} disabled={batchDeleting}>
+            {batchDeleting ? <Loader2 className="size-3 animate-spin mr-1" /> : <Trash2 className="size-3 mr-1" />}
+            {ta('deleteSelected')}
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 text-[11px] ml-auto" onClick={() => setSelectedIds(new Set())}>
+            {ta('clearSelection')}
+          </Button>
+        </div>
+      )}
+
       {/* Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
         {loading && assets.length === 0 ? (
-          /* Loading skeleton */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className={viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4' : 'space-y-2'}>
             {Array.from({ length: 8 }).map((_, i) => (
               <Card key={i} className="overflow-hidden py-0 gap-0">
-                <div className="h-32 shimmer" />
-                <CardContent className="p-3 space-y-2">
-                  <div className="h-4 w-3/4 shimmer rounded" />
-                  <div className="h-3 w-1/2 shimmer rounded" />
-                </CardContent>
+                <div className={viewMode === 'grid' ? 'h-32 shimmer' : 'h-12 shimmer'} />
               </Card>
             ))}
           </div>
         ) : assets.length === 0 ? (
-          /* Empty state */
           <div className="flex items-center justify-center py-24">
-            <Card className="w-full max-w-sm border-dashed border-2 border-border/50 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
-              onClick={() => setCreateOpen(true)}
-            >
+            <Card className="w-full max-w-sm border-dashed border-2 border-border/50 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0" onClick={() => setCreateOpen(true)}>
               <CardContent className="p-8 flex flex-col items-center gap-4 text-muted-foreground">
-                <div className="size-14 rounded-full bg-muted flex items-center justify-center">
-                  <Plus className="size-7 text-primary" />
-                </div>
+                <div className="size-14 rounded-full bg-muted flex items-center justify-center"><Plus className="size-7 text-primary" /></div>
                 <p className="text-sm font-medium">{ta('emptyTitle')}</p>
                 <p className="text-xs opacity-70">{ta('emptyDescription')}</p>
               </CardContent>
             </Card>
           </div>
-        ) : (
-          /* Asset grid */
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {assets.map((asset) => (
               <AssetCard
                 key={asset.id}
                 asset={asset}
-                onSelect={() => handleSelectAsset(asset)}
+                onSelect={() => { setSelectedAsset(asset); setDrawerOpen(true) }}
                 onDelete={() => setDeleteTarget(asset)}
                 onApply={(dramaId) => handleApply(asset.id, dramaId)}
                 dramas={dramaList}
+                viewMode="grid"
+                selected={selectedIds.has(asset.id)}
+                onToggleSelect={() => toggleSelect(asset.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {assets.map((asset) => (
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                onSelect={() => { setSelectedAsset(asset); setDrawerOpen(true) }}
+                onDelete={() => setDeleteTarget(asset)}
+                onApply={(dramaId) => handleApply(asset.id, dramaId)}
+                dramas={dramaList}
+                viewMode="list"
+                selected={selectedIds.has(asset.id)}
+                onToggleSelect={() => toggleSelect(asset.id)}
               />
             ))}
           </div>
         )}
 
-        {/* Pagination */}
         {total > 20 && (
           <div className="flex items-center justify-center gap-2 mt-6">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
-            >
-              {ta('previousPage')}
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {ta('pageInfo', { page, totalPages: Math.ceil(total / 20) })}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= Math.ceil(total / 20)}
-              onClick={() => setPage(page + 1)}
-            >
-              {ta('nextPage')}
-            </Button>
+            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>{ta('previousPage')}</Button>
+            <span className="text-xs text-muted-foreground">{ta('pageInfo', { page, totalPages: Math.ceil(total / 20) })}</span>
+            <Button variant="outline" size="sm" disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(page + 1)}>{ta('nextPage')}</Button>
           </div>
         )}
       </main>
 
-      {/* Asset Detail Dialog */}
-      <AssetDetailDialog
+      {/* Asset Detail Drawer */}
+      <AssetDetailDrawer
         asset={selectedAsset}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        onDelete={() => {
-          if (selectedAsset) {
-            setDeleteTarget(selectedAsset)
-            setDetailOpen(false)
-          }
-        }}
-        onApply={(dramaId) => {
-          if (selectedAsset) {
-            handleApply(selectedAsset.id, dramaId)
-          }
-        }}
-        dramas={dramaList}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onDelete={(asset) => { setDrawerOpen(false); setDeleteTarget(asset) }}
       />
 
       {/* Create Asset Dialog */}
-      <CreateAssetDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSuccess={fetchAssets}
-      />
+      <CreateAssetDialog open={createOpen} onOpenChange={setCreateOpen} onSuccess={fetchAssets} />
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{ta('deleteConfirm')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {ta('deleteWarning', { name: deleteTarget?.name || '' })}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{ta('deleteWarning', { name: deleteTarget?.name || '' })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tc('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-destructive text-white hover:bg-destructive/90">
               {deleting ? ta('deleting') : ta('confirmDelete')}
             </AlertDialogAction>
           </AlertDialogFooter>
