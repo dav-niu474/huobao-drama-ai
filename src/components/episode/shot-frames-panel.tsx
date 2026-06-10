@@ -10,6 +10,7 @@ import {
   Sparkles,
   Info,
   Film,
+  Edit3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,6 +19,10 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { panelVariants, shotTypeLabel } from './helpers'
 import type { ShotFramesPanelProps } from './types'
+import {
+  getGenerationModeLabel,
+  getGenerationModeColor,
+} from '@/lib/creative/keyframe-service'
 
 export function ShotFramesPanel({
   storyboards,
@@ -153,6 +158,15 @@ export function ShotFramesPanel({
                           {sb.shotType && (
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                               {shotTypeLabel(sb.shotType)}
+                            </Badge>
+                          )}
+                          {/* Generation mode badge */}
+                          {(sb as any).generationMode && (sb as any).generationMode !== 'image2video' && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] px-1 py-0 ${getGenerationModeColor((sb as any).generationMode)}`}
+                            >
+                              {getGenerationModeLabel((sb as any).generationMode)}
                             </Badge>
                           )}
                           {hasFirstFrame && hasLastFrame && (

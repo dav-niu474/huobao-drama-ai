@@ -9,6 +9,7 @@ import type {
   Storyboard,
   Asset,
   Season,
+  GenerationMode,
 } from './store'
 
 // ============================================================
@@ -759,6 +760,70 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderedIds }),
+      }),
+
+    // ---- Keyframe system ----
+    generateKeyframe: (storyboardId: string, mode?: string, options?: { candidateCount?: number; gridLayout?: { rows: number; cols: number } }) =>
+      request<{
+        storyboardId: string
+        generationMode: string
+        prompt: string
+        size: string
+        mode: string
+        message: string
+        imageCalls?: Array<{ prompt: string; size: string; frameType: string }>
+        firstFrameCall?: { prompt: string; size: string; frameType: string }
+        lastFrameCall?: { prompt: string; size: string; frameType: string }
+        gridLayout?: { rows: number; cols: number }
+        referenceVideoUrl?: string | null
+        referenceImages?: string | null
+      }>(`/api/storyboards/${storyboardId}/keyframe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, ...options }),
+      }),
+
+    getKeyframeStatus: (storyboardId: string) =>
+      request<{
+        storyboardId: string
+        status: {
+          storyboardId: string
+          shotNumber: number
+          generationMode: string | null
+          isReady: boolean
+          hasFirstFrame: boolean
+          hasLastFrame: boolean
+          hasGridImage: boolean
+          hasReferenceVideo: boolean
+          hasCandidates: boolean
+          selectedCandidateIndex: number | null
+          missingItems: string[]
+        }
+        generationMode: string | null
+        firstFrameUrl: string | null
+        lastFrameUrl: string | null
+        startFrameImageUrl: string | null
+        endFrameImageUrl: string | null
+        gridImageUrl: string | null
+        gridLayout: Record<string, unknown> | null
+        candidateUrls: string[]
+        selectedCandidateIndex: number | null
+        imagePrompt: string | null
+        videoPrompt: string | null
+      }>(`/api/storyboards/${storyboardId}/keyframe`),
+
+    selectCandidate: (storyboardId: string, candidateIndex: number) =>
+      request<{
+        success: boolean
+        storyboardId: string
+        selectedCandidateIndex: number
+        selectedUrl: string
+        generationMode: string
+        updatedFields: string[]
+      }>(`/api/storyboards/${storyboardId}/select-candidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateIndex }),
       }),
   },
 
@@ -1715,6 +1780,101 @@ export const api = {
     delete: (commentId: string) =>
       request<{ success: boolean }>(`/api/comments/${commentId}`, {
         method: 'DELETE',
+      }),
+  },
+
+  // ---- Queue (生成队列) ----
+  queue: {
+    getStatus: () =>
+      request<{
+        image: {
+          name: string
+          concurrency: number
+          rpm: number
+          activeCount: number
+          queueDepth: number
+          currentRpm: number
+          totalCompleted: number
+          totalFailed: number
+          activeTasks: any[]
+        }
+        video: {
+          name: string
+          concurrency: number
+          rpm: number
+          activeCount: number
+          queueDepth: number
+          currentRpm: number
+          totalCompleted: number
+          totalFailed: number
+          activeTasks: any[]
+        }
+        dlqCount: number
+        dlqItems: any[]
+        totalQueued: number
+        totalActive: number
+        totalCompleted: number
+        totalFailed: number
+      }>('/api/queue'),
+
+    enqueue: (data: {
+      type: 'image' | 'video' | 'tts'
+      category: string
+      referenceId: string
+      dramaId: string
+      episodeId?: string
+      priority?: number
+      maxRetries?: number
+      checkpoint?: string
+    }) =>
+      request<{ taskId: string; status: string }>('/api/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    cancelTask: (taskId: string) =>
+      request<{ success: boolean; taskId: string }>(`/api/queue?taskId=${taskId}`, {
+        method: 'DELETE',
+      }),
+
+    getTaskStatus: (taskId: string) =>
+      request<{ task: any }>(`/api/queue/${taskId}`),
+
+    updateTask: (taskId: string, data: {
+      action: 'retry' | 'cancel' | 'start' | 'complete' | 'fail'
+      result?: any
+      error?: string
+    }) =>
+      request<{ success: boolean; taskId: string; status: string }>(`/api/queue/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    getDLQItems: () =>
+      request<{ items: any[]; count: number }>('/api/queue/dlq'),
+
+    retryDLQ: (taskId: string) =>
+      request<{ success: boolean; taskId: string; status: string }>('/api/queue/dlq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      }),
+  },
+
+  // ---- Export (导出) ----
+  export: {
+    episode: (episodeId: string, format: 'mp4' | 'jianying' | 'srt' | 'ass' | 'fcpxml' | 'images', options?: {
+      bgmPath?: string
+      logoPath?: string
+      transition?: any
+      subtitleStyle?: string
+    }) =>
+      fetch(`/api/episodes/${episodeId}/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, ...options }),
       }),
   },
 }

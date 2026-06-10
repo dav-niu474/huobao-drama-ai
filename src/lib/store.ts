@@ -157,6 +157,8 @@ export interface Scene {
   updatedAt: string
 }
 
+export type GenerationMode = 'image2video' | 'first_last' | 'grid' | 'reference_video'
+
 export interface Storyboard {
   id: string
   episodeId: string
@@ -182,6 +184,14 @@ export interface Storyboard {
   ttsAudioUrl: string | null
   composedUrl: string | null
   status: string
+  // Keyframe system fields
+  generationMode: GenerationMode | null
+  gridImageUrl: string | null
+  gridLayout: string | null // JSON: { rows: number, cols: number, mode: string }
+  startFrameImageUrl: string | null
+  endFrameImageUrl: string | null
+  candidateUrls: string | null // JSON array of candidate image URLs
+  selectedCandidateIndex: number | null
   createdAt: string
   updatedAt: string
 }

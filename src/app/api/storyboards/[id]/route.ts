@@ -16,6 +16,9 @@ export async function PATCH(
       'action', 'description', 'dialogue', 'dialogueChar', 'duration', 'imagePrompt',
       'videoPrompt', 'atmosphere', 'firstFrameUrl', 'lastFrameUrl', 'videoUrl',
       'ttsAudioUrl', 'composedUrl', 'bgmPrompt', 'soundEffect', 'referenceImages', 'status',
+      // Keyframe system fields
+      'generationMode', 'gridImageUrl', 'gridLayout', 'startFrameImageUrl',
+      'endFrameImageUrl', 'candidateUrls', 'selectedCandidateIndex',
     ];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
