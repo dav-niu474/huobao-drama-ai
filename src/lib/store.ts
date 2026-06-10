@@ -22,6 +22,19 @@ export interface Drama {
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }
+  // V2 Phase 2 fields
+  showPlanLocked?: boolean
+  coverage?: string | null
+  episodeFormat?: string | null
+  aspectRatio?: string | null
+  genreTone?: string | null
+  paywallConfig?: string | null
+  targetPlatform?: string | null
+  budgetConstraints?: string | null
+  novelAnalysis?: string | null
+  scriptGenerationStatus?: string | null
+  assetExtractionStatus?: string | null
+  currentPhase?: string | null
 }
 
 export interface Prop {
@@ -37,11 +50,39 @@ export interface Prop {
   updatedAt: string
 }
 
+export interface Season {
+  id: string
+  dramaId: string
+  seasonNumber: number
+  title: string
+  description: string | null
+  status: string
+  worldDocUrl: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  _count?: { episodes: number }
+}
+
 export interface DramaDetail extends Drama {
   episodes: Episode[]
   characters: Character[]
   scenes: Scene[]
   props: Prop[]
+  seasons?: Season[]
+  // V2 Phase 2 fields
+  showPlanLocked: boolean
+  coverage: string | null
+  episodeFormat: string | null
+  aspectRatio: string | null
+  genreTone: string | null
+  paywallConfig: string | null
+  targetPlatform: string | null
+  budgetConstraints: string | null
+  novelAnalysis: string | null
+  scriptGenerationStatus: string | null
+  assetExtractionStatus: string | null
+  currentPhase: string | null
 }
 
 export interface LockedConfig {

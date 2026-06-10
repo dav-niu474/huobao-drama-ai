@@ -8,6 +8,7 @@ import type {
   Prop,
   Storyboard,
   Asset,
+  Season,
 } from './store'
 
 // ============================================================
@@ -318,6 +319,190 @@ export const api = {
 
     getDashboard: (dramaId: string) =>
       request<any>(`/api/dramas/${dramaId}/dashboard`),
+
+    // ---- V2 Script Generation & Asset Extraction (V2 Three Modules) ----
+    getScriptGenerationV2Status: (dramaId: string) =>
+      request<{
+        dramaId: string
+        status: string
+        currentPhase: string
+        totalEpisodes: number
+        episodesGenerated: number
+        episodesFailed: number
+        progress: number
+        episodes: Array<{
+          id: string
+          episodeNumber: number
+          title: string
+          scriptStatus: string
+          sourceChapterIds: string
+        }>
+      }>(`/api/dramas/${dramaId}/generate-scripts-v2`),
+
+    getAssetExtractionV2Status: (dramaId: string) =>
+      request<{
+        dramaId: string
+        status: string
+        assetStatus: string
+        currentPhase: string
+        counts: {
+          characters: number
+          scenes: number
+          props: number
+          clues: number
+        }
+        tierSummary: {
+          tierA: number
+          tierB: number
+          tierC: number
+        }
+      }>(`/api/dramas/${dramaId}/extract-assets-v2`),
+
+    getClues: (dramaId: string) =>
+      request<{
+        clues: Array<{
+          id: string
+          dramaId: string
+          type: string
+          name: string
+          description: string | null
+          firstSeenEp: string | null
+          episodes: string | null
+          visualRef: string | null
+          notes: string | null
+          createdAt: string
+          updatedAt: string
+        }>
+      }>(`/api/dramas/${dramaId}/clues`),
+  },
+
+  // ---- Seasons ----
+  seasons: {
+    list: (dramaId: string) =>
+      request<{ seasons: Season[] }>(`/api/seasons?dramaId=${dramaId}`).then((r) => r.seasons),
+
+    get: (id: string) =>
+      request<Season & { episodes: Episode[] }>(`/api/seasons/${id}`),
+
+    create: (dramaId: string, data: Partial<Season>) =>
+      request<Season>('/api/seasons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dramaId, ...data }),
+      }),
+
+    update: (id: string, data: Partial<Season>) =>
+      request<Season>(`/api/seasons/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: string, reassignTo?: string) =>
+      fetch(`/api/seasons/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reassignTo }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Delete season failed: ${r.status}`)
+      }),
+  },
+
+  // ---- Novel Analysis ----
+  novelAnalysis: {
+    getStatus: (dramaId: string) =>
+      request<{
+        status: string
+        chapterCount: number
+        analysis: unknown
+        genreTone: string | null
+        currentPhase: string | null
+        showPlanLocked: boolean
+        novelParsed: boolean
+        parseStatus: string
+      }>(`/api/dramas/${dramaId}/novel-analysis`),
+
+    trigger: (dramaId: string, onProgress: (data: { step: string; message: string; progress: number; detail?: unknown }) => void): Promise<unknown> => {
+      return new Promise((resolve, reject) => {
+        fetch(`/api/dramas/${dramaId}/novel-analysis`, { method: 'POST' }).then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text().catch(() => 'Unknown error')
+            reject(new Error(`API ${res.status}: ${text}`))
+            return
+          }
+
+          const reader = res.body?.getReader()
+          if (!reader) {
+            reject(new Error('No readable stream'))
+            return
+          }
+
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let lastResult: unknown = null
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  if (data.step === 'error') {
+                    reject(new Error(data.message))
+                    return
+                  }
+                  if (data.step === 'completed') {
+                    lastResult = data.detail
+                  }
+                  onProgress(data)
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+          }
+
+          resolve(lastResult)
+        }).catch(reject)
+      })
+    },
+  },
+
+  // ---- Show Plan ----
+  showPlan: {
+    get: (dramaId: string) =>
+      request<{
+        coverage: unknown
+        episodeFormat: unknown
+        aspectRatio: string | null
+        genreTone: unknown
+        paywallConfig: unknown
+        targetPlatform: string | null
+        budgetConstraints: unknown
+        showPlanLocked: boolean
+        currentPhase: string | null
+        novelAnalysis: unknown
+      }>(`/api/dramas/${dramaId}/show-plan`),
+
+    update: (dramaId: string, data: Record<string, unknown>) =>
+      request<{ success: boolean; updated: string[] }>(`/api/dramas/${dramaId}/show-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    lock: (dramaId: string) =>
+      request<{ success: boolean; showPlanLocked: boolean; currentPhase: string }>(`/api/dramas/${dramaId}/show-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'lock' }),
+      }),
   },
 
   // ---- Episodes ----

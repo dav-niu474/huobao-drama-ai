@@ -6,6 +6,9 @@ import { useTranslations } from 'next-intl'
 import { useAppStore, type DramaDetail, type Episode, type LockedConfig } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
+import { SeasonManager } from '@/components/season-manager'
+import { ShowPlannerDialog } from '@/components/show-planner-dialog'
+import { PaywallConfig } from '@/components/paywall-config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send, MoreHorizontal } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send, MoreHorizontal, Sparkles } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
@@ -426,6 +429,9 @@ export function ProjectDetailView() {
   const [detailTab, setDetailTab] = useState<'episodes' | 'history' | 'publish-records'>('episodes')
   const [publishOpen, setPublishOpen] = useState(false)
 
+  // Show Planner Dialog
+  const [showPlannerOpen, setShowPlannerOpen] = useState(false)
+
   // Import from library dialog
   const [importOpen, setImportOpen] = useState(false)
   const [importAssets, setImportAssets] = useState<any[]>([])
@@ -808,6 +814,17 @@ export function ProjectDetailView() {
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">{tp('addEpisode')}</span>
                 </Button>
+                {drama && (drama.currentPhase === 'show_planning' || drama.currentPhase === 'novel_analysis') && !drama.showPlanLocked && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowPlannerOpen(true)}
+                    className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/5"
+                  >
+                    <Sparkles className="size-3.5" />
+                    <span className="hidden sm:inline">{tp('showPlanner')}</span>
+                  </Button>
+                )}
 
                 {/* Secondary actions in dropdown */}
                 <DropdownMenu>
@@ -872,6 +889,19 @@ export function ProjectDetailView() {
           </main>
         ) : (
         <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+        {/* Season Manager & Paywall Config (V2) */}
+        {drama && (
+          <div className="space-y-3 mb-4">
+            <SeasonManager dramaId={drama.id} />
+            {drama.showPlanLocked && (
+              <PaywallConfig
+                dramaId={drama.id}
+                showPlanLocked={drama.showPlanLocked}
+                totalEpisodes={drama.totalEpisodes}
+              />
+            )}
+          </div>
+        )}
         {loading && !drama ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -1163,6 +1193,16 @@ export function ProjectDetailView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Show Planner Dialog (V2) ─────────────────────── */}
+      {drama && (
+        <ShowPlannerDialog
+          dramaId={drama.id}
+          open={showPlannerOpen}
+          onOpenChange={setShowPlannerOpen}
+          onComplete={fetchDrama}
+        />
+      )}
 
       {/* ── Cost Stats Dialog ────────────────────────────── */}
       {drama && (
