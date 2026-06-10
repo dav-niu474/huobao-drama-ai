@@ -136,6 +136,12 @@ export interface Character {
   lockedReferenceImage: string | null
   visualFingerprint: string  // JSON string
   episodeIds: string         // JSON array of episode IDs
+  // V2 fields
+  weightTier: string | null  // 'A' | 'B' | 'C'
+  identityAnchors: string | null  // JSON: IdentityAnchors
+  threeViewsUrl: string | null
+  wardrobeUrls: string | null  // JSON array of URLs
+  generationOrder: number | null
   createdAt: string
   updatedAt: string
 }
@@ -383,7 +389,7 @@ interface AppStore {
   navigateToAssetWorkbench: (dramaId: string) => void
   navigateToMarketplace: () => void
   navigateToSeries: () => void
-  navigateToCreativeWorkspace: () => void
+  navigateToCreativeWorkspace: (dramaId?: string) => void
   navigateToScriptV2: () => void
   navigateToAssetV2: () => void
   navigateToCharacterBible: () => void
@@ -391,6 +397,7 @@ interface AppStore {
   navigateToQueueDashboard: () => void
   navigateToArtStyle: () => void
   setActiveModule: (module: AppModule) => void
+  navigateBackToCreative: () => void
 
   // Drama data cache
   dramas: Drama[]
@@ -522,12 +529,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       activeModule: 'project' as AppModule,
     }),
 
-  navigateToCreativeWorkspace: () =>
-    set({
+  navigateToCreativeWorkspace: (dramaId?: string) =>
+    set((state) => ({
       view: 'creative-workspace',
+      // If dramaId is provided, set it; otherwise preserve existing selectedDramaId
+      ...(dramaId ? { selectedDramaId: dramaId } : {}),
       episodeLockedConfig: null,
       activeModule: 'creative' as AppModule,
-    }),
+    })),
 
   navigateToScriptV2: () =>
     set({
@@ -560,8 +569,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   navigateToQueueDashboard: () =>
     set({
       view: 'queue-dashboard',
-      selectedDramaId: null,
-      selectedEpisodeId: null,
       episodeLockedConfig: null,
       activeModule: 'creative' as AppModule,
     }),
@@ -569,8 +576,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
   navigateToArtStyle: () =>
     set({
       view: 'art-style',
-      selectedDramaId: null,
-      selectedEpisodeId: null,
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  // Navigate back to creative workspace hub (preserving selectedDramaId)
+  navigateBackToCreative: () =>
+    set({
+      view: 'creative-workspace',
       episodeLockedConfig: null,
       activeModule: 'creative' as AppModule,
     }),
@@ -592,7 +605,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         'asset-library': state.navigateToAssetLibrary,
         'marketplace': state.navigateToMarketplace,
         'series': state.navigateToSeries,
-        'creative-workspace': state.navigateToCreativeWorkspace,
+        'creative-workspace': () => state.navigateToCreativeWorkspace(),
         'script-v2': state.navigateToScriptV2,
         'asset-v2': state.navigateToAssetV2,
         'character-bible': state.navigateToCharacterBible,

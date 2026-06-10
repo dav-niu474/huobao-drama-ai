@@ -125,6 +125,7 @@ function WeightTierBadge({ tier }: { tier: string }) {
 
 export function AssetWorkbenchV2() {
   const navigateToProject = useAppStore((s) => s.navigateToProject)
+  const navigateBackToCreative = useAppStore((s) => s.navigateBackToCreative)
   const navigateToScriptWorkbench = useAppStore((s) => s.navigateToScriptWorkbench)
   const selectedDramaId = useAppStore((s) => s.selectedDramaId)
   const currentDrama = useAppStore((s) => s.currentDrama)
@@ -348,14 +349,15 @@ export function AssetWorkbenchV2() {
       {/* ── Top Bar ── */}
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         <button
-          onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-28"
+          onClick={navigateBackToCreative}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
         >
-          {currentDrama?.title || '项目'}
+          <Palette className="size-3.5" />
+          <span className="truncate max-w-24">{currentDrama?.title || '项目'}</span>
         </button>
         <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
         <button
-          onClick={() => selectedDramaId && navigateToScriptWorkbench(selectedDramaId)}
+          onClick={() => navigateToScriptWorkbench(selectedDramaId!)}
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           剧本生成

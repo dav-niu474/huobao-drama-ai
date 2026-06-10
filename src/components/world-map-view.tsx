@@ -8,7 +8,7 @@ import { ChevronRight, Map } from 'lucide-react'
 export function WorldMapView() {
   const selectedDramaId = useAppStore((s) => s.selectedDramaId)
   const currentDrama = useAppStore((s) => s.currentDrama)
-  const navigateToProject = useAppStore((s) => s.navigateToProject)
+  const navigateBackToCreative = useAppStore((s) => s.navigateBackToCreative)
 
   if (!selectedDramaId) {
     return (
@@ -24,10 +24,11 @@ export function WorldMapView() {
       {/* Top Bar */}
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         <button
-          onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-32"
+          onClick={navigateBackToCreative}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
         >
-          {currentDrama?.title || '项目'}
+          <Map className="size-3.5" />
+          <span className="truncate max-w-24">{currentDrama?.title || '项目'}</span>
         </button>
         <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
         <div className="flex items-center gap-1.5">
