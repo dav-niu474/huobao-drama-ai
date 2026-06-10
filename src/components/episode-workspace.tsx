@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAppStore, type EpisodeDetail, type Character, type Scene, type Prop, type Storyboard, type LockedConfig } from '@/lib/store'
+import { useAppStore, type EpisodeDetail, type Character, type Scene, type Prop, type Storyboard, type LockedConfig, type GenerationMode } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -28,9 +28,12 @@ import {
   LockOpen,
   Download,
   Globe,
+  Sparkles,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ResultDialog, EMPTY_RESULT_DIALOG, type ResultDialogState } from '@/components/episode/result-dialog'
+import { KeyframePlanner } from '@/components/keyframe-planner'
+import { KeyframeEditor } from '@/components/keyframe-editor'
 
 // Sub-components
 import { ScriptPanel } from '@/components/episode/script-panel'
@@ -124,6 +127,11 @@ export function EpisodeWorkspace() {
     isSplittingGrid: false,
     gridConfig: { mode: 'first_frame', rows: 2, cols: 2 },
   })
+
+  // Keyframe system state
+  const [keyframePlannerOpen, setKeyframePlannerOpen] = useState(false)
+  const [keyframeEditorShot, setKeyframeEditorShot] = useState<Storyboard | null>(null)
+  const [generatingKeyframe, setGeneratingKeyframe] = useState<string | null>(null)
 
   // Workspace model selection - persisted in global store + localStorage
   const { workspaceModels, setWorkspaceModel, initWorkspaceModels, episodeLockedConfig, setEpisodeLockedConfig } = useAppStore()
@@ -1215,6 +1223,134 @@ export function EpisodeWorkspace() {
     }
   }
 
+  // ── Generate keyframe (keyframe system) ─────────────────────
+
+  const handleGenerateKeyframe = async (storyboardId: string, mode: GenerationMode) => {
+    setGeneratingKeyframe(storyboardId)
+    try {
+      const result = await api.storyboards.generateKeyframe(storyboardId, mode)
+
+      // Based on mode, perform actual image generation
+      if (mode === 'image2video' || mode === 'first_last') {
+        // Generate first frame
+        const imageResult = await api.ai.generateImage(
+          result.prompt,
+          result.size,
+          selectedEpisodeId || undefined
+        ) as Record<string, unknown>
+
+        if (imageResult.status === 'processing' && imageResult.taskId) {
+          toast({ title: '关键帧生成中...' })
+          const pollResult = await pollAsyncTask('image', imageResult.taskId as string)
+          if (pollResult?.imageBase64) {
+            const candidateUrls: string[] = []
+            const firstFrameUrl = `data:image/png;base64,${pollResult.imageBase64}`
+            candidateUrls.push(firstFrameUrl)
+
+            const updateData: Partial<Storyboard> = {
+              firstFrameUrl,
+              startFrameImageUrl: firstFrameUrl,
+              candidateUrls: JSON.stringify(candidateUrls),
+              selectedCandidateIndex: 0,
+            }
+
+            // For first_last mode, also generate last frame
+            if (mode === 'first_last' && result.lastFrameCall) {
+              try {
+                const lastResult = await api.ai.generateImage(
+                  result.lastFrameCall.prompt,
+                  result.lastFrameCall.size,
+                  selectedEpisodeId || undefined
+                ) as Record<string, unknown>
+                if (lastResult.status === 'processing' && lastResult.taskId) {
+                  const lastPoll = await pollAsyncTask('image', lastResult.taskId as string)
+                  if (lastPoll?.imageBase64) {
+                    const lastFrameUrl = `data:image/png;base64,${lastPoll.imageBase64}`
+                    updateData.lastFrameUrl = lastFrameUrl
+                    updateData.endFrameImageUrl = lastFrameUrl
+                    candidateUrls.push(lastFrameUrl)
+                    updateData.candidateUrls = JSON.stringify(candidateUrls)
+                  }
+                } else if (lastResult.imageUrl) {
+                  updateData.lastFrameUrl = lastResult.imageUrl as string
+                  updateData.endFrameImageUrl = lastResult.imageUrl as string
+                  candidateUrls.push(lastResult.imageUrl as string)
+                  updateData.candidateUrls = JSON.stringify(candidateUrls)
+                }
+              } catch { /* Last frame generation optional */ }
+            }
+
+            await api.storyboards.update(storyboardId, updateData)
+          }
+        } else if (imageResult.imageUrl) {
+          const candidateUrls = [imageResult.imageUrl as string]
+          const updateData: Partial<Storyboard> = {
+            firstFrameUrl: imageResult.imageUrl as string,
+            startFrameImageUrl: imageResult.imageUrl as string,
+            candidateUrls: JSON.stringify(candidateUrls),
+            selectedCandidateIndex: 0,
+          }
+
+          // For first_last mode, also generate last frame
+          if (mode === 'first_last' && result.lastFrameCall) {
+            try {
+              const lastResult = await api.ai.generateImage(
+                result.lastFrameCall.prompt,
+                result.lastFrameCall.size,
+                selectedEpisodeId || undefined
+              ) as Record<string, unknown>
+              if (lastResult.imageUrl) {
+                updateData.lastFrameUrl = lastResult.imageUrl as string
+                updateData.endFrameImageUrl = lastResult.imageUrl as string
+                candidateUrls.push(lastResult.imageUrl as string)
+                updateData.candidateUrls = JSON.stringify(candidateUrls)
+              }
+            } catch { /* Last frame generation optional */ }
+          }
+
+          await api.storyboards.update(storyboardId, updateData)
+        }
+      } else if (mode === 'grid') {
+        // Use grid generation API
+        const gridResult = await api.grid.generate({
+          episodeId: selectedEpisodeId ?? undefined,
+          dramaId: selectedDramaId ?? undefined,
+          prompt: result.prompt,
+          rows: result.gridLayout?.rows ?? 2,
+          cols: result.gridLayout?.cols ?? 2,
+          gridMode: 'first_frame',
+        })
+
+        if (gridResult.status === 'processing' && gridResult.taskId) {
+          toast({ title: '宫格图生成中...' })
+          const pollResult = await pollGridStatus(
+            gridResult.taskId,
+            gridResult.imageGenerationId
+          )
+          await api.storyboards.update(storyboardId, {
+            gridImageUrl: pollResult.imageUrl,
+            gridLayout: JSON.stringify(result.gridLayout ?? { rows: 2, cols: 2 }),
+          })
+        } else if (gridResult.imageUrl) {
+          await api.storyboards.update(storyboardId, {
+            gridImageUrl: gridResult.imageUrl,
+            gridLayout: JSON.stringify(result.gridLayout ?? { rows: 2, cols: 2 }),
+          })
+        }
+      } else if (mode === 'reference_video') {
+        // Just validate and mark as ready
+        toast({ title: '参考视频模式已确认' })
+      }
+
+      toast({ title: '关键帧生成完成' })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '关键帧生成失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setGeneratingKeyframe(null)
+    }
+  }
+
   // ── Generate all TTS ─────────────────────────────────────────
 
   const handleGenerateAllTts = async () => {
@@ -2003,6 +2139,19 @@ export function EpisodeWorkspace() {
           </div>
 
           <div className="ml-auto flex items-center gap-1">
+            {/* Keyframe Planner button */}
+            {storyboards.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden sm:flex items-center gap-1.5 text-xs h-7 px-2.5 text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-950/30"
+                onClick={() => setKeyframePlannerOpen(true)}
+                disabled={aiLoading}
+              >
+                <Sparkles className="size-3.5" />
+                关键帧规划
+              </Button>
+            )}
             {/* PR-F: Import Global Assets button in header */}
             {(characters.length + scenes.length + props.length) > 0 && !episode?.globalAssetsImported && selectedEpisodeId && (
               <Button
@@ -2272,6 +2421,29 @@ export function EpisodeWorkspace() {
       </div>
 
       <ResultDialog state={resultDialog} onClose={() => setResultDialog(EMPTY_RESULT_DIALOG)} />
+
+      {/* Keyframe Planner Dialog */}
+      <KeyframePlanner
+        open={keyframePlannerOpen}
+        onOpenChange={setKeyframePlannerOpen}
+        storyboards={storyboards}
+        aiLoading={aiLoading}
+        generatingKeyframe={generatingKeyframe}
+        onGenerateKeyframe={handleGenerateKeyframe}
+        onUpdateStoryboard={handleUpdateStoryboard}
+      />
+
+      {/* Keyframe Editor Sheet */}
+      <KeyframeEditor
+        storyboard={keyframeEditorShot}
+        open={!!keyframeEditorShot}
+        onOpenChange={(open) => { if (!open) setKeyframeEditorShot(null) }}
+        aiLoading={aiLoading}
+        generatingKeyframe={generatingKeyframe}
+        onGenerateKeyframe={handleGenerateKeyframe}
+        onUpdateStoryboard={handleUpdateStoryboard}
+        onUpload={handleUpload}
+      />
     </div>
   )
 }

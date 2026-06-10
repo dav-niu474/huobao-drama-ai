@@ -8,6 +8,12 @@ import type {
   Prop,
   Storyboard,
   Asset,
+  Season,
+  GenerationMode,
+  ArtStyle,
+  AssetVersion,
+  WorldRegion,
+  WorldLocation,
 } from './store'
 
 // ============================================================
@@ -318,6 +324,190 @@ export const api = {
 
     getDashboard: (dramaId: string) =>
       request<any>(`/api/dramas/${dramaId}/dashboard`),
+
+    // ---- V2 Script Generation & Asset Extraction (V2 Three Modules) ----
+    getScriptGenerationV2Status: (dramaId: string) =>
+      request<{
+        dramaId: string
+        status: string
+        currentPhase: string
+        totalEpisodes: number
+        episodesGenerated: number
+        episodesFailed: number
+        progress: number
+        episodes: Array<{
+          id: string
+          episodeNumber: number
+          title: string
+          scriptStatus: string
+          sourceChapterIds: string
+        }>
+      }>(`/api/dramas/${dramaId}/generate-scripts-v2`),
+
+    getAssetExtractionV2Status: (dramaId: string) =>
+      request<{
+        dramaId: string
+        status: string
+        assetStatus: string
+        currentPhase: string
+        counts: {
+          characters: number
+          scenes: number
+          props: number
+          clues: number
+        }
+        tierSummary: {
+          tierA: number
+          tierB: number
+          tierC: number
+        }
+      }>(`/api/dramas/${dramaId}/extract-assets-v2`),
+
+    getClues: (dramaId: string) =>
+      request<{
+        clues: Array<{
+          id: string
+          dramaId: string
+          type: string
+          name: string
+          description: string | null
+          firstSeenEp: string | null
+          episodes: string | null
+          visualRef: string | null
+          notes: string | null
+          createdAt: string
+          updatedAt: string
+        }>
+      }>(`/api/dramas/${dramaId}/clues`),
+  },
+
+  // ---- Seasons ----
+  seasons: {
+    list: (dramaId: string) =>
+      request<{ seasons: Season[] }>(`/api/seasons?dramaId=${dramaId}`).then((r) => r.seasons),
+
+    get: (id: string) =>
+      request<Season & { episodes: Episode[] }>(`/api/seasons/${id}`),
+
+    create: (dramaId: string, data: Partial<Season>) =>
+      request<Season>('/api/seasons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dramaId, ...data }),
+      }),
+
+    update: (id: string, data: Partial<Season>) =>
+      request<Season>(`/api/seasons/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: string, reassignTo?: string) =>
+      fetch(`/api/seasons/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reassignTo }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Delete season failed: ${r.status}`)
+      }),
+  },
+
+  // ---- Novel Analysis ----
+  novelAnalysis: {
+    getStatus: (dramaId: string) =>
+      request<{
+        status: string
+        chapterCount: number
+        analysis: unknown
+        genreTone: string | null
+        currentPhase: string | null
+        showPlanLocked: boolean
+        novelParsed: boolean
+        parseStatus: string
+      }>(`/api/dramas/${dramaId}/novel-analysis`),
+
+    trigger: (dramaId: string, onProgress: (data: { step: string; message: string; progress: number; detail?: unknown }) => void): Promise<unknown> => {
+      return new Promise((resolve, reject) => {
+        fetch(`/api/dramas/${dramaId}/novel-analysis`, { method: 'POST' }).then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text().catch(() => 'Unknown error')
+            reject(new Error(`API ${res.status}: ${text}`))
+            return
+          }
+
+          const reader = res.body?.getReader()
+          if (!reader) {
+            reject(new Error('No readable stream'))
+            return
+          }
+
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let lastResult: unknown = null
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  if (data.step === 'error') {
+                    reject(new Error(data.message))
+                    return
+                  }
+                  if (data.step === 'completed') {
+                    lastResult = data.detail
+                  }
+                  onProgress(data)
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+          }
+
+          resolve(lastResult)
+        }).catch(reject)
+      })
+    },
+  },
+
+  // ---- Show Plan ----
+  showPlan: {
+    get: (dramaId: string) =>
+      request<{
+        coverage: unknown
+        episodeFormat: unknown
+        aspectRatio: string | null
+        genreTone: unknown
+        paywallConfig: unknown
+        targetPlatform: string | null
+        budgetConstraints: unknown
+        showPlanLocked: boolean
+        currentPhase: string | null
+        novelAnalysis: unknown
+      }>(`/api/dramas/${dramaId}/show-plan`),
+
+    update: (dramaId: string, data: Record<string, unknown>) =>
+      request<{ success: boolean; updated: string[] }>(`/api/dramas/${dramaId}/show-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    lock: (dramaId: string) =>
+      request<{ success: boolean; showPlanLocked: boolean; currentPhase: string }>(`/api/dramas/${dramaId}/show-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'lock' }),
+      }),
   },
 
   // ---- Episodes ----
@@ -574,6 +764,70 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderedIds }),
+      }),
+
+    // ---- Keyframe system ----
+    generateKeyframe: (storyboardId: string, mode?: string, options?: { candidateCount?: number; gridLayout?: { rows: number; cols: number } }) =>
+      request<{
+        storyboardId: string
+        generationMode: string
+        prompt: string
+        size: string
+        mode: string
+        message: string
+        imageCalls?: Array<{ prompt: string; size: string; frameType: string }>
+        firstFrameCall?: { prompt: string; size: string; frameType: string }
+        lastFrameCall?: { prompt: string; size: string; frameType: string }
+        gridLayout?: { rows: number; cols: number }
+        referenceVideoUrl?: string | null
+        referenceImages?: string | null
+      }>(`/api/storyboards/${storyboardId}/keyframe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, ...options }),
+      }),
+
+    getKeyframeStatus: (storyboardId: string) =>
+      request<{
+        storyboardId: string
+        status: {
+          storyboardId: string
+          shotNumber: number
+          generationMode: string | null
+          isReady: boolean
+          hasFirstFrame: boolean
+          hasLastFrame: boolean
+          hasGridImage: boolean
+          hasReferenceVideo: boolean
+          hasCandidates: boolean
+          selectedCandidateIndex: number | null
+          missingItems: string[]
+        }
+        generationMode: string | null
+        firstFrameUrl: string | null
+        lastFrameUrl: string | null
+        startFrameImageUrl: string | null
+        endFrameImageUrl: string | null
+        gridImageUrl: string | null
+        gridLayout: Record<string, unknown> | null
+        candidateUrls: string[]
+        selectedCandidateIndex: number | null
+        imagePrompt: string | null
+        videoPrompt: string | null
+      }>(`/api/storyboards/${storyboardId}/keyframe`),
+
+    selectCandidate: (storyboardId: string, candidateIndex: number) =>
+      request<{
+        success: boolean
+        storyboardId: string
+        selectedCandidateIndex: number
+        selectedUrl: string
+        generationMode: string
+        updatedFields: string[]
+      }>(`/api/storyboards/${storyboardId}/select-candidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateIndex }),
       }),
   },
 
@@ -1476,6 +1730,154 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dramaId }),
       }),
+
+    // Art style filter
+    listByArtStyle: (artStyle: string) =>
+      request<{ assets: Asset[]; total: number }>(`/api/assets/art-style-filter?artStyle=${encodeURIComponent(artStyle)}`),
+
+    // Batch operations
+    batch: (action: 'delete' | 'export', ids: string[]) =>
+      request<{ success: boolean; affected: number }>('/api/assets/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids }),
+      }),
+
+    // Version management
+    versions: {
+      list: (assetId: string) =>
+        request<{ versions: AssetVersion[] }>(`/api/assets/${assetId}/versions`),
+
+      create: (assetId: string, changeDescription?: string) =>
+        request<{ version: AssetVersion }>(`/api/assets/${assetId}/versions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ changeDescription }),
+        }),
+
+      rollback: (assetId: string, versionId: string) =>
+        request<{ success: boolean; asset: Asset }>(`/api/assets/${assetId}/versions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'rollback', versionId }),
+        }),
+    },
+  },
+
+  // ---- Art Styles ----
+  artStyles: {
+    list: () =>
+      request<{ artStyles: ArtStyle[] }>('/api/art-styles').then((r) => r.artStyles),
+
+    get: (id: string) =>
+      request<{ artStyle: ArtStyle }>(`/api/art-styles/${id}`).then((r) => r.artStyle),
+
+    create: (data: {
+      key: string
+      name: string
+      category?: string
+      description?: string
+      prefixMd?: string
+      styleMeta?: Record<string, any>
+      previewUrl?: string
+      isActive?: boolean
+    }) =>
+      request<{ artStyle: ArtStyle }>('/api/art-styles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (id: string, data: {
+      name?: string
+      category?: string
+      description?: string
+      prefixMd?: string
+      styleMeta?: Record<string, any>
+      previewUrl?: string
+      isActive?: boolean
+    }) =>
+      request<{ artStyle: ArtStyle }>(`/api/art-styles/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: string) =>
+      fetch(`/api/art-styles/${id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete art style failed: ${r.status}`)
+      }),
+
+    sync: () =>
+      request<{ synced: number; created: number; updated: number }>('/api/art-styles?action=sync'),
+  },
+
+  // ---- World Map ----
+  worldMap: {
+    // Regions
+    listRegions: (dramaId: string) =>
+      request<{ regions: WorldRegion[] }>(`/api/dramas/${dramaId}/world-regions`).then((r) => r.regions),
+
+    createRegion: (dramaId: string, data: {
+      name: string
+      description?: string
+      atmosphere?: string
+      musicStyle?: string
+    }) =>
+      request<{ region: WorldRegion }>(`/api/dramas/${dramaId}/world-regions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    updateRegion: (regionId: string, data: {
+      name?: string
+      description?: string
+      atmosphere?: string
+      musicStyle?: string
+    }) =>
+      request<{ region: WorldRegion }>(`/api/world-regions/${regionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    deleteRegion: (regionId: string) =>
+      fetch(`/api/world-regions/${regionId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete region failed: ${r.status}`)
+      }),
+
+    // Locations
+    listLocations: (regionId: string) =>
+      request<{ locations: WorldLocation[] }>(`/api/world-regions/${regionId}/locations`).then((r) => r.locations),
+
+    createLocation: (regionId: string, data: {
+      name: string
+      description?: string
+      timeOfDayOptions?: string[]
+    }) =>
+      request<{ location: WorldLocation }>(`/api/world-regions/${regionId}/locations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    updateLocation: (locationId: string, data: {
+      name?: string
+      description?: string
+      timeOfDayOptions?: string[]
+      imageUrl?: string
+    }) =>
+      request<{ location: WorldLocation }>(`/api/world-locations/${locationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    deleteLocation: (locationId: string) =>
+      fetch(`/api/world-locations/${locationId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error(`Delete location failed: ${r.status}`)
+      }),
   },
 
   // ---- Drama Members (团队协作) ----
@@ -1530,6 +1932,101 @@ export const api = {
     delete: (commentId: string) =>
       request<{ success: boolean }>(`/api/comments/${commentId}`, {
         method: 'DELETE',
+      }),
+  },
+
+  // ---- Queue (生成队列) ----
+  queue: {
+    getStatus: () =>
+      request<{
+        image: {
+          name: string
+          concurrency: number
+          rpm: number
+          activeCount: number
+          queueDepth: number
+          currentRpm: number
+          totalCompleted: number
+          totalFailed: number
+          activeTasks: any[]
+        }
+        video: {
+          name: string
+          concurrency: number
+          rpm: number
+          activeCount: number
+          queueDepth: number
+          currentRpm: number
+          totalCompleted: number
+          totalFailed: number
+          activeTasks: any[]
+        }
+        dlqCount: number
+        dlqItems: any[]
+        totalQueued: number
+        totalActive: number
+        totalCompleted: number
+        totalFailed: number
+      }>('/api/queue'),
+
+    enqueue: (data: {
+      type: 'image' | 'video' | 'tts'
+      category: string
+      referenceId: string
+      dramaId: string
+      episodeId?: string
+      priority?: number
+      maxRetries?: number
+      checkpoint?: string
+    }) =>
+      request<{ taskId: string; status: string }>('/api/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    cancelTask: (taskId: string) =>
+      request<{ success: boolean; taskId: string }>(`/api/queue?taskId=${taskId}`, {
+        method: 'DELETE',
+      }),
+
+    getTaskStatus: (taskId: string) =>
+      request<{ task: any }>(`/api/queue/${taskId}`),
+
+    updateTask: (taskId: string, data: {
+      action: 'retry' | 'cancel' | 'start' | 'complete' | 'fail'
+      result?: any
+      error?: string
+    }) =>
+      request<{ success: boolean; taskId: string; status: string }>(`/api/queue/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    getDLQItems: () =>
+      request<{ items: any[]; count: number }>('/api/queue/dlq'),
+
+    retryDLQ: (taskId: string) =>
+      request<{ success: boolean; taskId: string; status: string }>('/api/queue/dlq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      }),
+  },
+
+  // ---- Export (导出) ----
+  export: {
+    episode: (episodeId: string, format: 'mp4' | 'jianying' | 'srt' | 'ass' | 'fcpxml' | 'images', options?: {
+      bgmPath?: string
+      logoPath?: string
+      transition?: any
+      subtitleStyle?: string
+    }) =>
+      fetch(`/api/episodes/${episodeId}/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, ...options }),
       }),
   },
 }

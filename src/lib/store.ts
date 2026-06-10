@@ -22,6 +22,19 @@ export interface Drama {
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }
+  // V2 Phase 2 fields
+  showPlanLocked?: boolean
+  coverage?: string | null
+  episodeFormat?: string | null
+  aspectRatio?: string | null
+  genreTone?: string | null
+  paywallConfig?: string | null
+  targetPlatform?: string | null
+  budgetConstraints?: string | null
+  novelAnalysis?: string | null
+  scriptGenerationStatus?: string | null
+  assetExtractionStatus?: string | null
+  currentPhase?: string | null
 }
 
 export interface Prop {
@@ -37,11 +50,39 @@ export interface Prop {
   updatedAt: string
 }
 
+export interface Season {
+  id: string
+  dramaId: string
+  seasonNumber: number
+  title: string
+  description: string | null
+  status: string
+  worldDocUrl: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  _count?: { episodes: number }
+}
+
 export interface DramaDetail extends Drama {
   episodes: Episode[]
   characters: Character[]
   scenes: Scene[]
   props: Prop[]
+  seasons?: Season[]
+  // V2 Phase 2 fields
+  showPlanLocked: boolean
+  coverage: string | null
+  episodeFormat: string | null
+  aspectRatio: string | null
+  genreTone: string | null
+  paywallConfig: string | null
+  targetPlatform: string | null
+  budgetConstraints: string | null
+  novelAnalysis: string | null
+  scriptGenerationStatus: string | null
+  assetExtractionStatus: string | null
+  currentPhase: string | null
 }
 
 export interface LockedConfig {
@@ -95,6 +136,12 @@ export interface Character {
   lockedReferenceImage: string | null
   visualFingerprint: string  // JSON string
   episodeIds: string         // JSON array of episode IDs
+  // V2 fields
+  weightTier: string | null  // 'A' | 'B' | 'C'
+  identityAnchors: string | null  // JSON: IdentityAnchors
+  threeViewsUrl: string | null
+  wardrobeUrls: string | null  // JSON array of URLs
+  generationOrder: number | null
   createdAt: string
   updatedAt: string
 }
@@ -115,6 +162,8 @@ export interface Scene {
   createdAt: string
   updatedAt: string
 }
+
+export type GenerationMode = 'image2video' | 'first_last' | 'grid' | 'reference_video'
 
 export interface Storyboard {
   id: string
@@ -141,6 +190,14 @@ export interface Storyboard {
   ttsAudioUrl: string | null
   composedUrl: string | null
   status: string
+  // Keyframe system fields
+  generationMode: GenerationMode | null
+  gridImageUrl: string | null
+  gridLayout: string | null // JSON: { rows: number, cols: number, mode: string }
+  startFrameImageUrl: string | null
+  endFrameImageUrl: string | null
+  candidateUrls: string | null // JSON array of candidate image URLs
+  selectedCandidateIndex: number | null
   createdAt: string
   updatedAt: string
 }
@@ -170,9 +227,139 @@ export interface Asset {
   createdAt: string
   updatedAt: string
   user?: { id: string; name: string } | null
+  // Version info
+  versionCount?: number
+  currentVersion?: number
 }
 
-export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'marketplace' | 'series'
+// ============================================================
+// Art Style types
+// ============================================================
+
+export interface ArtStyle {
+  id: string
+  key: string
+  name: string
+  category: string // "2D" | "3D" | "realpeople"
+  description: string | null
+  prefixMd: string | null
+  styleMeta: string | null // JSON: {tone, palette, influences}
+  previewUrl: string | null
+  isActive: boolean
+  isBuiltin: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================
+// Asset Version types
+// ============================================================
+
+export interface AssetVersion {
+  id: string
+  assetId: string
+  version: number
+  snapshot: string // JSON snapshot of asset data at this version
+  changeDescription: string | null
+  createdBy: string | null
+  createdAt: string
+}
+
+// ============================================================
+// World Map types
+// ============================================================
+
+export interface WorldRegion {
+  id: string
+  dramaId: string
+  name: string
+  description: string
+  atmosphere: string
+  musicStyle: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorldLocation {
+  id: string
+  regionId: string
+  name: string
+  description: string
+  timeOfDayOptions: string // JSON array: ["dawn","morning","noon","afternoon","dusk","night"]
+  imageUrl: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================
+// Character Bible types
+// ============================================================
+
+export interface IdentityAnchors {
+  face: string        // 脸型
+  hair: string        // 发型
+  colorScheme: string // 配色
+  clothing: string    // 服饰
+  signatureItems: string // 标志物
+  sceneEmbed: string  // 场景嵌入
+}
+
+export interface CharacterBible {
+  characterId: string
+  name: string
+  role: string
+  identityAnchors: IdentityAnchors
+  fullBodyUrl: string | null
+  threeViewsUrl: string | null
+  headshotUrl: string | null
+  wardrobeUrls: string[] // Array of wardrobe image URLs
+  consistencyTimeline: Array<{
+    episodeId: string
+    episodeNumber: number
+    description: string
+    imageUrl: string | null
+  }>
+}
+
+export type AppView = 'projects' | 'project-detail' | 'script-workbench' | 'asset-workbench' | 'episode-workspace' | 'settings' | 'asset-library' | 'marketplace' | 'series' | 'creative-workspace' | 'script-v2' | 'asset-v2' | 'character-bible' | 'world-map' | 'queue-dashboard' | 'art-style'
+
+// ============================================================
+// Module type for three-module navigation
+// ============================================================
+
+export type AppModule = 'project' | 'asset' | 'creative'
+
+export const VIEW_MODULE_MAP: Record<AppView, AppModule> = {
+  'projects': 'project',
+  'project-detail': 'project',
+  'script-workbench': 'project',
+  'asset-workbench': 'project',
+  'episode-workspace': 'project',
+  'asset-library': 'asset',
+  'marketplace': 'asset',
+  'settings': 'project', // settings is shared
+  'series': 'project',
+  'creative-workspace': 'creative',
+  'script-v2': 'creative',
+  'asset-v2': 'creative',
+  'character-bible': 'creative',
+  'world-map': 'creative',
+  'queue-dashboard': 'creative',
+  'art-style': 'creative',
+}
+
+export const MODULE_DEFAULT_VIEW: Record<AppModule, AppView> = {
+  'project': 'projects',
+  'asset': 'asset-library',
+  'creative': 'creative-workspace',
+}
+
+/** Helper to get the module a view belongs to */
+export function getModuleForView(view: AppView): AppModule {
+  return VIEW_MODULE_MAP[view]
+}
 
 // ============================================================
 // Store interface
@@ -190,6 +377,7 @@ interface AppStore {
   view: AppView
   selectedDramaId: string | null
   selectedEpisodeId: string | null
+  activeModule: AppModule
 
   // Navigation actions
   navigateToProjects: () => void
@@ -201,6 +389,15 @@ interface AppStore {
   navigateToAssetWorkbench: (dramaId: string) => void
   navigateToMarketplace: () => void
   navigateToSeries: () => void
+  navigateToCreativeWorkspace: (dramaId?: string) => void
+  navigateToScriptV2: () => void
+  navigateToAssetV2: () => void
+  navigateToCharacterBible: () => void
+  navigateToWorldMap: () => void
+  navigateToQueueDashboard: () => void
+  navigateToArtStyle: () => void
+  setActiveModule: (module: AppModule) => void
+  navigateBackToCreative: () => void
 
   // Drama data cache
   dramas: Drama[]
@@ -242,11 +439,12 @@ function loadWorkspaceModels(): WorkspaceModels {
   return { llm: '', image: '', video: '', tts: '' }
 }
 
-export const useAppStore = create<AppStore>((set) => ({
+export const useAppStore = create<AppStore>((set, get) => ({
   // Navigation state
   view: 'projects',
   selectedDramaId: null,
   selectedEpisodeId: null,
+  activeModule: 'project' as AppModule,
 
   // Navigation actions
   navigateToProjects: () =>
@@ -257,6 +455,7 @@ export const useAppStore = create<AppStore>((set) => ({
       currentDrama: null,
       currentEpisode: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToProject: (dramaId: string) =>
@@ -266,6 +465,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedEpisodeId: null,
       currentEpisode: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToEpisode: (dramaId: string, episodeId: string) =>
@@ -273,6 +473,7 @@ export const useAppStore = create<AppStore>((set) => ({
       view: 'episode-workspace',
       selectedDramaId: dramaId,
       selectedEpisodeId: episodeId,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToSettings: () =>
@@ -281,6 +482,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: null,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToAssetLibrary: () =>
@@ -288,6 +490,7 @@ export const useAppStore = create<AppStore>((set) => ({
       view: 'asset-library',
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'asset' as AppModule,
     }),
 
   navigateToScriptWorkbench: (dramaId: string) =>
@@ -296,6 +499,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: dramaId,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToAssetWorkbench: (dramaId: string) =>
@@ -304,6 +508,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: dramaId,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
 
   navigateToMarketplace: () =>
@@ -312,6 +517,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: null,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'asset' as AppModule,
     }),
 
   navigateToSeries: () =>
@@ -320,7 +526,96 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: null,
       selectedEpisodeId: null,
       episodeLockedConfig: null,
+      activeModule: 'project' as AppModule,
     }),
+
+  navigateToCreativeWorkspace: (dramaId?: string) =>
+    set((state) => ({
+      view: 'creative-workspace',
+      // If dramaId is provided, set it; otherwise preserve existing selectedDramaId
+      ...(dramaId ? { selectedDramaId: dramaId } : {}),
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    })),
+
+  navigateToScriptV2: () =>
+    set({
+      view: 'script-v2',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  navigateToAssetV2: () =>
+    set({
+      view: 'asset-v2',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  navigateToCharacterBible: () =>
+    set({
+      view: 'character-bible',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  navigateToWorldMap: () =>
+    set({
+      view: 'world-map',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  navigateToQueueDashboard: () =>
+    set({
+      view: 'queue-dashboard',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  navigateToArtStyle: () =>
+    set({
+      view: 'art-style',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  // Navigate back to creative workspace hub (preserving selectedDramaId)
+  navigateBackToCreative: () =>
+    set({
+      view: 'creative-workspace',
+      episodeLockedConfig: null,
+      activeModule: 'creative' as AppModule,
+    }),
+
+  // Module navigation action
+  setActiveModule: (module: AppModule) => {
+    const state = get()
+    const currentModule = getModuleForView(state.view)
+    if (currentModule !== module) {
+      // Switch to the module's default view
+      const defaultView = MODULE_DEFAULT_VIEW[module]
+      const navActions: Record<AppView, () => void> = {
+        'projects': state.navigateToProjects,
+        'project-detail': state.navigateToProjects,
+        'script-workbench': state.navigateToProjects,
+        'asset-workbench': state.navigateToProjects,
+        'episode-workspace': state.navigateToProjects,
+        'settings': state.navigateToSettings,
+        'asset-library': state.navigateToAssetLibrary,
+        'marketplace': state.navigateToMarketplace,
+        'series': state.navigateToSeries,
+        'creative-workspace': () => state.navigateToCreativeWorkspace(),
+        'script-v2': state.navigateToScriptV2,
+        'asset-v2': state.navigateToAssetV2,
+        'character-bible': state.navigateToCharacterBible,
+        'world-map': state.navigateToWorldMap,
+        'queue-dashboard': state.navigateToQueueDashboard,
+        'art-style': state.navigateToArtStyle,
+      }
+      navActions[defaultView]()
+    }
+  },
 
   // Drama data cache
   dramas: [],

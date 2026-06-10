@@ -6,6 +6,9 @@ import { useTranslations } from 'next-intl'
 import { useAppStore, type DramaDetail, type Episode, type LockedConfig } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
+import { SeasonManager } from '@/components/season-manager'
+import { ShowPlannerDialog } from '@/components/show-planner-dialog'
+import { PaywallConfig } from '@/components/paywall-config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send, MoreHorizontal } from 'lucide-react'
+import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil, Lock, LockOpen, Settings2, Loader2, Coins, Library, Download, Package, Play, Pause, RefreshCw, ChevronDown, ChevronUp, Clapperboard, BookOpen, Palette, ArrowRight, X, Activity, Upload, History, Send, MoreHorizontal, Sparkles } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ModelSelector } from '@/components/model-selector'
 import { Separator } from '@/components/ui/separator'
@@ -42,6 +45,10 @@ import { GenerationHistory } from '@/components/generation-history'
 import { PublishDialog } from '@/components/publish-dialog'
 import { PublishRecordsPanel } from '@/components/publish/publish-records-panel'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { PhaseTracker } from '@/components/phase-tracker'
+import { ArtStyleManagement } from '@/components/art-style-management'
+import { WorldMap } from '@/components/world-map'
+import { CharacterBible } from '@/components/character-bible'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -422,8 +429,11 @@ export function ProjectDetailView() {
   const [showDashboard, setShowDashboard] = useState(false)
 
   // Generation History & Publish tabs
-  const [detailTab, setDetailTab] = useState<'episodes' | 'history' | 'publish-records'>('episodes')
+  const [detailTab, setDetailTab] = useState<'episodes' | 'history' | 'publish-records' | 'world-map' | 'art-styles' | 'character-bible'>('episodes')
   const [publishOpen, setPublishOpen] = useState(false)
+
+  // Show Planner Dialog
+  const [showPlannerOpen, setShowPlannerOpen] = useState(false)
 
   // Import from library dialog
   const [importOpen, setImportOpen] = useState(false)
@@ -803,10 +813,48 @@ export function ProjectDetailView() {
                   <Upload className="size-3.5" />
                   <span className="hidden sm:inline">{tp('publish')}</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'art-styles' ? 'episodes' : 'art-styles')}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'art-styles' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <Palette className="size-3.5" />
+                  <span className="hidden sm:inline">{tp('artStyles') || 'Art Styles'}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'world-map' ? 'episodes' : 'world-map')}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'world-map' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <MapPin className="size-3.5" />
+                  <span className="hidden sm:inline">{tp('worldMap') || 'World Map'}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDetailTab(detailTab === 'character-bible' ? 'episodes' : 'character-bible')}
+                  className={`h-7 text-xs gap-1 ${detailTab === 'character-bible' ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <BookOpen className="size-3.5" />
+                  <span className="hidden sm:inline">{tp('characterBible') || 'Characters'}</span>
+                </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="h-7 amber-glow">
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">{tp('addEpisode')}</span>
                 </Button>
+                {drama && (drama.currentPhase === 'show_planning' || drama.currentPhase === 'novel_analysis') && !drama.showPlanLocked && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowPlannerOpen(true)}
+                    className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/5"
+                  >
+                    <Sparkles className="size-3.5" />
+                    <span className="hidden sm:inline">{tp('showPlanner')}</span>
+                  </Button>
+                )}
 
                 {/* Secondary actions in dropdown */}
                 <DropdownMenu>
@@ -848,11 +896,11 @@ export function ProjectDetailView() {
         </div>
       </header>
 
-      {/* Three-Stage Progress */}
+      {/* Phase Tracker (8-phase orchestrator) */}
       {drama && (
         <div className="border-b border-border/50 bg-muted/20">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-            <ThreeStageProgress drama={drama} tc={tc} tp={tp} />
+            <PhaseTracker dramaId={drama.id} />
           </div>
         </div>
       )}
@@ -869,8 +917,43 @@ export function ProjectDetailView() {
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
             <PublishRecordsPanel dramaId={drama.id} />
           </main>
+        ) : detailTab === 'world-map' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            <WorldMap dramaId={drama.id} />
+          </main>
+        ) : detailTab === 'art-styles' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            <ArtStyleManagement />
+          </main>
+        ) : detailTab === 'character-bible' && drama ? (
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+            {drama.characters && drama.characters.length > 0 ? (
+              <div className="space-y-4">
+                {drama.characters.map((char) => (
+                  <CharacterBible key={char.id} characterId={char.id} dramaId={drama.id} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">No characters yet. Extract assets first.</p>
+              </div>
+            )}
+          </main>
         ) : (
         <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+        {/* Season Manager & Paywall Config (V2) */}
+        {drama && (
+          <div className="space-y-3 mb-4">
+            <SeasonManager dramaId={drama.id} />
+            {drama.showPlanLocked && (
+              <PaywallConfig
+                dramaId={drama.id}
+                showPlanLocked={drama.showPlanLocked}
+                totalEpisodes={drama.totalEpisodes}
+              />
+            )}
+          </div>
+        )}
         {loading && !drama ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -1162,6 +1245,16 @@ export function ProjectDetailView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Show Planner Dialog (V2) ─────────────────────── */}
+      {drama && (
+        <ShowPlannerDialog
+          dramaId={drama.id}
+          open={showPlannerOpen}
+          onOpenChange={setShowPlannerOpen}
+          onComplete={fetchDrama}
+        />
+      )}
 
       {/* ── Cost Stats Dialog ────────────────────────────── */}
       {drama && (

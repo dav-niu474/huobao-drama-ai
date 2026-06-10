@@ -39,44 +39,58 @@ model User {
 
 // ============ Drama Project ============
 model Drama {
-  id                  String   @id @default(cuid())
-  title               String
-  description         String   @default("")
-  genre               String   @default("都市")
-  style               String   @default("realistic")
-  coverImage          String?
-  totalEpisodes       Int      @default(0)
-  status              String   @default("draft")
-  userId              String? // nullable for backward compat
-  defaultLockedConfig String   @default("null") // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
-  styleTemplate       String   @default("") // Persistent style prefix for all generations (e.g., "cinematic, warm tones")
-  novelSource         String? // Novel file path or reference
-  novelParsed         Boolean  @default(false) // Whether novel has been parsed
-  artStyle            String? // Selected art style key (e.g., "realpeople_ancient_chinese")
-  assetStatus         String   @default("pending") // pending | extracting | ready | partial
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  title                  String
+  description            String   @default("")
+  genre                  String   @default("都市")
+  style                  String   @default("realistic")
+  coverImage             String?
+  totalEpisodes          Int      @default(0)
+  status                 String   @default("draft")
+  userId                 String? // nullable for backward compat
+  defaultLockedConfig    String   @default("null") // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no default lock
+  styleTemplate          String   @default("") // Persistent style prefix for all generations (e.g., "cinematic, warm tones")
+  novelSource            String? // Novel file path or reference
+  novelParsed            Boolean  @default(false) // Whether novel has been parsed
+  artStyle               String? // Selected art style key (e.g., "realpeople_ancient_chinese")
+  assetStatus            String   @default("pending") // pending | extracting | ready | partial
+  coverage               String? // 改编章节范围
+  episodeFormat          String? // JSON: {count, duration, format}
+  aspectRatio            String?  @default("9:16")
+  genreTone              String? // JSON: {genre, tone, tags[]}
+  paywallConfig          String? // JSON: {freeEpisodes, hookEpisodes[], payStart}
+  targetPlatform         String?  @default("douyin")
+  budgetConstraints      String? // JSON: {total, modelPreference, qualityPriority}
+  novelAnalysis          String? // JSON: full analysis result
+  showPlanLocked         Boolean  @default(false)
+  scriptGenerationStatus String?  @default("pending")
+  assetExtractionStatus  String?  @default("pending")
+  currentPhase           String?  @default("novel_upload")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  user              User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  novel             Novel?
-  seriesId          String?                     // Optional FK to Series
-  series            Series?          @relation(fields: [seriesId], references: [id], onDelete: SetNull)
-  episodes          Episode[]
-  characters        Character[]
-  scenes            Scene[]
-  props             Prop[]
-  generationCosts   GenerationCost[]
-  imageGenerations  ImageGeneration[]
-  videoGenerations  VideoGeneration[]
-  videoMerges       VideoMerge[]
-  ttsGenerations    TtsGeneration[]
-  members           DramaMember[]
-  comments          Comment[]
-  publishRecords    PublishRecord[]
-  presences         Presence[]
-  resourceLocks     ResourceLock[]
-  activities        Activity[]
-  seriesMembers     SeriesMember[]
+  user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel            Novel?
+  seriesId         String? // Optional FK to Series
+  series           Series?           @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  episodes         Episode[]
+  characters       Character[]
+  scenes           Scene[]
+  props            Prop[]
+  generationCosts  GenerationCost[]
+  imageGenerations ImageGeneration[]
+  videoGenerations VideoGeneration[]
+  videoMerges      VideoMerge[]
+  ttsGenerations   TtsGeneration[]
+  members          DramaMember[]
+  comments         Comment[]
+  publishRecords   PublishRecord[]
+  presences        Presence[]
+  resourceLocks    ResourceLock[]
+  activities       Activity[]
+  seriesMembers    SeriesMember[]
+  seasons          Season[]
+  clues            Clue[]
 }
 
 // ============ Episode ============
@@ -98,6 +112,9 @@ model Episode {
   duration             Int      @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
+  seasonId String?
+  season   Season? @relation(fields: [seasonId], references: [id])
 
   drama       Drama        @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   storyboards Storyboard[]
@@ -130,6 +147,11 @@ model Character {
   lockedReferenceImage String? // Canonical reference image URL for consistency
   visualFingerprint    String  @default("{}") // JSON: extracted visual features for consistency prompts
   episodeIds           String  @default("[]") // JSON: array of episode IDs where this character appears
+  identityAnchors      String? // JSON: 6-layer anchors
+  weightTier           String? @default("C") // A/B/C
+  generationOrder      Int     @default(0)
+  threeViewsUrl        String?
+  wardrobeUrls         String? // JSON array
 
   drama       Drama                 @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   appearances CharacterAppearance[]
@@ -162,32 +184,39 @@ model Scene {
 
 // ============ Storyboard (Shot) ============
 model Storyboard {
-  id              String   @id @default(cuid())
-  episodeId       String
-  shotNumber      Int
-  title           String   @default("")
-  shotType        String   @default("medium")
-  cameraAngle     String   @default("eye-level")
-  cameraMovement  String   @default("static")
-  action          String   @default("")
-  description     String   @default("") // Visual description for the shot
-  dialogue        String?
-  dialogueChar    String?
-  duration        Float    @default(3.0)
-  imagePrompt     String?
-  videoPrompt     String?
-  atmosphere      String?
-  firstFrameUrl   String?
-  lastFrameUrl    String?
-  videoUrl        String?
-  ttsAudioUrl     String?
-  composedUrl     String?
-  bgmPrompt       String?
-  soundEffect     String?
-  referenceImages String? // JSON array of reference image URLs
-  status          String   @default("pending")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  episodeId              String
+  shotNumber             Int
+  title                  String   @default("")
+  shotType               String   @default("medium")
+  cameraAngle            String   @default("eye-level")
+  cameraMovement         String   @default("static")
+  action                 String   @default("")
+  description            String   @default("") // Visual description for the shot
+  dialogue               String?
+  dialogueChar           String?
+  duration               Float    @default(3.0)
+  imagePrompt            String?
+  videoPrompt            String?
+  atmosphere             String?
+  firstFrameUrl          String?
+  lastFrameUrl           String?
+  videoUrl               String?
+  ttsAudioUrl            String?
+  composedUrl            String?
+  bgmPrompt              String?
+  soundEffect            String?
+  referenceImages        String? // JSON array of reference image URLs
+  generationMode         String?  @default("image2video")
+  gridImageUrl           String?
+  gridLayout             String? // JSON
+  startFrameImageUrl     String?
+  endFrameImageUrl       String?
+  candidateUrls          String? // JSON array
+  selectedCandidateIndex Int?
+  status                 String   @default("pending")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   episode  Episode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   comments Comment[]
@@ -480,11 +509,11 @@ model Presence {
   userId        String
   dramaId       String
   episodeId     String?
-  currentPage   String   @default("")    // Current view/page info
-  cursorX       Float    @default(0)     // Cursor X position (0-1, percentage)
-  cursorY       Float    @default(0)     // Cursor Y position (0-1, percentage)
+  currentPage   String   @default("") // Current view/page info
+  cursorX       Float    @default(0) // Cursor X position (0-1, percentage)
+  cursorY       Float    @default(0) // Cursor Y position (0-1, percentage)
   lastHeartbeat DateTime @default(now())
-  expiresAt     DateTime                    // TTL: auto-expire stale presence
+  expiresAt     DateTime // TTL: auto-expire stale presence
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -499,10 +528,10 @@ model ResourceLock {
   id           String   @id @default(cuid())
   userId       String
   dramaId      String
-  resourceType String   // "storyboard" | "character" | "scene" | "episode"
-  resourceId   String   // ID of the locked resource
+  resourceType String // "storyboard" | "character" | "scene" | "episode"
+  resourceId   String // ID of the locked resource
   lockedAt     DateTime @default(now())
-  expiresAt    DateTime                    // Auto-release after 30s inactivity
+  expiresAt    DateTime // Auto-release after 30s inactivity
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -518,9 +547,9 @@ model Activity {
   userId      String
   dramaId     String
   episodeId   String?
-  type        String   // "user_join" | "user_leave" | "storyboard_update" | "comment_add" | "comment_reply" | "lock_resource" | "unlock_resource" | "cursor_move"
-  description String   // Human-readable: "张三 修改了分镜3"
-  metadata    String   @default("{}")  // JSON: additional context
+  type        String // "user_join" | "user_leave" | "storyboard_update" | "comment_add" | "comment_reply" | "lock_resource" | "unlock_resource" | "cursor_move"
+  description String // Human-readable: "张三 修改了分镜3"
+  metadata    String   @default("{}") // JSON: additional context
   createdAt   DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -529,17 +558,17 @@ model Activity {
 
 // ============ Series (IP/系列管理) ============
 model Series {
-  id              String   @id @default(cuid())
-  title           String
-  description     String   @default("")
-  coverImage      String?
-  worldBuildingDoc String  @default("")  // Rich text / markdown for shared world settings
-  userId          String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(cuid())
+  title            String
+  description      String   @default("")
+  coverImage       String?
+  worldBuildingDoc String   @default("") // Rich text / markdown for shared world settings
+  userId           String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dramas  Drama[]        // Dramas with seriesId pointing to this series
+  dramas  Drama[] // Dramas with seriesId pointing to this series
   members SeriesMember[]
 }
 
@@ -549,7 +578,7 @@ model SeriesMember {
   seriesId  String
   dramaId   String
   order     Int      @default(0)
-  role      String   @default("main")  // "main" | "spinoff" | "prequel" | "sequel"
+  role      String   @default("main") // "main" | "spinoff" | "prequel" | "sequel"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -722,4 +751,67 @@ model PublishConfig {
 
   @@unique([userId, platform])
   @@index([userId])
+}
+
+// ════════════════════════════════════════════════════════════
+// V2: Season — BigBanana-style three-tier container (Project→Season→Episode)
+// ════════════════════════════════════════════════════════════
+
+model Season {
+  id           String   @id @default(cuid())
+  dramaId      String
+  seasonNumber Int      @default(1)
+  title        String   @default("Season 1")
+  description  String?
+  status       String   @default("planning") // planning/production/completed
+  worldDocUrl  String? // 世界观文档
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  drama    Drama     @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@index([dramaId])
+}
+
+// ════════════════════════════════════════════════════════════
+// V2: ArtStyle — Art style pack metadata
+// ════════════════════════════════════════════════════════════
+
+model ArtStyle {
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g. "3D_guofeng_cyber"
+  name        String // display name
+  category    String   @default("2D") // 2D/3D/realpeople
+  description String?
+  prefixMd    String? // style prefix markdown
+  styleMeta   String? // JSON: {tone, palette, influences}
+  previewUrl  String?
+  isActive    Boolean  @default(true)
+  isBuiltin   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ════════════════════════════════════════════════════════════
+// V2: Clue — Cross-episode consistency tracking
+// ════════════════════════════════════════════════════════════
+
+model Clue {
+  id          String   @id @default(cuid())
+  dramaId     String
+  type        String // prop/scene_element/character_trait/location_transition
+  name        String
+  description String?
+  firstSeenEp String? // episode ID first appeared
+  episodes    String? // JSON array of episode IDs
+  visualRef   String? // reference image URL
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+
+  @@index([dramaId])
 }
