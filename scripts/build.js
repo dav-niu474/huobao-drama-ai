@@ -79,6 +79,7 @@ try {
 // Step 4: Push schema to database with retry logic
 // This is critical for adding new models (like DramaMember, Comment)
 // to the PostgreSQL database on Vercel.
+// If prisma db push fails, /api/migrate can be used as a fallback.
 if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   const MAX_RETRIES = 3
   let pushSucceeded = false
@@ -89,7 +90,7 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
       execSync('npx prisma db push --skip-generate', {
         stdio: 'pipe',
         env: { ...process.env, DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl },
-        timeout: 60000  // Increased from 30s to 60s
+        timeout: 60000
       })
       console.log('[build] Schema pushed to PostgreSQL successfully')
       pushSucceeded = true
@@ -105,7 +106,8 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   }
 
   if (!pushSucceeded) {
-    console.warn('[build] Prisma db push failed after all retries. Run /api/migrate manually after deployment.')
+    console.warn('[build] Prisma db push failed after all retries.')
+    console.warn('[build] Fallback: calling /api/migrate endpoint after deployment to apply raw SQL DDL.')
   }
 } else if (migrationUrl) {
   console.log('[build] Skipping db push (not PostgreSQL)')
@@ -116,6 +118,8 @@ console.log('[build] Prisma setup complete, starting Next.js build...')
 // Step 5: Ensure admin user exists (ONLY create if missing — do NOT reset password)
 // This is safe: it only creates a new admin if one doesn't exist yet.
 // It will NOT overwrite existing passwords, names, or other user data.
+// NOTE: This runs asynchronously — the build will complete before this finishes,
+// but that's acceptable because admin creation is not blocking.
 if (migrationUrl && migrationUrl.startsWith('postgresql')) {
   try {
     console.log('[build] Checking if admin user exists...')
