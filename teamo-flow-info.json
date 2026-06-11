@@ -1,7 +1,0 @@
-{
-  "authUrl": "https://teamocode.com/oauth/authorize?client=teamo-cli&deviceId=d72e13c26b835fec&state=Qaq8SLKEJ04aJBRfGKQzIuJVOY1SYRoT&redirect_uri=http%3A%2F%2F127.0.0.1%3A32911%2Fcallback&code_challenge=w08jUvCQ10US9l9qr-0AOHRe1BH0ytEor9E8hVrnX7g&code_challenge_method=S256",
-  "listenerPort": 32911,
-  "flowId": "yGbUx3gkYMFefB9H",
-  "state": "Qaq8SLKEJ04aJBRfGKQzIuJVOY1SYRoT",
-  "codeVerifier": "T2AvEdYFoS669ze7364tDzvkZLg7Ci6gzxXqzzohshMr_nakjwaGsG9Tr3q3SUEP"
-}

@@ -83,3 +83,28 @@ worklog.md
 
 # BFG repo cleaner reports
 *.bfg-report/
+
+# === Local dev / unrelated files (should never be in repo) ===
+
+# Teamo CLI local scripts and OAuth artifacts
+teamo-*.mjs
+teamo_*.mjs
+teamo-*.txt
+teamo-*.json
+teamocode_*
+oauth-flow.json
+
+# Hex2077 / unrelated JSON data dumps
+hex2077_*.json
+
+# Test scripts for external services (not part of this project)
+test-mimo-*.mjs
+
+# Roadmap generator (local dev tool)
+generate-roadmap.js
+
+# Data skills directory (local AI skill prompts, not part of the web app)
+data/skills/
+
+# Caddyfile (local dev reverse proxy, not needed in repo)
+Caddyfile

@@ -1,8 +1,0 @@
-{
-  "authUrl": "https://teamocode.com/oauth/authorize?client=teamo-cli&deviceId=d72e13c26b835fec&state=orjfG0HRSU5ZUQ0cPvsWmV_1HGJedjMu&redirect_uri=http%3A%2F%2F127.0.0.1%3A40097%2Fcallback&code_challenge=H-ArghPmJFDbzoqPf7gmkZo8TIkoL-Nf9xQMOySPRFk&code_challenge_method=S256",
-  "state": "orjfG0HRSU5ZUQ0cPvsWmV_1HGJedjMu",
-  "codeVerifier": "bkOVBqBBsxK6rVg3uWyp9RkOIsBug7GyY_hNJV88u1nqxv5fgEGjpBqmA9A2G09F",
-  "listenerPort": 40097,
-  "deviceId": "d72e13c26b835fec",
-  "callbackUrl": "http://127.0.0.1:40097/callback"
-}
