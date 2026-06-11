@@ -12,6 +12,440 @@ import { db } from '@/lib/db'
 // GET:  Check migration status (existing vs missing tables/columns)
 // ============================================================
 
+// ============================================================
+// BASE TABLES — Core tables that must exist before any other migration
+// These are normally created by `prisma db push` during build,
+// but if that fails, this route serves as a fallback.
+// ORDER MATTERS due to foreign key dependencies.
+// ============================================================
+const BASE_MIGRATIONS: { table: string; sql: string }[] = [
+  // ---- User (Auth) — no FK dependencies ----
+  {
+    table: 'User',
+    sql: `CREATE TABLE IF NOT EXISTS "User" (
+      "id" TEXT NOT NULL,
+      "email" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "password" TEXT NOT NULL,
+      "role" TEXT NOT NULL DEFAULT 'free',
+      "avatar" TEXT,
+      "emailVerified" TIMESTAMP(3),
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "User_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "User_email_key" UNIQUE ("email")
+    );`,
+  },
+  // ---- Asset (FK to User) — must be before Character/Scene/Prop ----
+  {
+    table: 'Asset',
+    sql: `CREATE TABLE IF NOT EXISTS "Asset" (
+      "id" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "category" TEXT NOT NULL,
+      "subcategory" TEXT,
+      "tags" TEXT NOT NULL DEFAULT '[]',
+      "thumbnail" TEXT,
+      "userId" TEXT,
+      "isPublic" BOOLEAN NOT NULL DEFAULT true,
+      "usageCount" INTEGER NOT NULL DEFAULT 0,
+      "description" TEXT NOT NULL DEFAULT '',
+      "imagePrompt" TEXT,
+      "imageUrls" TEXT NOT NULL DEFAULT '[]',
+      "data" TEXT NOT NULL DEFAULT '{}',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Asset_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Asset_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+  },
+  // ---- Drama (FK to User) ----
+  {
+    table: 'Drama',
+    sql: `CREATE TABLE IF NOT EXISTS "Drama" (
+      "id" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT NOT NULL DEFAULT '',
+      "genre" TEXT NOT NULL DEFAULT '都市',
+      "style" TEXT NOT NULL DEFAULT 'realistic',
+      "coverImage" TEXT,
+      "totalEpisodes" INTEGER NOT NULL DEFAULT 0,
+      "status" TEXT NOT NULL DEFAULT 'draft',
+      "userId" TEXT,
+      "defaultLockedConfig" TEXT NOT NULL DEFAULT 'null',
+      "styleTemplate" TEXT NOT NULL DEFAULT '',
+      "novelSource" TEXT,
+      "novelParsed" BOOLEAN NOT NULL DEFAULT false,
+      "artStyle" TEXT,
+      "assetStatus" TEXT NOT NULL DEFAULT 'pending',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Drama_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Drama_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );`,
+  },
+  // ---- Episode (FK to Drama) ----
+  {
+    table: 'Episode',
+    sql: `CREATE TABLE IF NOT EXISTS "Episode" (
+      "id" TEXT NOT NULL,
+      "dramaId" TEXT NOT NULL,
+      "episodeNumber" INTEGER NOT NULL,
+      "title" TEXT NOT NULL DEFAULT '',
+      "rawContent" TEXT,
+      "scriptContent" TEXT,
+      "scriptStatus" TEXT NOT NULL DEFAULT 'pending',
+      "extractStatus" TEXT NOT NULL DEFAULT 'pending',
+      "storyboardStatus" TEXT NOT NULL DEFAULT 'pending',
+      "status" TEXT NOT NULL DEFAULT 'draft',
+      "lockedConfig" TEXT NOT NULL DEFAULT 'null',
+      "sourceChapterIds" TEXT NOT NULL DEFAULT '[]',
+      "globalAssetsImported" BOOLEAN NOT NULL DEFAULT false,
+      "videoUrl" TEXT,
+      "duration" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Episode_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Episode_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "Episode_dramaId_episodeNumber_key" UNIQUE ("dramaId", "episodeNumber")
+    );`,
+  },
+  // ---- Character (FK to Drama, FK to Asset) ----
+  {
+    table: 'Character',
+    sql: `CREATE TABLE IF NOT EXISTS "Character" (
+      "id" TEXT NOT NULL,
+      "dramaId" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "role" TEXT NOT NULL DEFAULT 'supporting',
+      "gender" TEXT NOT NULL DEFAULT 'unknown',
+      "age" TEXT NOT NULL DEFAULT '',
+      "appearance" TEXT NOT NULL DEFAULT '',
+      "personality" TEXT NOT NULL DEFAULT '',
+      "voiceStyle" TEXT NOT NULL DEFAULT '',
+      "voiceId" TEXT,
+      "imagePrompt" TEXT,
+      "imageUrl" TEXT,
+      "assetId" TEXT,
+      "styleLock" BOOLEAN NOT NULL DEFAULT false,
+      "lockedReferenceImage" TEXT,
+      "visualFingerprint" TEXT NOT NULL DEFAULT '{}',
+      "episodeIds" TEXT NOT NULL DEFAULT '[]',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Character_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Character_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "Character_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+  },
+  // ---- Scene (FK to Drama, FK to Asset) ----
+  {
+    table: 'Scene',
+    sql: `CREATE TABLE IF NOT EXISTS "Scene" (
+      "id" TEXT NOT NULL,
+      "dramaId" TEXT NOT NULL,
+      "location" TEXT NOT NULL,
+      "timeOfDay" TEXT NOT NULL DEFAULT 'day',
+      "description" TEXT NOT NULL DEFAULT '',
+      "prompt" TEXT NOT NULL DEFAULT '',
+      "imageUrl" TEXT,
+      "assetId" TEXT,
+      "styleLock" BOOLEAN NOT NULL DEFAULT false,
+      "lockedReferenceImage" TEXT,
+      "episodeIds" TEXT NOT NULL DEFAULT '[]',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Scene_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Scene_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "Scene_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+  },
+  // ---- Storyboard (FK to Episode) ----
+  {
+    table: 'Storyboard',
+    sql: `CREATE TABLE IF NOT EXISTS "Storyboard" (
+      "id" TEXT NOT NULL,
+      "episodeId" TEXT NOT NULL,
+      "shotNumber" INTEGER NOT NULL,
+      "title" TEXT NOT NULL DEFAULT '',
+      "shotType" TEXT NOT NULL DEFAULT 'medium',
+      "cameraAngle" TEXT NOT NULL DEFAULT 'eye-level',
+      "cameraMovement" TEXT NOT NULL DEFAULT 'static',
+      "action" TEXT NOT NULL DEFAULT '',
+      "description" TEXT NOT NULL DEFAULT '',
+      "dialogue" TEXT,
+      "dialogueChar" TEXT,
+      "duration" DOUBLE PRECISION NOT NULL DEFAULT 3.0,
+      "imagePrompt" TEXT,
+      "videoPrompt" TEXT,
+      "atmosphere" TEXT,
+      "firstFrameUrl" TEXT,
+      "lastFrameUrl" TEXT,
+      "videoUrl" TEXT,
+      "ttsAudioUrl" TEXT,
+      "composedUrl" TEXT,
+      "bgmPrompt" TEXT,
+      "soundEffect" TEXT,
+      "referenceImages" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'pending',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Storyboard_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Storyboard_episodeId_fkey" FOREIGN KEY ("episodeId") REFERENCES "Episode"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );`,
+  },
+  // ---- CharacterAppearance (FK to Character) ----
+  {
+    table: 'CharacterAppearance',
+    sql: `CREATE TABLE IF NOT EXISTS "CharacterAppearance" (
+      "id" TEXT NOT NULL,
+      "characterId" TEXT NOT NULL,
+      "appearanceIndex" INTEGER NOT NULL DEFAULT 0,
+      "label" TEXT NOT NULL DEFAULT '',
+      "description" TEXT NOT NULL DEFAULT '',
+      "imagePrompt" TEXT NOT NULL DEFAULT '',
+      "imageUrl" TEXT,
+      "imageUrls" TEXT NOT NULL DEFAULT '[]',
+      "selectedIndex" INTEGER NOT NULL DEFAULT 0,
+      "previousImageUrl" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CharacterAppearance_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "CharacterAppearance_characterId_fkey" FOREIGN KEY ("characterId") REFERENCES "Character"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "CharacterAppearance_characterId_appearanceIndex_key" UNIQUE ("characterId", "appearanceIndex")
+    );`,
+  },
+  // ---- SceneImage (FK to Scene) ----
+  {
+    table: 'SceneImage',
+    sql: `CREATE TABLE IF NOT EXISTS "SceneImage" (
+      "id" TEXT NOT NULL,
+      "sceneId" TEXT NOT NULL,
+      "description" TEXT NOT NULL DEFAULT '',
+      "imageUrl" TEXT,
+      "timeOfDay" TEXT NOT NULL DEFAULT '',
+      "angle" TEXT NOT NULL DEFAULT '',
+      "isSelected" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "SceneImage_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "SceneImage_sceneId_fkey" FOREIGN KEY ("sceneId") REFERENCES "Scene"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );`,
+  },
+  // ---- ImageGeneration (FK to Drama) ----
+  {
+    table: 'ImageGeneration',
+    sql: `CREATE TABLE IF NOT EXISTS "ImageGeneration" (
+      "id" TEXT NOT NULL,
+      "storyboardId" TEXT,
+      "characterId" TEXT,
+      "sceneId" TEXT,
+      "dramaId" TEXT,
+      "prompt" TEXT NOT NULL,
+      "model" TEXT NOT NULL DEFAULT '',
+      "provider" TEXT NOT NULL DEFAULT '',
+      "size" TEXT NOT NULL DEFAULT '1024x1024',
+      "frameType" TEXT,
+      "referenceImages" TEXT,
+      "taskId" TEXT,
+      "imageUrl" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'pending',
+      "errorMsg" TEXT,
+      "tokensUsed" INTEGER,
+      "generationMs" INTEGER,
+      "costCredits" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ImageGeneration_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "ImageGeneration_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+  },
+  {
+    table: 'ImageGeneration_dramaId_status_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "ImageGeneration_dramaId_status_idx" ON "ImageGeneration"("dramaId", "status");`,
+  },
+  {
+    table: 'ImageGeneration_dramaId_createdAt_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "ImageGeneration_dramaId_createdAt_idx" ON "ImageGeneration"("dramaId", "createdAt");`,
+  },
+  {
+    table: 'ImageGeneration_dramaId_costCredits_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "ImageGeneration_dramaId_costCredits_idx" ON "ImageGeneration"("dramaId", "costCredits");`,
+  },
+  // ---- AiProvider (no FK) ----
+  {
+    table: 'AiProvider',
+    sql: `CREATE TABLE IF NOT EXISTS "AiProvider" (
+      "id" TEXT NOT NULL,
+      "category" TEXT NOT NULL,
+      "provider" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "apiKey" TEXT NOT NULL DEFAULT '',
+      "baseUrl" TEXT NOT NULL DEFAULT '',
+      "model" TEXT NOT NULL DEFAULT '',
+      "isActive" BOOLEAN NOT NULL DEFAULT false,
+      "sort" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AiProvider_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "AiProvider_category_provider_key" UNIQUE ("category", "provider")
+    );`,
+  },
+  // ---- UserProvider (FK to User) ----
+  {
+    table: 'UserProvider',
+    sql: `CREATE TABLE IF NOT EXISTS "UserProvider" (
+      "id" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "category" TEXT NOT NULL,
+      "provider" TEXT NOT NULL,
+      "apiKey" TEXT NOT NULL DEFAULT '',
+      "baseUrl" TEXT NOT NULL DEFAULT '',
+      "model" TEXT NOT NULL DEFAULT '',
+      "isActive" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "UserProvider_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "UserProvider_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "UserProvider_userId_category_provider_key" UNIQUE ("userId", "category", "provider")
+    );`,
+  },
+  // ---- AgentConfig (no FK) ----
+  {
+    table: 'AgentConfig',
+    sql: `CREATE TABLE IF NOT EXISTS "AgentConfig" (
+      "id" TEXT NOT NULL,
+      "agentType" TEXT NOT NULL,
+      "systemPrompt" TEXT,
+      "model" TEXT,
+      "temperature" DOUBLE PRECISION NOT NULL DEFAULT 0.7,
+      "maxTokens" INTEGER NOT NULL DEFAULT 4096,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AgentConfig_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "AgentConfig_agentType_key" UNIQUE ("agentType")
+    );`,
+  },
+  // ---- VideoGeneration (FK to Drama) ----
+  {
+    table: 'VideoGeneration',
+    sql: `CREATE TABLE IF NOT EXISTS "VideoGeneration" (
+      "id" TEXT NOT NULL,
+      "storyboardId" TEXT,
+      "dramaId" TEXT,
+      "provider" TEXT NOT NULL DEFAULT '',
+      "model" TEXT NOT NULL DEFAULT '',
+      "prompt" TEXT NOT NULL DEFAULT '',
+      "referenceMode" TEXT,
+      "firstFrameUrl" TEXT,
+      "lastFrameUrl" TEXT,
+      "duration" INTEGER NOT NULL DEFAULT 5,
+      "aspectRatio" TEXT NOT NULL DEFAULT '16:9',
+      "taskId" TEXT,
+      "videoUrl" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'pending',
+      "errorMsg" TEXT,
+      "tokensUsed" INTEGER,
+      "generationMs" INTEGER,
+      "costCredits" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "VideoGeneration_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "VideoGeneration_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+  },
+  {
+    table: 'VideoGeneration_dramaId_status_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "VideoGeneration_dramaId_status_idx" ON "VideoGeneration"("dramaId", "status");`,
+  },
+  {
+    table: 'VideoGeneration_dramaId_createdAt_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "VideoGeneration_dramaId_createdAt_idx" ON "VideoGeneration"("dramaId", "createdAt");`,
+  },
+  {
+    table: 'VideoGeneration_dramaId_costCredits_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "VideoGeneration_dramaId_costCredits_idx" ON "VideoGeneration"("dramaId", "costCredits");`,
+  },
+  // ---- Prop (FK to Drama, FK to Asset) ----
+  {
+    table: 'Prop',
+    sql: `CREATE TABLE IF NOT EXISTS "Prop" (
+      "id" TEXT NOT NULL,
+      "dramaId" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "category" TEXT NOT NULL DEFAULT 'other',
+      "description" TEXT NOT NULL DEFAULT '',
+      "imagePrompt" TEXT,
+      "imageUrl" TEXT,
+      "assetId" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Prop_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Prop_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "Prop_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "Prop_dramaId_name_key" UNIQUE ("dramaId", "name")
+    );`,
+  },
+  // ---- GenerationCost (FK to Drama) ----
+  {
+    table: 'GenerationCost',
+    sql: `CREATE TABLE IF NOT EXISTS "GenerationCost" (
+      "id" TEXT NOT NULL,
+      "dramaId" TEXT NOT NULL,
+      "episodeId" TEXT,
+      "category" TEXT NOT NULL,
+      "provider" TEXT NOT NULL,
+      "model" TEXT NOT NULL,
+      "credits" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "tokensUsed" INTEGER NOT NULL DEFAULT 0,
+      "count" INTEGER NOT NULL DEFAULT 1,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "GenerationCost_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "GenerationCost_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );`,
+  },
+  // ---- Novel (FK to Drama) ----
+  {
+    table: 'Novel',
+    sql: `CREATE TABLE IF NOT EXISTS "Novel" (
+      "id" TEXT NOT NULL,
+      "dramaId" TEXT NOT NULL,
+      "title" TEXT NOT NULL DEFAULT '',
+      "chapters" TEXT NOT NULL DEFAULT '[]',
+      "parsedContent" TEXT NOT NULL DEFAULT '{}',
+      "parseStatus" TEXT NOT NULL DEFAULT 'pending',
+      "fileSize" INTEGER NOT NULL DEFAULT 0,
+      "fileName" TEXT NOT NULL DEFAULT '',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "Novel_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "Novel_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "Novel_dramaId_key" UNIQUE ("dramaId")
+    );`,
+  },
+  // ---- VideoMerge (FK to Drama) ----
+  {
+    table: 'VideoMerge',
+    sql: `CREATE TABLE IF NOT EXISTS "VideoMerge" (
+      "id" TEXT NOT NULL,
+      "episodeId" TEXT NOT NULL,
+      "dramaId" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'pending',
+      "mergedUrl" TEXT,
+      "duration" INTEGER NOT NULL DEFAULT 0,
+      "errorMsg" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "VideoMerge_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "VideoMerge_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+  },
+]
+
+// Incremental tables (added in later versions)
 // All required tables and their CREATE TABLE SQL
 const MIGRATIONS: { table: string; sql: string }[] = [
   // ---- Series (must be created BEFORE Drama.seriesId FK) ----
@@ -452,6 +886,28 @@ export async function POST(request: NextRequest) {
 
     const results: { name: string; status: string; error?: string }[] = []
 
+    // Phase 1: Run BASE_MIGRATIONS first (core tables like User, Drama, Episode, etc.)
+    console.log(`[migrate] Phase 1: Base tables (${BASE_MIGRATIONS.length} migrations)`)
+    for (const migration of BASE_MIGRATIONS) {
+      const isTableCreation = migration.sql.includes('CREATE TABLE IF NOT EXISTS')
+      if (isTableCreation && existingTableNames.has(migration.table)) {
+        results.push({ name: migration.table, status: 'skipped (already exists)' })
+        continue
+      }
+      try {
+        await db.$executeRawUnsafe(migration.sql)
+        results.push({ name: migration.table, status: 'ok' })
+        console.log(`[migrate] ✓ ${migration.table}`)
+        if (isTableCreation) existingTableNames.add(migration.table)
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        results.push({ name: migration.table, status: 'error', error: msg.slice(0, 200) })
+        console.warn(`[migrate] ✗ ${migration.table}: ${msg.slice(0, 200)}`)
+      }
+    }
+
+    // Phase 2: Run incremental MIGRATIONS (newer tables like Series, DramaMember, etc.)
+    console.log(`[migrate] Phase 2: Incremental tables (${MIGRATIONS.length} migrations)`)
     for (const migration of MIGRATIONS) {
       // Skip if it's a table creation and the table already exists
       const isTableCreation = migration.sql.includes('CREATE TABLE IF NOT EXISTS')

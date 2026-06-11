@@ -79,7 +79,7 @@ try {
 // Step 4: Push schema to database with retry logic
 // This is critical for adding new models (like DramaMember, Comment)
 // to the PostgreSQL database on Vercel.
-if (migrationUrl && migrationUrl.startsWith('postgresql')) {
+if (migrationUrl && (migrationUrl.startsWith('postgresql') || migrationUrl.startsWith('postgres://'))) {
   const MAX_RETRIES = 3
   let pushSucceeded = false
 
@@ -108,7 +108,9 @@ if (migrationUrl && migrationUrl.startsWith('postgresql')) {
     console.warn('[build] Prisma db push failed after all retries. Run /api/migrate manually after deployment.')
   }
 } else if (migrationUrl) {
-  console.log('[build] Skipping db push (not PostgreSQL)')
+  console.warn(`[build] WARNING: migrationUrl does not look like PostgreSQL: ${migrationUrl.slice(0, 30)}... — skipping db push`)
+} else {
+  console.warn('[build] WARNING: No migration URL found — skipping db push')
 }
 
 console.log('[build] Prisma setup complete, starting Next.js build...')
@@ -116,7 +118,7 @@ console.log('[build] Prisma setup complete, starting Next.js build...')
 // Step 5: Ensure admin user exists (ONLY create if missing — do NOT reset password)
 // This is safe: it only creates a new admin if one doesn't exist yet.
 // It will NOT overwrite existing passwords, names, or other user data.
-if (migrationUrl && migrationUrl.startsWith('postgresql')) {
+if (migrationUrl && (migrationUrl.startsWith('postgresql') || migrationUrl.startsWith('postgres://'))) {
   try {
     console.log('[build] Checking if admin user exists...')
     const bcrypt = require('bcryptjs')
