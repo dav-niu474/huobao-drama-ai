@@ -7,15 +7,23 @@ import { saveMediaFile } from '@/lib/file-storage'
 // POST /api/ai/generate-character-image - AI Generate Character Portrait
 // Returns a data URL (data:image/png;base64,...) for Vercel compatibility
 // Updated: supports referenceImages, creates/updates CharacterAppearance, uses AI Vision
+// Also supports `referenceImageUrls` (URLs of OTHER characters in the cast)
+// for cross-character visual consistency, inspired by Toonflow's referenceList pattern.
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
     return await userIdContext.run(auth.userId, async () => {
-    const { characterId, style, referenceImages } = await request.json() as {
+    const { characterId, style, referenceImages, referenceImageUrls, useCastReferences } = await request.json() as {
       characterId: string
       style?: string
       referenceImages?: string[]
+      // URLs of OTHER characters' images (cast references) — used as
+      // additional references for cross-character visual consistency.
+      referenceImageUrls?: string[]
+      // When true, auto-fetch primary images of OTHER characters in the
+      // same drama and append them to the reference list.
+      useCastReferences?: boolean
     }
 
     if (!characterId) {
@@ -44,13 +52,69 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .join('. ')
 
+    // Assemble the final reference image list:
+    //   1. Caller-supplied `referenceImages` (typically base64 / data URLs)
+    //   2. Caller-supplied `referenceImageUrls` (URLs of other characters)
+    //   3. Auto-fetched cast references from the same drama (if useCastReferences=true)
+    // The deduplication is done via a Set to avoid passing the same image twice.
+    const collectedReferenceImages: string[] = []
+    const seen = new Set<string>()
+
+    const pushRef = (url: string | undefined | null) => {
+      if (!url || !url.trim()) return
+      if (seen.has(url)) return
+      seen.add(url)
+      collectedReferenceImages.push(url)
+    }
+
+    if (referenceImages && Array.isArray(referenceImages)) {
+      referenceImages.forEach(pushRef)
+    }
+
+    if (referenceImageUrls && Array.isArray(referenceImageUrls)) {
+      referenceImageUrls.forEach(pushRef)
+    }
+
+    // Auto-fetch other characters' primary images for cast consistency.
+    // Cap at 4 additional references to avoid bloating the request payload.
+    if (useCastReferences) {
+      try {
+        const castChars = await db.character.findMany({
+          where: {
+            dramaId: character.dramaId,
+            id: { not: characterId },
+            OR: [
+              { imageUrl: { not: null } },
+              { lockedReferenceImage: { not: null } },
+            ],
+          },
+          select: { imageUrl: true, lockedReferenceImage: true, styleLock: true },
+          take: 8,
+        })
+        for (const c of castChars) {
+          const refUrl = c.styleLock && c.lockedReferenceImage
+            ? c.lockedReferenceImage
+            : c.imageUrl
+          pushRef(refUrl)
+          if (collectedReferenceImages.length >= 5) break
+        }
+      } catch {
+        // non-critical: cast-reference fetching is best-effort
+      }
+    }
+
+    // Filter out invalid/empty URLs (accept data:, http, and file storage paths)
+    const finalReferenceImages = collectedReferenceImages.filter(
+      (url) => url && url.trim() && (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/api/files/'))
+    )
+
     // Generate character portrait — use generateImage directly if referenceImages are provided,
     // otherwise use the convenience method
     let base64Image: string
     let imagePrompt: string
 
     try {
-      if (referenceImages && referenceImages.length > 0) {
+      if (finalReferenceImages.length > 0) {
         // Build portrait prompt manually to pass referenceImages
         const styleTag = style || character.role || 'cinematic'
         imagePrompt = [
@@ -73,7 +137,7 @@ export async function POST(request: NextRequest) {
         base64Image = await aiClient.generateImage(imagePrompt, negativePrompt, {
           width: 1024,
           height: 1024,
-          referenceImages,
+          referenceImages: finalReferenceImages,
         })
       } else {
         // Use the convenience method
@@ -186,6 +250,7 @@ export async function POST(request: NextRequest) {
         imageUrls: JSON.parse(appearance.imageUrls),
       },
       visionDescription,
+      referenceCount: finalReferenceImages.length,
     })
     })
   } catch (error) {

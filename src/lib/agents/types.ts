@@ -14,6 +14,9 @@ export type AgentType =
   | 'story_skeleton'
   | 'adaptation_strategy'
   | 'script_generator'
+  | 'event_extractor'
+  | 'asset_extractor'
+  | 'storyboard_table_generator'
 
 export interface ToolParameter {
   type: 'string' | 'number' | 'boolean' | 'array' | 'object'
@@ -74,6 +77,9 @@ export const AGENT_NAMES: Record<AgentType, string> = {
   story_skeleton: '故事骨架提取器',
   adaptation_strategy: '改编策略制定器',
   script_generator: '剧本批量生成器',
+  event_extractor: '事件提取专家',
+  asset_extractor: '资产提取专家',
+  storyboard_table_generator: '分镜表生成专家',
 }
 
 export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
@@ -95,6 +101,12 @@ export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
     '根据故事骨架制定改编策略：核心原则（正面指导+负面边界）、删除决策',
   script_generator:
     '基于故事骨架和改编策略，批量生成每集剧本',
+  event_extractor:
+    '从小说章节原文中提取结构化事件摘要，形成事件图谱，供下游剧本Agent使用',
+  asset_extractor:
+    '从剧本内容中识别角色、场景、道具资产，为每项资产生成英文图片提示词，用于AI绘图保持视觉一致性',
+  storyboard_table_generator:
+    '基于单集剧本内容和已有资产列表，生成结构化分镜表（每个片段≤15秒），含画面/时长/景别/运镜/台词/音效/资产引用',
 }
 
 export const ALL_AGENT_TYPES: AgentType[] = [
@@ -106,5 +118,8 @@ export const ALL_AGENT_TYPES: AgentType[] = [
   'story_skeleton',
   'adaptation_strategy',
   'script_generator',
+  'event_extractor',
+  'asset_extractor',
+  'storyboard_table_generator',
   // grid_prompt_generator merged into storyboard_breaker
 ]

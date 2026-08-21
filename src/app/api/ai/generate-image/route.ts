@@ -40,7 +40,26 @@ export async function POST(request: NextRequest) {
       shotType,
       cameraAngle,
       style,
-    } = await request.json()
+      // Direct caller-supplied reference images (base64 strings or URLs).
+      // Adapters that don't support reference images will silently ignore them;
+      // the VolcEngine Seedream adapter will be enhanced to fully support
+      // multi-reference input via `referenceList` in a future PR.
+      referenceImages: callerReferenceImages,
+    } = await request.json() as {
+      prompt: string
+      size?: string
+      storyboardId?: string
+      atmosphere?: string
+      episodeId?: string
+      dialogueChar?: string
+      sceneLocation?: string
+      characterId?: string
+      sceneId?: string
+      shotType?: string
+      cameraAngle?: string
+      style?: string
+      referenceImages?: string[]
+    }
 
     if (!prompt) {
       return NextResponse.json(
@@ -115,6 +134,19 @@ export async function POST(request: NextRequest) {
     } else if (sceneId) {
       // Scene image generation — use existing scene images as reference
       referenceImages = await collectSceneReferences(sceneId)
+    }
+
+    // Merge in caller-supplied reference images (deduplicated, preserves order).
+    // This lets callers (e.g. an asset-extraction workflow) attach additional
+    // references such as other character images for cross-character consistency.
+    if (callerReferenceImages && Array.isArray(callerReferenceImages) && callerReferenceImages.length > 0) {
+      const seen = new Set(referenceImages)
+      for (const url of callerReferenceImages) {
+        if (url && !seen.has(url)) {
+          referenceImages.push(url)
+          seen.add(url)
+        }
+      }
     }
 
     // Filter out invalid/empty URLs (accept data:, http, and file storage paths)
