@@ -60,30 +60,82 @@ export async function POST(
       )
     }
 
-    // Build the full novel content from chapters
-    const chapters = JSON.parse(novel.chapters) as Array<{
-      index: number
-      title: string
-      content: string
-    }>
+    // Load existing parsedContent so we can reuse the events table if present.
+    // The events table is a much smaller, denser summary than the full novel
+    // text and produces better skeleton output from the LLM.
+    let parsedContent: Record<string, unknown> = {}
+    try {
+      parsedContent = JSON.parse(novel.parsedContent || '{}')
+    } catch {
+      parsedContent = {}
+    }
 
-    const novelText = chapters
-      .map((ch) => `## ${ch.title}\n\n${ch.content}`)
-      .join('\n\n---\n\n')
+    interface EventRow {
+      chapter: string
+      characters: string
+      event: string
+      mainline: string
+      density: string
+      estimatedDuration: string
+      emotion: string
+    }
+    const events = Array.isArray(parsedContent.events)
+      ? (parsedContent.events as EventRow[])
+      : []
 
-    // Truncate if too long (max ~80K chars for LLM context)
-    const MAX_CHARS = 80000
-    const truncatedText =
-      novelText.length > MAX_CHARS
-        ? novelText.slice(0, MAX_CHARS) + '\n\n...(内容过长已截断)'
-        : novelText
+    // Build the input prompt sent to story_skeleton.
+    let skeletonInput: string
+    let inputMode: 'events' | 'fulltext'
 
-    const prompt = `请分析以下小说全文，提取完整的故事骨架信息。
+    if (events.length > 0) {
+      // Build a markdown-style table from the events — much smaller than the
+      // full novel text and gives the LLM structured per-chapter information.
+      const header =
+        '| 章节 | 人物 | 事件 | 主线/支线 | 密度 | 预计时长 | 情绪 |'
+      const separator =
+        '| --- | --- | --- | --- | --- | --- | --- |'
+      const rows = events.map(
+        (e) =>
+          `| ${e.chapter ?? ''} | ${e.characters ?? ''} | ${e.event ?? ''} | ${e.mainline ?? ''} | ${e.density ?? ''} | ${e.estimatedDuration ?? ''} | ${e.emotion ?? ''} |`
+      )
+      skeletonInput = [header, separator, ...rows].join('\n')
+      inputMode = 'events'
+    } else {
+      // Fallback: build full novel text from chapters (truncated).
+      console.warn(
+        '[generate-skeleton] No events table found in parsedContent — falling back to full novel text. ' +
+          'Run extract-events first for better skeleton quality.'
+      )
+      const chapters = JSON.parse(novel.chapters) as Array<{
+        index: number
+        title: string
+        content: string
+      }>
+      const novelText = chapters
+        .map((ch) => `## ${ch.title}\n\n${ch.content}`)
+        .join('\n\n---\n\n')
+
+      const MAX_CHARS = 80000
+      skeletonInput =
+        novelText.length > MAX_CHARS
+          ? novelText.slice(0, MAX_CHARS) + '\n\n...(内容过长已截断)'
+          : novelText
+      inputMode = 'fulltext'
+    }
+
+    const prompt =
+      inputMode === 'events'
+        ? `请基于以下小说章节事件表，提取完整的故事骨架信息。
 
 小说标题：${novel.title}
-总章节数：${chapters.length}
 
-${truncatedText}`
+## 章节事件表
+${skeletonInput}`
+        : `请分析以下小说全文，提取完整的故事骨架信息。
+
+小说标题：${novel.title}
+
+${skeletonInput}`
 
     // Execute story_skeleton agent directly (server-side)
     const result = await executeAgent(
@@ -96,13 +148,6 @@ ${truncatedText}`
     )
 
     // Store skeleton in Novel.parsedContent (merge with existing data)
-    let parsedContent: Record<string, unknown> = {}
-    try {
-      parsedContent = JSON.parse(novel.parsedContent || '{}')
-    } catch {
-      parsedContent = {}
-    }
-
     parsedContent.skeleton = result.text
     parsedContent.skeletonGeneratedAt = new Date().toISOString()
 

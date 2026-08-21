@@ -349,6 +349,15 @@ export const api = {
         if (!r.ok) throw new Error(`Delete episode failed: ${r.status}`)
       }),
 
+    // Regenerate script for a single episode. Calls the dedicated
+    // /regenerate-script endpoint, which uses the script_generator agent and
+    // returns the freshly-generated scriptContent inline.
+    regenerateScript: (id: string) =>
+      request<{ success: boolean; scriptContent: string }>(
+        `/api/episodes/${id}/regenerate-script`,
+        { method: 'POST' }
+      ),
+
     // Pipeline status - detailed progress for each production step (11-step format)
     // Backend returns { steps: { rawContent: {...} }, summary: {...} }
     // Frontend expects { pipeline: { raw_content: {...} }, completedSteps, progressPercent }
@@ -1356,6 +1365,26 @@ export const api = {
         message: string
         parsedContent?: string
       }>(`/api/novels/${id}/parse-status`),
+
+    // Reparse an existing novel's chapters with the improved parser.
+    reparse: (id: string) =>
+      request<{
+        chapters: Array<{ index: number; title: string; content: string }>
+      }>(`/api/novels/${id}/reparse`, {
+        method: 'POST',
+      }),
+
+    // PATCH a single field (skeleton/strategy/events) into the novel's
+    // parsedContent JSON. Used by the script workbench to persist edits.
+    updateParsedContent: (id: string, key: string, value: string) =>
+      request<{ success: boolean; key: string }>(
+        `/api/novels/${id}/parsed-content`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, value }),
+        }
+      ),
 
     // Get novel by drama ID (convenience method for script workbench)
     getByDramaId: async (dramaId: string) => {

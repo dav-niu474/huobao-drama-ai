@@ -7,32 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — Toonflow-inspired Pipeline Enhancements
-- 事件提取 Agent (event_extractor) — 从小说章节提取7字段结构化事件摘要（章节/角色/事件/主线关系/信息密度/预估集长/情绪强度）
-- POST /api/ai/extract-events — 按章节范围批量提取事件，5章一组防止上下文溢出，结果合并存储到 Novel.parsedContent.events
-- 资产提取 Agent (asset_extractor) — 从剧本内容自动识别角色/场景/道具，生成英文图片提示词
-- POST /api/ai/extract-assets — AI 提取资产并自动去重写入 Character/Scene/Prop 表
-- 分镜表生成 Agent (storyboard_table_generator) — 基于剧本构建结构化分镜表，每个片段≤15秒，含景别/运镜词库
-- POST /api/ai/generate-storyboard-table — 单集剧本→分镜表生成，含资产引用 ID
-- 分镜提示词模板系统 (storyboard-prompt-templates.ts) — 4 种模型感知的提示词模式
-  - 多参考模式 (Seedance 2.0 / Seedream 4.0) — 中文 @图N 引用语法
-  - 首尾帧模式 (Seedance 1.5 / 通用) — 英文 5 维度格式
-  - 单图首帧模式 (Wan 2.6) — 三段式叙事风格
-  - 纯文本模式 — 无参考图回退
-- POST /api/ai/polish-storyboard-prompts — 根据视频模型自动路由提示词模板，批量生成 imagePrompt + videoPrompt
-- 角色图片生成支持参考图 (useCastReferences) — 跨角色视觉一致性
-- generate-image 路由支持 referenceImages 参数 — 多图参考生成
+### Added — Script Workshop Redesign
+- 剧本工坊 UI 重构为 5 步流水线 Stepper（章节原文 → 章节事件 → 故事骨架 → 改编策略 → 剧本输出）
+- 章节列表新增搜索框（>10 章时显示）
+- 删除小说按钮（重新上传入口）
+- 单集剧本重新生成按钮 — 调用 `POST /api/episodes/[id]/regenerate-script`
+- 骨架/策略编辑后「保存到数据库」按钮 — 调用 `PATCH /api/novels/[id]/parsed-content`
 
-### Changed — Agent Prompts Enhanced
-- story_skeleton prompt — 增加 Toonflow 三幕结构、付费卡点(10%/30%/50%/70%/90%)、股价级反转三式、黄金单集公式
-- adaptation_strategy prompt — 增加节奏控制(3秒/15秒/45秒)、台词字数估算公式(×150字/分钟)、7条短剧通用红线
-- 新增 2 个 AgentType — event_extractor / asset_extractor / storyboard_table_generator
-- 新增 3 个 SKILL.md 文件 — data/skills/{event_extractor,asset_extractor,storyboard_table_generator}_SKILL.md
+### Fixed — Backend Bugs (P0)
+- 修复 `/api/novels/[id]/reparse` 完全无鉴权漏洞 — 添加 requireAuth + 所有权检查
+- 修复 `handleGenerateStrategy` 传错变量 bug（FE-1）— 现在正确传递 skeleton 给策略生成
+- 修复 `handleReparse` 使用裸 fetch — 改用 `api.novels.reparse()` 客户端方法
+- 修复 `reparse` 路由访问 schema 中不存在的 `novel.rawContent` 字段 — 改用 chapters JSON 重构文本
 
-### Added — SCnet Seedance + Script Workshop (前次合并)
-- 国家超算互联网 Seedance 视频适配器 — 支持文生视频/图生视频/首末帧
+### Changed — Backend Improvements
+- `generate-skeleton` 路由优先使用 `parsedContent.events` 事件表作为输入（小且结构化），无事件时回退到全文（80K 截断）
+- 新增 `PATCH /api/novels/[id]/parsed-content` 接口 — 保存编辑后的 skeleton/strategy/events
+- 新增 `POST /api/episodes/[id]/regenerate-script` 接口 — 单集剧本重新生成
+- 新增 `api.novels.reparse()` 和 `api.novels.updateParsedContent()` 前端 API helper
+- 新增 `api.episodes.regenerateScript()` 前端 API helper
+
+### Removed — UI Cleanup
+- 移除右栏的「集范围配置」+ 3 个生成按钮（与左栏完全重复）
+- 移除左栏底部的「生成配置」面板（已移入对应 Stepper 步骤内）
+- Tab 系统替换为 Stepper 流水线
+
+### Added — Toonflow-inspired Pipeline (前次合并)
+- 事件提取 Agent (event_extractor) — 7字段结构化事件摘要
+- 资产提取 Agent (asset_extractor) — 角色/场景/道具自动识别
+- 分镜表生成 Agent (storyboard_table_generator) — ≤15秒片段结构化分镜表
+- 4 种模型感知提示词模板 (multi-reference/first-last-frame/single-image/text-only)
+- POST /api/ai/extract-events / extract-assets / generate-storyboard-table / polish-storyboard-prompts
+- SCnet Seedance 视频适配器 — 国家超算互联网
 - 剧本工坊支持文本粘贴输入
-- 项目详情页空态引导优化
+- 项目详情页空态引导进入剧本工坊
 
 ## [0.9.2] - 2026-06-26
 
