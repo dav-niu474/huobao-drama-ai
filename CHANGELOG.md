@@ -7,16 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- 国家超算互联网 Seedance 视频适配器 — 支持文生视频/图生视频/首末帧，4-15秒时长，480p/720p/1080p 分辨率
-- SCnet 供应商预设 — Seedance2.0 / 1.0 Pro / 1.0 Lite 模型
-- 环境变量 SCNET_API_KEY 支持
-- 剧本工坊支持文本粘贴输入 — 除文件上传外，可直接粘贴小说文本提交解析
-- 项目详情页空态引导优化 — 新建项目无剧本时引导进入剧本工坊
+### Added — Toonflow-inspired Pipeline Enhancements
+- 事件提取 Agent (event_extractor) — 从小说章节提取7字段结构化事件摘要（章节/角色/事件/主线关系/信息密度/预估集长/情绪强度）
+- POST /api/ai/extract-events — 按章节范围批量提取事件，5章一组防止上下文溢出，结果合并存储到 Novel.parsedContent.events
+- 资产提取 Agent (asset_extractor) — 从剧本内容自动识别角色/场景/道具，生成英文图片提示词
+- POST /api/ai/extract-assets — AI 提取资产并自动去重写入 Character/Scene/Prop 表
+- 分镜表生成 Agent (storyboard_table_generator) — 基于剧本构建结构化分镜表，每个片段≤15秒，含景别/运镜词库
+- POST /api/ai/generate-storyboard-table — 单集剧本→分镜表生成，含资产引用 ID
+- 分镜提示词模板系统 (storyboard-prompt-templates.ts) — 4 种模型感知的提示词模式
+  - 多参考模式 (Seedance 2.0 / Seedream 4.0) — 中文 @图N 引用语法
+  - 首尾帧模式 (Seedance 1.5 / 通用) — 英文 5 维度格式
+  - 单图首帧模式 (Wan 2.6) — 三段式叙事风格
+  - 纯文本模式 — 无参考图回退
+- POST /api/ai/polish-storyboard-prompts — 根据视频模型自动路由提示词模板，批量生成 imagePrompt + videoPrompt
+- 角色图片生成支持参考图 (useCastReferences) — 跨角色视觉一致性
+- generate-image 路由支持 referenceImages 参数 — 多图参考生成
 
-### Changed
-- /api/novels POST 路由支持 application/json — 文本粘贴模式，与文件上传模式并存
-- 项目详情页空态从"添加第一集"改为"进入剧本工坊"引导，保留手动添加单集入口
+### Changed — Agent Prompts Enhanced
+- story_skeleton prompt — 增加 Toonflow 三幕结构、付费卡点(10%/30%/50%/70%/90%)、股价级反转三式、黄金单集公式
+- adaptation_strategy prompt — 增加节奏控制(3秒/15秒/45秒)、台词字数估算公式(×150字/分钟)、7条短剧通用红线
+- 新增 2 个 AgentType — event_extractor / asset_extractor / storyboard_table_generator
+- 新增 3 个 SKILL.md 文件 — data/skills/{event_extractor,asset_extractor,storyboard_table_generator}_SKILL.md
+
+### Added — SCnet Seedance + Script Workshop (前次合并)
+- 国家超算互联网 Seedance 视频适配器 — 支持文生视频/图生视频/首末帧
+- 剧本工坊支持文本粘贴输入
+- 项目详情页空态引导优化
 
 ## [0.9.2] - 2026-06-26
 

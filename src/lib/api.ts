@@ -596,6 +596,21 @@ export const api = {
         }
       ),
 
+    extractEvents: (dramaId: string, chapterRange?: { start: number; end: number }) =>
+      request<{ events: Array<{ chapter: string; characters: string; event: string; mainline: string; density: string; estimatedDuration: string; emotion: string }> }>(
+        '/api/ai/extract-events',
+        { method: 'POST', body: JSON.stringify({ dramaId, chapterRange }) }
+      ),
+
+    // Extract structured assets (characters / scenes / props) from an
+    // episode's scriptContent using the asset_extractor agent, and save
+    // the new assets to the database (deduplicated against existing ones).
+    extractAssets: (episodeId: string) =>
+      request<{ success: boolean; extracted: number; created: { characters: number; scenes: number; props: number }; deduplicated: number }>(
+        '/api/ai/extract-assets',
+        { method: 'POST', body: JSON.stringify({ episodeId }) }
+      ),
+
     generateStoryboard: (episodeId: string) =>
       request<{ storyboards: Storyboard[] }>(
         '/api/ai/generate-storyboard',
@@ -604,6 +619,16 @@ export const api = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ episodeId }),
         }
+      ),
+
+    // Generate a structured storyboard table (each segment ≤ 15s)
+    // from an episode's scriptContent, referencing existing characters /
+    // scenes / props by ID. Returns the table as a markdown string for
+    // the frontend to display / store locally.
+    generateStoryboardTable: (episodeId: string) =>
+      request<{ success: boolean; storyboardTable: string; assetCount: { characters: number; scenes: number; props: number } }>(
+        '/api/ai/generate-storyboard-table',
+        { method: 'POST', body: JSON.stringify({ episodeId }) }
       ),
 
     generateCharacterSheet: (characterId: string, style?: string, referenceImages?: string[]) =>
@@ -781,6 +806,17 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storyboardId, text, voiceId }),
       }),
+
+    // Polish storyboard image+video prompts for a specific video model / mode
+    polishStoryboardPrompts: (episodeId: string, videoModel?: string, mode?: 'multi-reference' | 'first-last-frame' | 'single-image' | 'text-only') =>
+      request<{ success: boolean; updated: number; mode: string; storyboards: Array<{ id: string; imagePrompt: string; videoPrompt: string }> }>(
+        '/api/ai/polish-storyboard-prompts',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeId, videoModel, mode }),
+        }
+      ),
 
     // List available voices from TTS providers
     listVoices: (provider?: string, language?: string) => {

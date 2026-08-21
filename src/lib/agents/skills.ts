@@ -20,6 +20,9 @@ const SKILL_FILE_MAP: Record<AgentType, string> = {
   story_skeleton: 'story_skeleton_SKILL.md',
   adaptation_strategy: 'adaptation_strategy_SKILL.md',
   script_generator: 'script_generator_SKILL.md',
+  event_extractor: 'event_extractor_SKILL.md',
+  asset_extractor: 'asset_extractor_SKILL.md',
+  storyboard_table_generator: 'storyboard_table_generator_SKILL.md',
 }
 
 /**

@@ -1237,4 +1237,6 @@ const AGENT_TOOL_NAMES: Record<string, Record<string, string>> = {
   story_skeleton: {},
   adaptation_strategy: {},
   script_generator: {},
+  // 事件提取 agent 不需要工具，直接输出 | 分隔的事件行
+  event_extractor: {},
 }

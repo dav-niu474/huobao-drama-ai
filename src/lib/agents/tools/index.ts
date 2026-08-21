@@ -551,6 +551,12 @@ export const AGENT_TOOLS: Record<AgentType, ToolDefinition[]> = {
   story_skeleton: [],
   adaptation_strategy: [],
   script_generator: [],
+  // 事件提取 agent 也不需要工具，直接输出 | 分隔的事件行
+  event_extractor: [],
+  // 资产提取 agent 不需要工具，API 路由直接解析 JSON 返回
+  asset_extractor: [],
+  // 分镜表生成 agent 不需要工具，API 路由直接解析 XML 返回
+  storyboard_table_generator: [],
 }
 
 /**
