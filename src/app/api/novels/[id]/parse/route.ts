@@ -87,26 +87,42 @@ export async function POST(
     // Run extraction in background (don't await — return immediately)
     extractChapterEvents(chapters, 'story_skeleton', novel.dramaId, emitter)
       .then(async (parsedContent) => {
+        // Check if all groups failed
+        const groupEntries = Object.entries(parsedContent).filter(
+          ([k]) => k.startsWith('group_')
+        )
+        const allFailed =
+          groupEntries.length > 0 &&
+          groupEntries.every(
+            ([, v]) =>
+              v &&
+              typeof v === 'object' &&
+              'error' in (v as Record<string, unknown>)
+          )
+        const status: 'parsed' | 'failed' = allFailed ? 'failed' : 'parsed'
+
         // Store parsed content
         await db.novel.update({
           where: { id },
           data: {
             parsedContent: JSON.stringify(parsedContent),
-            parseStatus: 'parsed',
+            parseStatus: status,
           },
         })
 
-        // Update Drama.novelParsed
-        await db.drama.update({
-          where: { id: novel.dramaId },
-          data: { novelParsed: true },
-        })
+        // Update Drama.novelParsed (only if at least partially parsed)
+        if (!allFailed) {
+          await db.drama.update({
+            where: { id: novel.dramaId },
+            data: { novelParsed: true },
+          })
+        }
 
         parseProgressMap.set(id, {
-          status: 'parsed',
-          current: 1,
-          total: 1,
-          message: '解析完成',
+          status,
+          current: groupEntries.length,
+          total: groupEntries.length,
+          message: allFailed ? '解析失败：请检查 AI 配置' : '解析完成',
         })
       })
       .catch(async (error) => {

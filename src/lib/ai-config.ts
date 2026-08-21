@@ -36,6 +36,32 @@ import { PROVIDER_PRESETS, type AiCategory, type ProviderPreset } from '@/lib/pr
 export const userIdContext = new AsyncLocalStorage<string>()
 
 // ============================================================
+// Placeholder API key detection
+// Treats common placeholder patterns (e.g. "your-key-here", "sk-your-...")
+// as missing keys so providers fall back to the next configured option.
+// ============================================================
+
+const PLACEHOLDER_PATTERNS = [
+  /^your-key-here$/i,
+  /^sk-your-/i,
+  /^nvapi-your-/i,
+  /^tp-your-/i,
+  /^change-this-/i,
+  /^your-key$/i,
+  /^your_api_key$/i,
+  /^replace-?me$/i,
+  /^xxx+$/i,
+  /^<.+>$/i, // e.g. <YOUR_API_KEY>
+]
+
+function isPlaceholderKey(key: string | null | undefined): boolean {
+  if (!key) return true
+  const trimmed = key.trim()
+  if (!trimmed) return true
+  return PLACEHOLDER_PATTERNS.some((p) => p.test(trimmed))
+}
+
+// ============================================================
 // Reference Image Pre-fetching (for providers needing base64 inline data)
 // ============================================================
 
@@ -114,15 +140,16 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
     // Find preset for this provider to get defaults and env var fallbacks
     const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === dbProvider.provider)
     const needsNoKey = noKeyProviders.includes(dbProvider.provider)
-    const hasApiKey = Boolean(dbProvider.apiKey)
+    const realDbKey = isPlaceholderKey(dbProvider.apiKey) ? '' : dbProvider.apiKey
     const envApiKey = preset?.envKey ? (process.env[preset.envKey] || process.env[preset.envKey.toLowerCase()] || '') : ''
-    // Only use this DB record if it has an apiKey, can fall back to env, or doesn't need one
-    if (hasApiKey || envApiKey || needsNoKey) {
+    const realEnvKey = isPlaceholderKey(envApiKey) ? '' : envApiKey
+    // Only use this DB record if it has a non-placeholder apiKey, can fall back to env, or doesn't need one
+    if (realDbKey || realEnvKey || needsNoKey) {
       return {
         category,
         provider: dbProvider.provider,
         name: dbProvider.name || preset?.name || dbProvider.provider,
-        apiKey: dbProvider.apiKey || envApiKey,
+        apiKey: realDbKey || realEnvKey,
         baseUrl: dbProvider.baseUrl || preset?.defaultBaseUrl || '',
         model: dbProvider.model || preset?.defaultModel || '',
         isActive: true,
@@ -135,13 +162,15 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
   const presets = PROVIDER_PRESETS[category]
   for (const preset of presets) {
     if (!preset.envKey) continue
-    const apiKey = process.env[preset.envKey]
+    const rawApiKey = process.env[preset.envKey]
       || process.env[preset.envKey.toLowerCase()]
       || process.env[preset.envKey.toUpperCase()]
       || (preset.provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
       || (preset.provider === 'sensenova' ? process.env['SENSENOVA_KEY'] : '')
       || (preset.provider === 'mimo' ? process.env['MIMO_API_KEY'] : '')
       || ''
+    // Skip placeholder keys so we fall through to the next configured provider
+    const apiKey = isPlaceholderKey(rawApiKey) ? '' : rawApiKey
     if (apiKey) {
       return {
         category,
@@ -185,10 +214,10 @@ export async function getActiveProviderForUser(category: AiCategory, userId?: st
     const userProvider = await db.userProvider.findFirst({
       where: { userId, category, isActive: true },
     })
-    // Only use UserProvider if it has a non-empty apiKey
-    // If apiKey is empty, skip it and fall through to global getActiveProvider()
+    // Only use UserProvider if it has a non-empty, non-placeholder apiKey
+    // If apiKey is empty or a placeholder, skip it and fall through to global getActiveProvider()
     // This ensures platform keys are never leaked through the user path
-    if (userProvider && userProvider.apiKey) {
+    if (userProvider && userProvider.apiKey && !isPlaceholderKey(userProvider.apiKey)) {
       const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === userProvider.provider)
       return {
         category,

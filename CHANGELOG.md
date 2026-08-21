@@ -7,7 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — Script Workshop Redesign
+### Fixed — Script Workshop API & UI (P0)
+
+#### 后端 Bug 修复
+- **parse 路由误报成功** — AI 失败时仍设 `parseStatus:'parsed'`，现在检查所有 group 是否全失败，全失败时设为 `'failed'`
+- **generate-scripts 误报成功** — 所有集生成失败时仍返回 200 + `totalGenerated:0`，现在返回 500 + 错误信息
+- **episodes POST 完全无鉴权** — 添加 `requireAuth()` + 所有权检查 + 支持 body 中的 `episodeNumber`
+- **episodes GET 缺少所有权检查** — 添加 `drama.userId` 校验，跨用户访问返回 403
+- **ai-config 占位符识别** — `getActiveProvider` 现在过滤 `your-key-here`/`sk-your-`/`nvapi-your-` 等占位符，避免无效 API Key 触发实际请求
+- **NVIDIA 默认模型 EOL** — `z-ai/glm-5.1`（2026-07-02 下线）改为 `deepseek-ai/deepseek-v4-pro`
+- **middleware 前缀匹配** — `/api/ai/` 带尾斜杠导致子路径不匹配，已修正
+
+#### 前端 Bug 修复 (script-workbench.tsx)
+- **handleGenerateScripts 不识别失败** — 现在检查 `totalGenerated === 0` 并显示错误 toast
+- **loadNovelData 忽略 group_N.error** — 现在扫描 parsedContent 中的 group 错误并提示用户
+- **handleReparse 不清空状态** — 重切章节后清空 parsedContent/eventsData/skeletonEdit/strategyEdit
+
+#### UI 重设计 — 与项目详情页保持一致
+- 移除 3 栏布局（左栏章节列表 + 中栏内容 + 右栏统计），改为与 project-detail 一致的单栏居中布局
+- 顶部 sticky header + 返回按钮 + 状态徽章 + 删除小说按钮
+- Pipeline Stepper 样式与 ThreeStageProgress 一致（primary 激活 / emerald 完成 / muted 待办）
+- 内容区使用 Card 组件包裹，与 project-detail 视觉风格统一
+- 底部 action bar：上一步 / 当前步骤主操作 / 下一步
+- 上传/粘贴空态改为居中 Card，样式与 project-detail 空态一致
+
+### E2E 接口测试验证
+- 18/19 测试通过（1 个是测试断言写错，201 是正确响应）
+- parse 失败检测 ✓ (parseStatus='failed', message='解析失败：请检查 AI 配置')
+- extract-events 清晰错误 ✓ ("未配置 LLM 供应商。请在设置中配置 API Key。")
+- generate-skeleton 清晰错误 ✓ ("骨架生成失败: 未配置 LLM 供应商...")
+- generate-scripts 失败检测 ✓ (返回 500 + "所有集生成都失败，请检查 AI 配置后重试")
+- episode POST 鉴权 ✓ (无 auth 返回 401)
+- episode GET 跨用户检查 ✓ (返回 403)
+- PATCH parsed-content 保存 ✓
+- Reparse 章节重构 ✓
+
+### Added — Script Workshop Redesign (前次合并)
 - 剧本工坊 UI 重构为 5 步流水线 Stepper（章节原文 → 章节事件 → 故事骨架 → 改编策略 → 剧本输出）
 - 章节列表新增搜索框（>10 章时显示）
 - 删除小说按钮（重新上传入口）

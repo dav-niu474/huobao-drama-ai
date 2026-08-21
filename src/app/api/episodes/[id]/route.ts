@@ -15,6 +15,7 @@ export async function GET(
       where: { id },
       include: {
         storyboards: { orderBy: { shotNumber: 'asc' } },
+        drama: { select: { userId: true } },
       },
     });
 
@@ -22,7 +23,18 @@ export async function GET(
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
     }
 
-    return NextResponse.json(episode);
+    // Ownership check: deny if drama belongs to another non-admin user
+    if (
+      episode.drama.userId &&
+      episode.drama.userId !== auth.userId &&
+      auth.role !== 'admin'
+    ) {
+      return NextResponse.json({ error: '无权访问' }, { status: 403 });
+    }
+
+    // Strip the drama relation before returning to avoid leaking owner info
+    const { drama: _drama, ...episodeData } = episode;
+    return NextResponse.json(episodeData);
   } catch (error) {
     console.error('Failed to get episode:', error);
     return NextResponse.json({ error: 'Failed to get episode' }, { status: 500 });

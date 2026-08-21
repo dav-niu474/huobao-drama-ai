@@ -297,6 +297,21 @@ ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创�
       data: { totalEpisodes },
     })
 
+    // If every episode failed, surface a 500 so the client can show an error
+    const allFailed =
+      generatedEpisodes.length > 0 &&
+      generatedEpisodes.every((e) => e.scriptStatus === 'failed')
+    if (allFailed) {
+      return NextResponse.json(
+        {
+          error: '所有集生成都失败，请检查 AI 配置后重试',
+          episodes: generatedEpisodes,
+          totalGenerated: 0,
+        },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json({
       episodes: generatedEpisodes,
       totalGenerated: generatedEpisodes.filter(
