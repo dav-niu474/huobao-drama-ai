@@ -51,31 +51,76 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/novels — Upload novel file, create Novel record
+// POST /api/novels — Upload novel file OR paste text, create Novel record
+// Supports two content types:
+//   1. multipart/form-data — file upload (legacy)
+//   2. application/json — text paste (new)
 
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
 
-    const formData = await request.formData()
-    const file = formData.get('file') as File | null
-    const dramaId = formData.get('dramaId') as string | null
+    const contentType = request.headers.get('content-type') || ''
 
-    if (!file) {
-      return NextResponse.json({ error: '缺少文件' }, { status: 400 })
-    }
-    if (!dramaId) {
-      return NextResponse.json({ error: '缺少 dramaId' }, { status: 400 })
-    }
+    let dramaId: string
+    let text: string
+    let fileName: string
+    let fileSize: number
 
-    // Validate file type
-    const fileName = file.name.toLowerCase()
-    if (!fileName.endsWith('.txt') && !fileName.endsWith('.docx')) {
-      return NextResponse.json(
-        { error: '仅支持 .txt 和 .docx 文件' },
-        { status: 400 }
-      )
+    if (contentType.includes('application/json')) {
+      // ── Paste-text mode ──
+      const body = await request.json().catch(() => null)
+      if (!body || !body.dramaId || !body.text) {
+        return NextResponse.json({ error: '缺少 dramaId 或 text 参数' }, { status: 400 })
+      }
+      dramaId = body.dramaId
+      text = body.text
+      fileName = body.fileName || 'pasted-text.txt'
+      fileSize = Buffer.byteLength(text, 'utf-8')
+
+      if (text.trim().length < 10) {
+        return NextResponse.json({ error: '文本内容过短（至少 10 字符）' }, { status: 400 })
+      }
+    } else {
+      // ── File upload mode (legacy) ──
+      const formData = await request.formData()
+      const file = formData.get('file') as File | null
+      dramaId = formData.get('dramaId') as string
+
+      if (!file) {
+        return NextResponse.json({ error: '缺少文件' }, { status: 400 })
+      }
+      if (!dramaId) {
+        return NextResponse.json({ error: '缺少 dramaId' }, { status: 400 })
+      }
+
+      // Validate file type
+      const lowerName = file.name.toLowerCase()
+      if (!lowerName.endsWith('.txt') && !lowerName.endsWith('.docx')) {
+        return NextResponse.json(
+          { error: '仅支持 .txt 和 .docx 文件' },
+          { status: 400 }
+        )
+      }
+
+      // Read file content
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+
+      // Parse file content
+      try {
+        text = await parseNovelFile(buffer, file.name)
+      } catch (parseError) {
+        return NextResponse.json(
+          {
+            error: `文件解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+          },
+          { status: 400 }
+        )
+      }
+      fileName = file.name
+      fileSize = buffer.length
     }
 
     // Validate drama exists and user has access
@@ -101,39 +146,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Read file content
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-
-    // Parse file content
-    let text: string
-    try {
-      text = await parseNovelFile(buffer, file.name)
-    } catch (parseError) {
-      return NextResponse.json(
-        {
-          error: `文件解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-        },
-        { status: 400 }
-      )
-    }
-
     // Split into chapters
     const chapters = splitChapters(text)
 
     // Create Novel record
-    // ★ parseStatus 直接设为 'parsed'，因为 splitChapters 已经在上传时完成了章节拆分
-    //   之前的流程：上传→pending→需要手动触发parse→parsed
-    //   现在：上传时 splitChapters 直接拆好章节，无需额外 parse 步骤
     const novel = await db.novel.create({
       data: {
         dramaId,
-        title: file.name.replace(/\.(txt|docx)$/i, ''),
+        title: fileName.replace(/\.(txt|docx)$/i, ''),
         chapters: JSON.stringify(chapters),
         parsedContent: '{}',
         parseStatus: chapters.length > 0 ? 'parsed' : 'pending',
-        fileSize: buffer.length,
-        fileName: file.name,
+        fileSize,
+        fileName,
       },
     })
 
@@ -141,7 +166,7 @@ export async function POST(request: NextRequest) {
     await db.drama.update({
       where: { id: dramaId },
       data: {
-        novelSource: file.name,
+        novelSource: fileName,
         novelParsed: chapters.length > 0,
       },
     })

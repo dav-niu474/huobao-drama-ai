@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 国家超算互联网 Seedance 视频适配器 — 支持文生视频/图生视频/首末帧，4-15秒时长，480p/720p/1080p 分辨率
 - SCnet 供应商预设 — Seedance2.0 / 1.0 Pro / 1.0 Lite 模型
 - 环境变量 SCNET_API_KEY 支持
+- 剧本工坊支持文本粘贴输入 — 除文件上传外，可直接粘贴小说文本提交解析
+- 项目详情页空态引导优化 — 新建项目无剧本时引导进入剧本工坊
+
+### Changed
+- /api/novels POST 路由支持 application/json — 文本粘贴模式，与文件上传模式并存
+- 项目详情页空态从"添加第一集"改为"进入剧本工坊"引导，保留手动添加单集入口
 
 ## [0.9.2] - 2026-06-26
 
