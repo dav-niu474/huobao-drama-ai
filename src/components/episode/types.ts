@@ -188,6 +188,8 @@ export interface ExtractPanelProps {
   globalAssetsImported?: boolean
   importingAssets?: boolean
   onReimportGlobalAssets?: () => Promise<void>
+  // Refresh parent data after AI operations (e.g. asset extraction)
+  onRefresh?: () => Promise<void>
 }
 
 export interface VoicePanelProps {
@@ -227,6 +229,10 @@ export interface StoryboardPanelProps {
   handleCopy: (text: string, fieldId: string) => Promise<void>
   handleUpdateStoryboard: (id: string, data: Partial<Storyboard>) => Promise<void>
   handleGridGenerate: (config: GridConfig) => Promise<void>
+  // Refresh parent data after AI operations (e.g. prompt polishing)
+  onRefresh?: () => Promise<void>
+  // Workspace model selection (used to choose the right prompt polishing mode)
+  workspaceModels?: { llm?: string; image?: string; video?: string; tts?: string }
 }
 
 export interface CharImagesPanelProps {

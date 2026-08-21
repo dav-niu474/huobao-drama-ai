@@ -1711,6 +1711,7 @@ export function EpisodeWorkspace() {
               globalAssetsImported={episode?.globalAssetsImported ?? false}
               importingAssets={importingAssets}
               onReimportGlobalAssets={handleImportGlobalAssets}
+              onRefresh={fetchEpisode}
             />
           )
         case 3: // voice
@@ -1754,6 +1755,8 @@ export function EpisodeWorkspace() {
               handleCopy={handleCopy}
               handleUpdateStoryboard={handleUpdateStoryboard}
               handleGridGenerate={handleGridGenerate}
+              onRefresh={fetchEpisode}
+              workspaceModels={workspaceModels}
             />
           )
       }
