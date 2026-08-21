@@ -1262,6 +1262,30 @@ export const api = {
       }>
     },
 
+    // Upload pasted text as a novel — alternative to file upload
+    uploadText: async (dramaId: string, text: string, title?: string) => {
+      const res = await fetch('/api/novels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dramaId,
+          text,
+          fileName: title ? `${title}.txt` : 'pasted-text.txt',
+          source: 'paste',
+        }),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'Unknown error')
+        throw new Error(`Upload text novel failed: ${errText}`)
+      }
+
+      return res.json() as Promise<{
+        novel: Novel
+        chapters: Array<{ index: number; title: string; content: string }>
+      }>
+    },
+
     get: (id: string) =>
       request<Novel & {
         chapters: Array<{ index: number; title: string; content: string }>

@@ -124,8 +124,8 @@ async function saveToLocal(buffer: Buffer, options: SaveOptions): Promise<SaveRe
 async function deleteFromLocal(urlPath: string): Promise<void> {
   // Extract relative path from URL: /api/files/dramas/... → dramas/...
   const relativePath = urlPath.replace(/^\/api\/files\//, '')
-  const absolutePath = path.resolve(UPLOAD_DIR, relativePath)
-  if (!absolutePath.startsWith(path.resolve(UPLOAD_DIR))) {
+  const absolutePath = path.resolve(/*turbopackIgnore: true*/ UPLOAD_DIR, relativePath)
+  if (!absolutePath.startsWith(path.resolve(/*turbopackIgnore: true*/ UPLOAD_DIR))) {
     throw new Error('Path traversal detected')
   }
 
@@ -139,8 +139,8 @@ async function deleteFromLocal(urlPath: string): Promise<void> {
  */
 async function readFromLocal(urlPath: string): Promise<Buffer | null> {
   const relativePath = urlPath.replace(/^\/api\/files\//, '')
-  const absolutePath = path.resolve(UPLOAD_DIR, relativePath)
-  if (!absolutePath.startsWith(path.resolve(UPLOAD_DIR))) {
+  const absolutePath = path.resolve(/*turbopackIgnore: true*/ UPLOAD_DIR, relativePath)
+  if (!absolutePath.startsWith(path.resolve(/*turbopackIgnore: true*/ UPLOAD_DIR))) {
     throw new Error('Path traversal detected')
   }
 

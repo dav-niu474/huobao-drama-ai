@@ -358,6 +358,7 @@ export function ProjectDetailView() {
     setCurrentDrama,
     navigateToProjects,
     navigateToEpisode,
+    navigateToScriptWorkbench,
     setLoading,
     loading,
   } = useAppStore()
@@ -1079,18 +1080,36 @@ export function ProjectDetailView() {
               ))}
           </div>
         ) : drama ? (
-          /* Empty state */
-          <div className="flex items-center justify-center py-32">
+          /* Empty state — guide user to Script Workshop to generate script first */
+          <div className="flex items-center justify-center py-20">
             <Card
-              className="w-full max-w-sm border-dashed border-2 border-border/50 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
-              onClick={() => setAddEpOpen(true)}
+              className="w-full max-w-md border-2 border-primary/30 bg-primary/5 hover:border-primary/60 hover:shadow-[0_0_24px_oklch(0.72_0.15_75/0.2)] transition-all duration-300 cursor-pointer py-0 gap-0"
+              onClick={() => navigateToScriptWorkbench(drama.id)}
             >
-              <CardContent className="p-10 flex flex-col items-center gap-5 text-muted-foreground">
-                <div className="size-14 rounded-full bg-muted flex items-center justify-center">
-                  <Plus className="size-7 text-primary" />
+              <CardContent className="p-10 flex flex-col items-center gap-5 text-center">
+                <div className="size-16 rounded-full bg-primary/15 flex items-center justify-center ring-4 ring-primary/10">
+                  <BookOpen className="size-8 text-primary" />
                 </div>
-                <p className="text-sm font-medium">{tp('addFirstEpisode')}</p>
-                <p className="text-xs opacity-70">{tp('clickToStartEpisode')}</p>
+                <div className="space-y-2">
+                  <p className="text-base font-semibold">{tp('startWithScriptWorkshop')}</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed max-w-sm">
+                    {tp('scriptWorkshopGuide')}
+                  </p>
+                </div>
+                <Button className="gap-2 mt-2" size="sm">
+                  <BookOpen className="size-4" />
+                  {tp('enterScriptWorkshop')}
+                </Button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setAddEpOpen(true)
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline mt-2"
+                >
+                  {tp('orAddEpisodeManually')}
+                </button>
               </CardContent>
             </Card>
           </div>

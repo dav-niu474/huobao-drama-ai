@@ -177,6 +177,12 @@ export function ScriptWorkbench() {
   const [reparsing, setReparsing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // ── Paste-text mode ──
+  const [inputMode, setInputMode] = useState<'upload' | 'paste'>('upload')
+  const [pastedText, setPastedText] = useState('')
+  const [pastedTitle, setPastedTitle] = useState('')
+  const [submittingPaste, setSubmittingPaste] = useState(false)
+
   // ── Edit ──
   const [skeletonEdit, setSkeletonEdit] = useState('')
   const [strategyEdit, setStrategyEdit] = useState('')
@@ -385,6 +391,41 @@ export function ScriptWorkbench() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) await handleFileUpload(file)
+  }
+
+  // Submit pasted text — alternative input mode for users who want to paste novel content directly
+  const handlePasteSubmit = async () => {
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
+    if (pastedText.trim().length < 10) {
+      toastRef.current({ title: '文本内容过短', description: '请至少粘贴 10 个字符', variant: 'destructive' })
+      return
+    }
+    setSubmittingPaste(true)
+    try {
+      const result = await api.novels.uploadText(dramaId, pastedText, pastedTitle || undefined)
+      if (!mountedRef.current) return
+      setNovel(result.novel)
+      setChapters(result.chapters || [])
+      toastRef.current({
+        title: '文本提交成功',
+        description: `已识别 ${result.chapters?.length || 0} 个章节`,
+      })
+      // Auto-trigger parse if chapters are not yet split
+      setParsing(true)
+      setParseProgress({ current: 0, total: 1, message: '开始解析...' })
+      await api.novels.parse(result.novel.id)
+    } catch (err: any) {
+      if (mountedRef.current) {
+        toastRef.current({
+          title: '文本提交失败',
+          description: err.message || '请稍后重试',
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      if (mountedRef.current) setSubmittingPaste(false)
+    }
   }
 
   const handleReparse = async () => {
@@ -612,20 +653,84 @@ export function ScriptWorkbench() {
                   )}
                 </div>
               ) : (
-                <div className="p-4"
+                <div className="p-4 space-y-3"
                   onDrop={async (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) await handleFileUpload(f) }}
                   onDragOver={(e) => e.preventDefault()}
                 >
-                  <div
-                    className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
-                    <p className="text-xs font-medium">上传小说文件</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
-                    <p className="text-[10px] text-muted-foreground">拖拽文件或点击选择</p>
-                    {uploading && <Loader2 className="size-4 mx-auto mt-2 animate-spin text-amber-500" />}
+                  {/* Mode switcher: Upload vs Paste */}
+                  <div className="flex items-center gap-1 p-1 bg-muted/40 rounded-md">
+                    <button
+                      type="button"
+                      onClick={() => setInputMode('upload')}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1.5 ${
+                        inputMode === 'upload'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <FileUp className="size-3.5" />
+                      文件上传
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInputMode('paste')}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1.5 ${
+                        inputMode === 'paste'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <FileText className="size-3.5" />
+                      文本粘贴
+                    </button>
                   </div>
+
+                  {inputMode === 'upload' ? (
+                    <div
+                      className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
+                      <p className="text-xs font-medium">上传小说文件</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
+                      <p className="text-[10px] text-muted-foreground">拖拽文件或点击选择</p>
+                      {uploading && <Loader2 className="size-4 mx-auto mt-2 animate-spin text-amber-500" />}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="小说标题（可选，留空则使用'粘贴文本'）"
+                        value={pastedTitle}
+                        onChange={(e) => setPastedTitle(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <Textarea
+                        placeholder="在此粘贴小说文本内容...&#10;&#10;支持任意长度文本，系统将自动识别章节结构。&#10;建议粘贴完整小说或部分章节，每章节会自动识别。"
+                        value={pastedText}
+                        onChange={(e) => setPastedText(e.target.value)}
+                        className="min-h-[200px] text-xs font-mono resize-y"
+                      />
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>{pastedText.length.toLocaleString()} 字符</span>
+                        {pastedText.length > 0 && pastedText.length < 10 && (
+                          <span className="text-amber-500">至少需要 10 个字符</span>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        className="w-full h-8 text-xs gap-1.5"
+                        onClick={handlePasteSubmit}
+                        disabled={pastedText.trim().length < 10 || submittingPaste}
+                      >
+                        {submittingPaste ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="size-3.5" />
+                        )}
+                        提交并解析
+                      </Button>
+                    </div>
+                  )}
                   <input ref={fileInputRef} type="file" accept=".txt,.docx" className="hidden" onChange={handleFileSelect} />
                 </div>
               )}
