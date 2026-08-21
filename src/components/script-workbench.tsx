@@ -27,6 +27,7 @@ import {
   Zap,
   Eye,
   X,
+  Trash2,
 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
@@ -106,16 +107,17 @@ function EmptyState({
 }
 
 // ════════════════════════════════════════════════════════════
-// Tab type
+// Pipeline step type — 5-stage Stepper
 // ════════════════════════════════════════════════════════════
 
-type TabKey = 'source' | 'skeleton' | 'strategy' | 'scripts'
+type TabKey = 'source' | 'events' | 'skeleton' | 'strategy' | 'scripts'
 
-const TABS: { key: TabKey; label: string; icon: typeof Eye }[] = [
-  { key: 'source', label: '章节原文', icon: Eye },
+const PIPELINE_STEPS: { key: TabKey; label: string; icon: typeof Eye }[] = [
+  { key: 'source', label: '章节原文', icon: FileText },
+  { key: 'events', label: '章节事件', icon: Zap },
   { key: 'skeleton', label: '故事骨架', icon: Brain },
   { key: 'strategy', label: '改编策略', icon: Sparkles },
-  { key: 'scripts', label: '剧本输出', icon: FileText },
+  { key: 'scripts', label: '剧本输出', icon: Play },
 ]
 
 // ════════════════════════════════════════════════════════════
@@ -198,6 +200,13 @@ export function ScriptWorkbench() {
   const [expandedEpisode, setExpandedEpisode] = useState<string | null>(null)
   const [episodeScripts, setEpisodeScripts] = useState<Record<string, string>>({})
 
+  // ── Stepper redesign state ──
+  const [chapterSearch, setChapterSearch] = useState('')
+  const [deletingNovel, setDeletingNovel] = useState(false)
+  const [regeneratingEp, setRegeneratingEp] = useState<string | null>(null)
+  const [savingSkeleton, setSavingSkeleton] = useState(false)
+  const [savingStrategy, setSavingStrategy] = useState(false)
+
   // ── Refs ──
   const mountedRef = useRef(true)
   const selectedDramaIdRef = useRef(selectedDramaId)
@@ -254,6 +263,11 @@ export function ScriptWorkbench() {
     ...ch,
     displayTitle: cleanChapterTitle(ch, idx),
   }))
+
+  // 搜索过滤后的章节列表
+  const filteredChapters = chapterSearch
+    ? displayChapters.filter((c) => c.displayTitle.includes(chapterSearch))
+    : displayChapters
 
   const getEpisodeDisplayTitle = useCallback((ep: EpisodeStatus): string => {
     if (ep.title && !GENERIC_TITLE_PATTERNS.test(ep.title)) {
@@ -439,15 +453,10 @@ export function ScriptWorkbench() {
     if (!nid) return
     setReparsing(true)
     try {
-      const res = await fetch(`/api/novels/${nid}/reparse`, { method: 'POST' })
+      const data = await api.novels.reparse(nid)
       if (!mountedRef.current) return
-      if (res.ok) {
-        const data = await res.json()
-        setChapters(data.chapters || [])
-        toastRef.current({ title: '重新解析完成', description: `已识别 ${data.chapters?.length || 0} 个章节` })
-      } else {
-        toastRef.current({ title: '重新解析失败', variant: 'destructive' })
-      }
+      setChapters(data.chapters || [])
+      toastRef.current({ title: '重新解析完成', description: `已识别 ${data.chapters?.length || 0} 个章节` })
     } catch (err: any) {
       if (mountedRef.current) {
         toastRef.current({ title: '重新解析失败', description: err.message, variant: 'destructive' })
@@ -516,8 +525,10 @@ export function ScriptWorkbench() {
     setGeneratingStrategy(true)
     setGenerationProgress(30)
     try {
-      const content = editingStrategy ? strategyEdit : parsedContent.skeleton
-      const result = await api.dramas.generateStrategy(dramaId, content || '')
+      // FE-1 fix: generate-strategy takes the SKELETON as input, not the strategy.
+      // Use the currently-edited skeleton if editing, otherwise the stored skeleton.
+      const skeletonContent = editingSkeleton ? skeletonEdit : (parsedContent.skeleton || '')
+      const result = await api.dramas.generateStrategy(dramaId, skeletonContent)
       if (!mountedRef.current) return
       setParsedContent((prev) => ({ ...prev, strategy: result.strategy, strategyGeneratedAt: new Date().toISOString() }))
       setStrategyEdit(result.strategy)
@@ -589,6 +600,105 @@ export function ScriptWorkbench() {
   }
 
   // ════════════════════════════════════════════════════════════
+  // Stepper-specific handlers (save / regenerate / delete)
+  // ════════════════════════════════════════════════════════════
+
+  const handleSaveSkeleton = async () => {
+    if (!novel) return
+    setSavingSkeleton(true)
+    try {
+      await api.novels.updateParsedContent(novel.id, 'skeleton', skeletonEdit)
+      if (!mountedRef.current) return
+      setParsedContent((prev) => ({
+        ...prev,
+        skeleton: skeletonEdit,
+        skeletonGeneratedAt: new Date().toISOString(),
+      }))
+      setEditingSkeleton(false)
+      toastRef.current({ title: '骨架已保存' })
+    } catch (err: any) {
+      if (mountedRef.current) {
+        toastRef.current({ title: '保存失败', description: err.message, variant: 'destructive' })
+      }
+    } finally {
+      if (mountedRef.current) setSavingSkeleton(false)
+    }
+  }
+
+  const handleSaveStrategy = async () => {
+    if (!novel) return
+    setSavingStrategy(true)
+    try {
+      await api.novels.updateParsedContent(novel.id, 'strategy', strategyEdit)
+      if (!mountedRef.current) return
+      setParsedContent((prev) => ({
+        ...prev,
+        strategy: strategyEdit,
+        strategyGeneratedAt: new Date().toISOString(),
+      }))
+      setEditingStrategy(false)
+      toastRef.current({ title: '策略已保存' })
+    } catch (err: any) {
+      if (mountedRef.current) {
+        toastRef.current({ title: '保存失败', description: err.message, variant: 'destructive' })
+      }
+    } finally {
+      if (mountedRef.current) setSavingStrategy(false)
+    }
+  }
+
+  const handleRegenerateEpisode = async (epId: string) => {
+    setRegeneratingEp(epId)
+    try {
+      await api.episodes.regenerateScript(epId)
+      if (!mountedRef.current) return
+      // Clear cached script content for this episode so it re-fetches
+      setEpisodeScripts((prev) => {
+        const next = { ...prev }
+        delete next[epId]
+        return next
+      })
+      toastRef.current({ title: '剧本已重新生成' })
+      await loadScriptStatus()
+    } catch (err: any) {
+      if (mountedRef.current) {
+        toastRef.current({
+          title: '重新生成失败',
+          description: err.message,
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      if (mountedRef.current) setRegeneratingEp(null)
+    }
+  }
+
+  const handleDeleteNovel = async () => {
+    if (!novel) return
+    if (!confirm('确定删除小说？所有章节、事件、骨架、策略数据将丢失，已生成的剧本不受影响。')) return
+    setDeletingNovel(true)
+    try {
+      await api.novels.delete(novel.id)
+      if (!mountedRef.current) return
+      setNovel(null)
+      setChapters([])
+      setParsedContent({})
+      setEventsData(null)
+      setEpisodes([])
+      setSkeletonEdit('')
+      setStrategyEdit('')
+      setActiveTab('source')
+      toastRef.current({ title: '小说已删除，可重新上传' })
+    } catch (err: any) {
+      if (mountedRef.current) {
+        toastRef.current({ title: '删除失败', description: err.message, variant: 'destructive' })
+      }
+    } finally {
+      if (mountedRef.current) setDeletingNovel(false)
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
   // ★ RENDER ★
   // ════════════════════════════════════════════════════════════
 
@@ -642,32 +752,51 @@ export function ScriptWorkbench() {
               </div>
             </div>
 
+            {/* Chapter search (only shown when there are many chapters) */}
+            {novel && chapters.length > 10 && (
+              <div className="px-3 py-1.5 border-b border-border/40 shrink-0">
+                <Input
+                  placeholder="搜索章节..."
+                  value={chapterSearch}
+                  onChange={(e) => setChapterSearch(e.target.value)}
+                  className="h-7 text-xs"
+                />
+              </div>
+            )}
+
             {/* Chapter list content — 简单 div + overflow-y-auto 替代 ScrollArea */}
             <div className="flex-1 overflow-y-auto">
               {!dataReady ? (
                 <div className="p-4 flex items-center justify-center">
                   <Loader2 className="size-5 animate-spin text-amber-500" />
                 </div>
-              ) : displayChapters.length > 0 ? (
+              ) : filteredChapters.length > 0 ? (
                 <div className="p-2 space-y-0.5">
-                  {displayChapters.map((ch, idx) => (
+                  {filteredChapters.map((ch, idx) => {
+                    // Use original index in displayChapters for selection consistency
+                    const originalIdx = displayChapters.findIndex(
+                      (dc) => dc.index === ch.index
+                    )
+                    const isSelected = selectedChapterIdx === originalIdx
+                    return (
                     <button
                       key={`ch-${ch.index}-${idx}`}
                       className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
-                        selectedChapterIdx === idx
+                        isSelected
                           ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
                           : 'hover:bg-muted/50 text-foreground'
                       }`}
-                      onClick={() => handleChapterClick(idx)}
+                      onClick={() => handleChapterClick(originalIdx)}
                     >
                       <span className={`size-5 rounded flex items-center justify-center text-[10px] font-mono shrink-0 ${
-                        selectedChapterIdx === idx ? 'bg-amber-500/20' : 'bg-muted/60'
+                        isSelected ? 'bg-amber-500/20' : 'bg-muted/60'
                       }`}>
-                        {idx + 1}
+                        {originalIdx + 1}
                       </span>
                       <span className="truncate flex-1">{ch.displayTitle}</span>
                     </button>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : novel ? (
                 <div className="p-4 text-center">
@@ -682,6 +811,8 @@ export function ScriptWorkbench() {
                         </>
                       )}
                     </div>
+                  ) : chapterSearch ? (
+                    <p className="text-xs text-muted-foreground">未找到匹配的章节</p>
                   ) : (
                     <p className="text-xs text-muted-foreground">暂无章节数据</p>
                   )}
@@ -770,66 +901,68 @@ export function ScriptWorkbench() {
               )}
             </div>
 
-            {/* Generation config panel */}
-            <div className="border-t border-border p-3 space-y-3 shrink-0">
-              <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                <Zap className="size-3 text-amber-500" />
-                生成配置
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted-foreground w-8 shrink-0">集范围</span>
-                <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
-                <span className="text-[10px] text-muted-foreground">至</span>
-                <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
-              </div>
-              <div className="space-y-1.5">
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleExtractEvents} disabled={!novel || extractingEvents || isGenerating}>
-                  {extractingEvents ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3 text-amber-500" />}
-                  提取章节事件
-                </Button>
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || generatingSkeleton || isGenerating}>
-                  {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
-                  生成故事骨架
-                </Button>
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleGenerateStrategy} disabled={!parsedContent.skeleton || generatingStrategy || isGenerating}>
-                  {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                  生成改编策略
-                </Button>
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || generatingScripts || isGenerating}>
-                  {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-                  批量生成剧本
+            {/* Delete novel button (replaces generation config — buttons moved into each step) */}
+            {novel && (
+              <div className="border-t border-border p-3 shrink-0 space-y-1.5">
+                {isGenerating && generationProgress > 0 && (
+                  <Progress value={generationProgress} className="h-1.5" />
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-full h-7 text-xs gap-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                  onClick={handleDeleteNovel}
+                  disabled={deletingNovel}
+                >
+                  {deletingNovel ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                  删除小说重新上传
                 </Button>
               </div>
-              {isGenerating && generationProgress > 0 && <Progress value={generationProgress} className="h-1.5" />}
-            </div>
+            )}
           </div>
         )}
 
         {/* ═══ Center Column (flex-1) ═══ */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* Tab 栏 — 简单 button 列表，不用 Radix Tabs */}
-          <div className="border-b border-border px-4 pt-2 shrink-0 flex items-center gap-4">
-            {TABS.map((tab) => {
-              const Icon = tab.icon
-              const isActive = activeTab === tab.key
+          {/* ── Stepper: 5-stage pipeline navigator ── */}
+          <div className="flex items-center justify-center gap-1 px-4 py-2 border-b border-border/50 bg-muted/20 shrink-0 overflow-x-auto">
+            {PIPELINE_STEPS.map((step, idx) => {
+              const isActive = activeTab === step.key
+              const isCompleted =
+                (step.key === 'source' && chapters.length > 0) ||
+                (step.key === 'events' && !!eventsData?.length) ||
+                (step.key === 'skeleton' && !!parsedContent.skeleton) ||
+                (step.key === 'strategy' && !!parsedContent.strategy) ||
+                (step.key === 'scripts' && episodes.length > 0)
+              const Icon = step.icon
+              const isDisabled = !novel && step.key !== 'source'
               return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`text-xs flex items-center gap-1.5 pb-2 border-b-2 transition-colors ${
-                    isActive
-                      ? 'border-amber-500 text-foreground font-medium'
-                      : 'border-transparent text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="size-3.5" />
-                  {tab.label}
-                  {tab.key === 'skeleton' && parsedContent.skeleton && <Check className="size-3 text-emerald-500" />}
-                  {tab.key === 'strategy' && parsedContent.strategy && <Check className="size-3 text-emerald-500" />}
-                  {tab.key === 'scripts' && completedEpisodes > 0 && (
-                    <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5 h-4">{completedEpisodes}</Badge>
+                <div key={step.key} className="flex items-center shrink-0">
+                  <button
+                    onClick={() => setActiveTab(step.key)}
+                    disabled={isDisabled}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : isCompleted
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                        : 'text-muted-foreground hover:bg-muted/50'
+                    } ${isDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                    <span className={`size-5 rounded-full flex items-center justify-center text-[10px] ${
+                      isActive ? 'bg-primary-foreground/20' : isCompleted ? 'bg-emerald-500/20' : 'bg-muted'
+                    }`}>
+                      {isCompleted && !isActive ? <Check className="size-3" /> : <Icon className="size-3" />}
+                    </span>
+                    {step.label}
+                    {step.key === 'scripts' && completedEpisodes > 0 && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5 h-4">{completedEpisodes}</Badge>
+                    )}
+                  </button>
+                  {idx < PIPELINE_STEPS.length - 1 && (
+                    <div className={`w-6 h-px ${isCompleted ? 'bg-emerald-500/40' : 'bg-border'}`} />
                   )}
-                </button>
+                </div>
               )
             })}
           </div>
@@ -892,6 +1025,76 @@ export function ScriptWorkbench() {
               </div>
             )}
 
+            {/* ── Tab: 章节事件 ── */}
+            {activeTab === 'events' && (
+              <div className="p-4 max-w-4xl mx-auto">
+                {!dataReady ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
+                    <p className="text-sm text-muted-foreground">正在加载数据...</p>
+                  </div>
+                ) : eventsData && eventsData.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        共 {eventsData.length} 条章节事件
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEventsData(null)}>
+                          <X className="size-3" />清除
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleExtractEvents} disabled={!novel || extractingEvents || isGenerating}>
+                          {extractingEvents ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3 text-amber-500" />}
+                          重新提取
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border/50 overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/40 text-muted-foreground">
+                            <tr>
+                              <th className="text-left font-medium px-3 py-2">章节</th>
+                              <th className="text-left font-medium px-3 py-2">角色</th>
+                              <th className="text-left font-medium px-3 py-2">事件</th>
+                              <th className="text-left font-medium px-3 py-2">主线</th>
+                              <th className="text-left font-medium px-3 py-2">密度</th>
+                              <th className="text-left font-medium px-3 py-2">预计时长</th>
+                              <th className="text-left font-medium px-3 py-2">情绪</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {eventsData.map((ev, idx) => (
+                              <tr key={idx} className="border-t border-border/40 hover:bg-muted/20">
+                                <td className="px-3 py-2 font-medium text-foreground">{ev.chapter}</td>
+                                <td className="px-3 py-2 text-blue-500">{ev.characters}</td>
+                                <td className="px-3 py-2 text-muted-foreground">{ev.event}</td>
+                                <td className="px-3 py-2">
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">{ev.mainline}</Badge>
+                                </td>
+                                <td className="px-3 py-2 text-muted-foreground">{ev.density}</td>
+                                <td className="px-3 py-2 text-muted-foreground">{ev.estimatedDuration}</td>
+                                <td className="px-3 py-2 text-muted-foreground">{ev.emotion}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<Zap className="size-10 text-amber-500" />}
+                    title="章节事件"
+                    description="提取每章的角色、事件、情绪密度等结构化事件信息，作为生成骨架与剧本的参考"
+                    actionLabel={extractingEvents ? '提取中...' : '提取章节事件'}
+                    onAction={handleExtractEvents}
+                    disabled={!novel || extractingEvents || isGenerating}
+                  />
+                )}
+              </div>
+            )}
+
             {/* ── Tab: 故事骨架 ── */}
             {activeTab === 'skeleton' && (
               <div className="p-4 max-w-4xl mx-auto">
@@ -910,11 +1113,27 @@ export function ScriptWorkbench() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingSkeleton(!editingSkeleton)}>
-                          {editingSkeleton ? <><Check className="size-3" />完成</> : <><FileText className="size-3" />编辑</>}
-                        </Button>
+                        {editingSkeleton ? (
+                          <Button variant="default" size="sm" className="h-7 text-xs gap-1" onClick={handleSaveSkeleton} disabled={savingSkeleton || isGenerating}>
+                            {savingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                            保存到数据库
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingSkeleton(true)}>
+                            <FileText className="size-3" />编辑
+                          </Button>
+                        )}
+                        {editingSkeleton && (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
+                            setSkeletonEdit(parsedContent.skeleton || '')
+                            setEditingSkeleton(false)
+                          }}>
+                            <X className="size-3" />取消
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateSkeleton} disabled={isGenerating}>
-                          <RotateCcw className="size-3" />重新生成
+                          {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+                          重新生成
                         </Button>
                       </div>
                     </div>
@@ -931,7 +1150,7 @@ export function ScriptWorkbench() {
                     icon={<Brain className="size-10 text-amber-500" />}
                     title="故事骨架"
                     description="从小说中提取故事骨架：核心设定、关键删除决策、改编增强建议、分集决策"
-                    actionLabel="生成故事骨架"
+                    actionLabel={generatingSkeleton ? '生成中...' : '生成故事骨架'}
                     onAction={handleGenerateSkeleton}
                     disabled={!novel || isGenerating}
                   />
@@ -957,11 +1176,27 @@ export function ScriptWorkbench() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingStrategy(!editingStrategy)}>
-                          {editingStrategy ? <><Check className="size-3" />完成</> : <><FileText className="size-3" />编辑</>}
-                        </Button>
+                        {editingStrategy ? (
+                          <Button variant="default" size="sm" className="h-7 text-xs gap-1" onClick={handleSaveStrategy} disabled={savingStrategy || isGenerating}>
+                            {savingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                            保存到数据库
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingStrategy(true)}>
+                            <FileText className="size-3" />编辑
+                          </Button>
+                        )}
+                        {editingStrategy && (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
+                            setStrategyEdit(parsedContent.strategy || '')
+                            setEditingStrategy(false)
+                          }}>
+                            <X className="size-3" />取消
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateStrategy} disabled={isGenerating}>
-                          <RotateCcw className="size-3" />重新生成
+                          {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+                          重新生成
                         </Button>
                       </div>
                     </div>
@@ -978,7 +1213,7 @@ export function ScriptWorkbench() {
                     icon={<Sparkles className="size-10 text-amber-500" />}
                     title="改编策略"
                     description="基于故事骨架制定改编策略：核心原则、删除决策、世界观策略、角色处理策略"
-                    actionLabel="生成改编策略"
+                    actionLabel={generatingStrategy ? '生成中...' : '生成改编策略'}
                     onAction={handleGenerateStrategy}
                     disabled={!parsedContent.skeleton || isGenerating}
                   />
@@ -996,12 +1231,30 @@ export function ScriptWorkbench() {
                   </div>
                 ) : episodes.length > 0 ? (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">共 {episodes.length} 集 · 已完成 {completedEpisodes} 集</span>
-                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={loadScriptStatus}>
-                        <RefreshCw className="size-3" />刷新状态
-                      </Button>
+                    {/* Action bar: batch generate + range input + refresh */}
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <span className="text-xs text-muted-foreground">
+                        共 {episodes.length} 集 · 已完成 {completedEpisodes} 集
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-muted-foreground">集范围</span>
+                          <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
+                          <span className="text-[10px] text-muted-foreground">至</span>
+                          <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
+                        </div>
+                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={loadScriptStatus}>
+                          <RefreshCw className="size-3" />刷新状态
+                        </Button>
+                        <Button size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || generatingScripts || isGenerating}>
+                          {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+                          批量生成剧本
+                        </Button>
+                      </div>
                     </div>
+                    {isGenerating && generationProgress > 0 && (
+                      <Progress value={generationProgress} className="h-1.5" />
+                    )}
                     {episodes.map((ep) => (
                       <Card key={ep.id} className="border-border/50 py-0 gap-0">
                         <CardHeader
@@ -1018,7 +1271,27 @@ export function ScriptWorkbench() {
                                 <div className="flex items-center gap-2 mt-0.5"><StatusDot status={ep.scriptStatus} /></div>
                               </div>
                             </div>
-                            <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs gap-1"
+                                disabled={regeneratingEp === ep.id || isGenerating}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleRegenerateEpisode(ep.id)
+                                }}
+                                title="重新生成此集剧本"
+                              >
+                                {regeneratingEp === ep.id ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="size-3" />
+                                )}
+                                重新生成此集
+                              </Button>
+                              <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
+                            </div>
                           </div>
                         </CardHeader>
                         {expandedEpisode === ep.id && (
@@ -1040,7 +1313,7 @@ export function ScriptWorkbench() {
                     icon={<FileText className="size-10 text-amber-500" />}
                     title="剧本输出"
                     description="基于故事骨架和改编策略，批量生成每集剧本"
-                    actionLabel="批量生成剧本"
+                    actionLabel={generatingScripts ? '生成中...' : '批量生成剧本'}
                     onAction={handleGenerateScripts}
                     disabled={!parsedContent.strategy || isGenerating}
                   />
@@ -1154,30 +1427,6 @@ export function ScriptWorkbench() {
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0">未生成</Badge>
                     )}
                   </div>
-                </div>
-              </div>
-
-              {/* 集范围配置 */}
-              <div className="space-y-2">
-                <span className="text-xs font-medium text-muted-foreground">集范围配置</span>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
-                  <span className="text-[10px] text-muted-foreground">至</span>
-                  <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
-                </div>
-                <div className="space-y-1.5 pt-1">
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || isGenerating}>
-                    {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
-                    生成故事骨架
-                  </Button>
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleGenerateStrategy} disabled={!parsedContent.skeleton || isGenerating}>
-                    {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                    生成改编策略
-                  </Button>
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || isGenerating}>
-                    {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-                    批量生成剧本
-                  </Button>
                 </div>
               </div>
             </div>

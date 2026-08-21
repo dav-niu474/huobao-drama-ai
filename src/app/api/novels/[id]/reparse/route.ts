@@ -1,43 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { splitChapters, parseNovelFile } from '@/lib/novel-parser'
+import { requireAuth } from '@/lib/auth-helpers'
+import { splitChapters } from '@/lib/novel-parser'
 
 // POST /api/novels/[id]/reparse — Reparse an existing novel with improved parser
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   const { id } = await params
 
   try {
-    const novel = await db.novel.findUnique({ where: { id } })
+    const novel = await db.novel.findUnique({
+      where: { id },
+      include: { drama: { select: { userId: true } } },
+    })
     if (!novel) {
       return NextResponse.json({ error: 'Novel not found' }, { status: 404 })
     }
 
-    // Get the original text from the novel's rawContent or reconstruct from chapters
-    let rawText = ''
+    // Ownership check
+    if (
+      novel.drama.userId &&
+      novel.drama.userId !== auth.userId &&
+      auth.role !== 'admin'
+    ) {
+      return NextResponse.json({ error: '无权访问' }, { status: 403 })
+    }
 
-    // Try to use the original raw content if available
-    if ((novel as any).rawContent && typeof (novel as any).rawContent === 'string' && (novel as any).rawContent.length > 0) {
-      rawText = (novel as any).rawContent
-    } else if (novel.chapters && Array.isArray(novel.chapters)) {
-      // Reconstruct from existing chapters
-      rawText = (novel.chapters as Array<{ title: string; content: string }>)
-        .map((ch) => `${ch.title}\n\n${ch.content}`)
-        .join('\n\n')
+    // Reconstruct the raw novel text from the existing chapters JSON.
+    // (The Novel schema has no rawContent field — chapters is the canonical source.)
+    let rawText = ''
+    let chaptersArr: Array<{ title: string; content: string }> = []
+
+    if (Array.isArray(novel.chapters)) {
+      chaptersArr = novel.chapters as Array<{ title: string; content: string }>
     } else if (typeof novel.chapters === 'string') {
-      // chapters stored as JSON string
       try {
         const parsed = JSON.parse(novel.chapters)
         if (Array.isArray(parsed)) {
-          rawText = parsed
-            .map((ch: { title: string; content: string }) => `${ch.title}\n\n${ch.content}`)
-            .join('\n\n')
+          chaptersArr = parsed as Array<{ title: string; content: string }>
         }
       } catch {
-        // Can't parse chapters
+        // Can't parse chapters JSON — leave chaptersArr empty
       }
+    }
+
+    if (chaptersArr.length > 0) {
+      rawText = chaptersArr
+        .map((ch) => `${ch.title}\n\n${ch.content}`)
+        .join('\n\n')
     }
 
     if (!rawText || rawText.trim().length === 0) {

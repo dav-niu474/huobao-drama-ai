@@ -49,6 +49,74 @@ export async function GET(
   }
 }
 
+// PATCH /api/novels/[id] — Update specific fields (currently: parsedContent key)
+// Body: { key: 'skeleton' | 'strategy' | 'events' | ..., value: string }
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
+
+    const { id } = await params
+    const body = await request.json().catch(() => ({}))
+
+    const novel = await db.novel.findUnique({
+      where: { id },
+      include: { drama: { select: { userId: true } } },
+    })
+
+    if (!novel) {
+      return NextResponse.json({ error: 'Novel not found' }, { status: 404 })
+    }
+
+    // Check access
+    if (
+      novel.drama.userId &&
+      novel.drama.userId !== auth.userId &&
+      auth.role !== 'admin'
+    ) {
+      return NextResponse.json({ error: '无权修改' }, { status: 403 })
+    }
+
+    // Merge into parsedContent JSON
+    let parsedContent: Record<string, unknown> = {}
+    try {
+      parsedContent = JSON.parse(novel.parsedContent || '{}')
+    } catch {
+      parsedContent = {}
+    }
+
+    if (
+      typeof body.key === 'string' &&
+      body.key.length > 0 &&
+      body.key.length <= 64 &&
+      typeof body.value === 'string'
+    ) {
+      parsedContent[body.key] = body.value
+      if (body.key === 'skeleton') {
+        parsedContent.skeletonGeneratedAt = new Date().toISOString()
+      } else if (body.key === 'strategy') {
+        parsedContent.strategyGeneratedAt = new Date().toISOString()
+      }
+    }
+
+    await db.novel.update({
+      where: { id },
+      data: { parsedContent: JSON.stringify(parsedContent) },
+    })
+
+    return NextResponse.json({ success: true, parsedContent })
+  } catch (error) {
+    console.error('[novels] PATCH failed:', error)
+    return NextResponse.json(
+      { error: 'Failed to update novel' },
+      { status: 500 }
+    )
+  }
+}
+
 // DELETE /api/novels/[id] — Delete novel and reset Drama fields
 export async function DELETE(
   _request: NextRequest,
