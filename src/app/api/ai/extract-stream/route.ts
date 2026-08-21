@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Character, Scene } from '@prisma/client'
 
 // POST /api/ai/extract-stream - AI Extract Characters & Scenes with SSE progress
 export async function POST(request: NextRequest) {
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
           detail: { characterCount: characters.length },
         })))
 
-        const savedCharacters = []
+        const savedCharacters: Character[] = []
         for (let i = 0; i < characters.length; i++) {
           const char = characters[i]
           const saved = await db.character.create({
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
           detail: { sceneCount: scenes.length },
         })))
 
-        const savedScenes = []
+        const savedScenes: Scene[] = []
         for (let i = 0; i < scenes.length; i++) {
           const scene = scenes[i]
           const saved = await db.scene.create({

@@ -234,7 +234,7 @@ export async function GET(
     })
 
     const owner = await db.user.findUnique({
-      where: { id: drama.userId },
+      where: { id: drama.userId || undefined },
       select: { name: true },
     })
 

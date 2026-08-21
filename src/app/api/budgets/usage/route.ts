@@ -62,7 +62,7 @@ export async function GET() {
       (llmUsage._sum.credits || 0)
 
     // 7-day trend
-    const dailyTrend = []
+    const dailyTrend: Array<{ date: string; credits: number }> = []
     for (let i = 6; i >= 0; i--) {
       const day = new Date(now)
       day.setDate(now.getDate() - i)

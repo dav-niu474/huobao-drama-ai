@@ -108,7 +108,7 @@ export function ProductionPanel({
             <Button
               variant="outline"
               className="mt-4"
-              onClick={() => setActiveStep('storyboard')}
+              onClick={() => setActiveStep?.('storyboard')}
             >
               前往分镜
             </Button>

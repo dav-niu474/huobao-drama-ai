@@ -506,10 +506,10 @@ export async function withRetry<T>(
       const shouldRetry =
         (isNvidiaError &&
           retryOnRateLimit &&
-          lastError.status === 429) ||
+          (lastError as any).status === 429) ||
         (isNvidiaError &&
           retryOnServerError &&
-          lastError.status >= 500)
+          (lastError as any).status >= 500)
 
       if (!shouldRetry || attempt === maxRetries) {
         throw lastError

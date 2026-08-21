@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Storyboard } from '@prisma/client'
 
 interface StoryboardShot {
   shotNumber: number
@@ -90,7 +91,7 @@ ${charactersInfo ? `角色列表：\n${charactersInfo}\n` : ''}${scenesInfo ? `�
         temperature: 0.5,
       })
 
-      const savedStoryboards = []
+      const savedStoryboards: Storyboard[] = []
       await db.$transaction(async (tx) => {
         await tx.storyboard.deleteMany({ where: { episodeId } })
         for (const shot of shots) {

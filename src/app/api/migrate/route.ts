@@ -1073,7 +1073,7 @@ export async function GET(request: NextRequest) {
 
       for (const model of models) {
         try {
-          await (db as Record<string, { count: () => Promise<number> }>)[model].count()
+          await (db as unknown as Record<string, { count: () => Promise<number> }>)[model].count()
           results[model] = 'ok'
         } catch {
           results[model] = 'missing'

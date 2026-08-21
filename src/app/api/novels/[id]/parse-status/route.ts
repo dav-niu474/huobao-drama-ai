@@ -41,7 +41,7 @@ export async function GET(
 
     // Get progress from in-memory map
     // Import the progress map from the parse route
-    let progress = null
+    let progress: { status: string; current: number; total: number; message: string } | null = null
     try {
       const { parseProgressMap } = await import('../parse/route')
       progress = parseProgressMap.get(id) || null

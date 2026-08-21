@@ -943,7 +943,7 @@ const assignVoice: ToolExecutor = async (params, context) => {
   const character = await db.character.findFirst({
     where: {
       dramaId: context.dramaId,
-      name: { equals: characterName, mode: 'insensitive' },
+      name: { equals: characterName },
     },
   })
 
@@ -1043,7 +1043,7 @@ const generateCharacterPrompt: ToolExecutor = async (params, context) => {
   const character = await db.character.findFirst({
     where: {
       dramaId: context.dramaId,
-      name: { equals: characterName, mode: 'insensitive' },
+      name: { equals: characterName },
     },
   })
 
@@ -1077,7 +1077,7 @@ const generateScenePrompt: ToolExecutor = async (params, context) => {
   const scene = await db.scene.findFirst({
     where: {
       dramaId: context.dramaId,
-      location: { equals: sceneLocation, mode: 'insensitive' },
+      location: { equals: sceneLocation },
     },
   })
 

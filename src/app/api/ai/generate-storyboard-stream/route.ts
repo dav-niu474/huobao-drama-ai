@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Storyboard } from '@prisma/client'
 
 interface StoryboardShot {
   shotNumber: number
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
           detail: { totalShots: shots.length },
         })))
 
-        const savedStoryboards = []
+        const savedStoryboards: Storyboard[] = []
         await db.$transaction(async (tx) => {
           await tx.storyboard.deleteMany({ where: { episodeId } })
           for (let i = 0; i < shots.length; i++) {

@@ -221,7 +221,7 @@ export function VideoPanel({
                         {hasVideo && (
                           <div className="rounded overflow-hidden border border-emerald-500/20 max-w-sm mb-2">
                             <video
-                              src={sb.videoUrl}
+                              src={sb.videoUrl || undefined}
                               controls
                               className="w-full aspect-video"
                               poster={sb.firstFrameUrl ?? undefined}

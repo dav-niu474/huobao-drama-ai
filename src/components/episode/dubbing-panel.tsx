@@ -196,7 +196,7 @@ export function DubbingPanel({
                           <div className="flex items-center gap-2 mb-2">
                             <Music className="size-3 text-primary/60 flex-shrink-0" />
                             <audio
-                              src={sb.ttsAudioUrl}
+                              src={sb.ttsAudioUrl || undefined}
                               controls
                               className="h-6 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
                               style={{ minWidth: 0 }}

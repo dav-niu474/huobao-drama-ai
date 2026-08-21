@@ -124,7 +124,7 @@ export async function polishAssetPrompts(
           const scenesWithNullPrompt = await db.scene.findMany({
             where: {
               dramaId,
-              prompt: null,
+              prompt: null as any,
             },
           })
           // Merge (scenes with '' are already included, add null ones)

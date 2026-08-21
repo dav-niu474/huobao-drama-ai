@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Character, Scene } from '@prisma/client'
 
 interface ExtractedData {
   characters: Array<{
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
 
       const { characters = [], scenes = [] } = extracted
 
-      const savedCharacters = []
+      const savedCharacters: Character[] = []
       for (const char of characters) {
         const charData = {
           role: char.role || 'supporting',
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
         savedCharacters.push(saved)
       }
 
-      const savedScenes = []
+      const savedScenes: Scene[] = []
       for (const scene of scenes) {
         const sceneData = {
           timeOfDay: scene.timeOfDay || 'day',

@@ -30,7 +30,7 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/components/ui/collapsible'
-import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-execution-panel'
 import { GridGenerateDialog } from './grid-generate-dialog'
 import { statusBadge, shotTypeLabel } from './helpers'
 import type { StoryboardPanelProps } from './types'
@@ -97,7 +97,7 @@ export function StoryboardPanel({
           agentType="storyboard_breaker"
           agentName="分镜拆解专家"
           isRunning={agentExec.isRunning('storyboard_breaker')}
-          logs={agentExec.logs['storyboard_breaker'] || []}
+          logs={(agentExec.logs['storyboard_breaker'] as AgentLogEntry[]) || []}
           resultText={agentExec.resultTexts['storyboard_breaker']}
           duration={agentExec.durations['storyboard_breaker']}
           error={agentExec.errors['storyboard_breaker']}

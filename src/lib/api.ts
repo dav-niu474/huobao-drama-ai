@@ -1387,7 +1387,7 @@ export const api = {
       }
     }
 
-    const workers = []
+    const workers: Promise<any>[] = []
     for (let i = 0; i < concurrencyLimit; i++) {
       workers.push(processNext())
     }

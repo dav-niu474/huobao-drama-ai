@@ -484,7 +484,7 @@ class BatchPipelineManager {
     // If still no rawContent, mark as skipped (we can't proceed without it)
     const finalEp = await db.episode.findUnique({ where: { id: episode.id } })
     if (!finalEp?.rawContent?.trim()) {
-      console.warn(`[BatchPipeline] Episode ${episode.episodeNumber} has no rawContent — skipping script steps`)
+      console.warn(`[BatchPipeline] Episode ${episode.id} has no rawContent — skipping script steps`)
     }
   }
 
@@ -806,10 +806,10 @@ class BatchPipelineManager {
         }
       )
       if (!response.ok) {
-        console.warn(`[BatchPipeline] Merge failed for episode ${episode.episodeNumber}`)
+        console.warn(`[BatchPipeline] Merge failed for episode ${episode.id}`)
       }
     } catch (err) {
-      console.warn(`[BatchPipeline] Merge failed for episode ${episode.episodeNumber}:`, err)
+      console.warn(`[BatchPipeline] Merge failed for episode ${episode.id}:`, err)
     }
   }
 

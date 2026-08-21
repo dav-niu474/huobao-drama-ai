@@ -1712,7 +1712,14 @@ export function SettingsView() {
     async (agentType: string, config: Partial<AgentInfo['config']>) => {
       setAgentSaving(agentType)
       try {
-        const result = await api.agents.update(agentType, config)
+        // Coerce null model back to undefined — the API client types
+        // expect `model?: string` (Prisma treats null/undefined the same
+        // for optional fields, but the TS contract here is `string | undefined`).
+        const { model, ...rest } = config
+        const result = await api.agents.update(agentType, {
+          ...rest,
+          model: model || undefined,
+        })
         setAgentsList((prev) =>
           prev.map((a) =>
             a.agentType === agentType
