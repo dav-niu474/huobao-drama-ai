@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- 国家超算互联网 Seedance 视频适配器 — 支持文生视频/图生视频/首末帧，4-15秒时长，480p/720p/1080p 分辨率
+- SCnet 供应商预设 — Seedance2.0 / 1.0 Pro / 1.0 Lite 模型
+- 环境变量 SCNET_API_KEY 支持
+
 ## [0.9.2] - 2026-06-26
 
 ### Security
@@ -20,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复 AI 配额检查不区分用户 — checkAiGenerationLimit 添加 userId 过滤
 - 修复 Episode 6 个路由无鉴权 — 全部添加 requireAuth() 守卫
 - 修复 aiClient._userId 并发污染 — AsyncLocalStorage 替代全局属性
-- 修复 currentUploadTempId 并发不安全 — AsyncLocalStorage 替代全局变量
+- 修复 currentUploadTempId 并发不安全 — AsyncLocalStorage
 - 修复 Usage Tracker 竞争条件 — increment 原子操作
 - 修复 setActiveProvider 非原子操作 — db.$transaction 包裹
 - 修复资源所有权缺失 — generations/bulk-lock 添加所有权校验

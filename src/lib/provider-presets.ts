@@ -370,6 +370,20 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
+      provider: 'scnet',
+      name: '国家超算互联网 Seedance',
+      defaultBaseUrl: 'https://api.scnet.cn',
+      defaultModel: 'Seedance2.0',
+      description: '国家超算互联网 Seedance 视频生成 — 支持文生视频/图生视频/首末帧/参考音视频，时长 4-15 秒，最高 1080p',
+      envKey: 'SCNET_API_KEY',
+      availableModels: [
+        { id: 'Seedance2.0', name: 'Seedance 2.0', tags: ['推荐', '最新'] },
+        { id: 'Seedance1.0', name: 'Seedance 1.0' },
+        { id: 'Seedance1.0-pro', name: 'Seedance 1.0 Pro', tags: ['专业'] },
+        { id: 'Seedance1.0-lite', name: 'Seedance 1.0 Lite', tags: ['快速'] },
+      ],
+    },
+    {
       provider: 'custom',
       name: '自定义视频接口',
       defaultBaseUrl: '',
