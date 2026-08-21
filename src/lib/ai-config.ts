@@ -6,7 +6,24 @@
 // with env var fallbacks.
 // ============================================================
 
+import { AsyncLocalStorage } from 'async_hooks'
 import { db } from '@/lib/db'
+
+// ============================================================
+// AsyncTaskError — signals that an AI provider returned an
+// async task_id which the caller must poll for. Throwing this
+// allows API routes to differentiate "task started" from real
+// failures and return a 200 with the taskId for client polling.
+// ============================================================
+
+export class AsyncTaskError extends Error {
+  taskId: string
+  constructor(taskId: string) {
+    super(`ASYNC_TASK:${taskId}`)
+    this.name = 'AsyncTaskError'
+    this.taskId = taskId
+  }
+}
 
 // Re-export types and presets from the client-safe module
 export type { AiCategory, ModelOption, ProviderPreset } from '@/lib/provider-presets'
@@ -14,6 +31,9 @@ export { PROVIDER_PRESETS } from '@/lib/provider-presets'
 
 // Import for internal use
 import { PROVIDER_PRESETS, type AiCategory, type ProviderPreset } from '@/lib/provider-presets'
+
+// AsyncLocalStorage for per-request userId propagation into aiClient methods
+export const userIdContext = new AsyncLocalStorage<string>()
 
 // ============================================================
 // Reference Image Pre-fetching (for providers needing base64 inline data)
@@ -309,30 +329,32 @@ export async function getExistingProviderConfig(
  * Set only one active provider per category (deactivate others).
  */
 export async function setActiveProvider(category: AiCategory, provider: string): Promise<void> {
-  await db.aiProvider.updateMany({
-    where: { category },
-    data: { isActive: false },
-  })
-  await db.aiProvider.upsert({
-    where: {
-      category_provider: {
+  await db.$transaction([
+    db.aiProvider.updateMany({
+      where: { category },
+      data: { isActive: false },
+    }),
+    db.aiProvider.upsert({
+      where: {
+        category_provider: {
+          category,
+          provider,
+        },
+      },
+      create: {
         category,
         provider,
+        name: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.name || provider,
+        apiKey: '',
+        baseUrl: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.defaultBaseUrl || '',
+        model: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.defaultModel || '',
+        isActive: true,
       },
-    },
-    create: {
-      category,
-      provider,
-      name: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.name || provider,
-      apiKey: '',
-      baseUrl: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.defaultBaseUrl || '',
-      model: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.defaultModel || '',
-      isActive: true,
-    },
-    update: {
-      isActive: true,
-    },
-  })
+      update: {
+        isActive: true,
+      },
+    }),
+  ])
 }
 
 /**
@@ -419,9 +441,6 @@ export async function autoInitProviders(): Promise<string[]> {
 // ============================================================
 
 export const aiClient = {
-  // Optional userId override — set before calling methods to use user-level keys
-  _userId: undefined as string | undefined,
-
   // ---- Chat / LLM ----
 
   async chatCompletion(
@@ -432,7 +451,7 @@ export const aiClient = {
       model?: string
     }
   ) {
-    const provider = await getActiveProviderForUser('llm', this._userId)
+    const provider = await getActiveProviderForUser('llm', userIdContext.getStore())
     if (!provider) {
       throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
     }
@@ -527,7 +546,7 @@ export const aiClient = {
     negativePrompt?: string,
     options?: { width?: number; height?: number; size?: string; referenceImages?: string[] }
   ): Promise<string> {
-    const provider = await getActiveProviderForUser('image', this._userId)
+    const provider = await getActiveProviderForUser('image', userIdContext.getStore())
     if (!provider) {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
     }
@@ -577,16 +596,14 @@ export const aiClient = {
     // For Vercel compatibility, return immediately with taskId
     // Client will poll /api/ai/poll-status for results
     if (parsed.isAsync && parsed.taskId) {
-      const err = new Error(`ASYNC_TASK:${parsed.taskId}`)
-      err.name = 'AsyncTaskError'
-      throw err
+      throw new AsyncTaskError(parsed.taskId)
     }
 
     throw new Error('图片生成返回数据为空')
   },
 
   async _pollImageTask(
-    adapter: import('@/lib/adapters/image').ImageProviderAdapter,
+    adapter: import('@/lib/adapters/types').ImageProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
     maxPolls = 24,
@@ -748,7 +765,7 @@ export const aiClient = {
     prompt: string,
     firstFrameUrl?: string
   ): Promise<void> {
-    const provider = await getActiveProviderForUser('video', this._userId)
+    const provider = await getActiveProviderForUser('video', userIdContext.getStore())
     if (!provider) {
       throw new Error('未配置视频生成供应商。请在设置中配置 API Key。')
     }
@@ -787,9 +804,7 @@ export const aiClient = {
           where: { id: storyboardId },
           data: { status: 'processing' },
         })
-        const err = new Error(`ASYNC_TASK:${parsed.taskId}`)
-        err.name = 'AsyncTaskError'
-        throw err
+        throw new AsyncTaskError(parsed.taskId)
       }
 
       await db.storyboard.update({
@@ -806,7 +821,7 @@ export const aiClient = {
   },
 
   async _pollVideoTask(
-    adapter: import('@/lib/adapters/video').VideoProviderAdapter,
+    adapter: import('@/lib/adapters/types').VideoProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
     maxPolls = 36,
@@ -842,7 +857,7 @@ export const aiClient = {
     voiceId?: string,
     voiceStyle?: string
   ): Promise<string> {
-    const provider = await getActiveProviderForUser('tts', this._userId)
+    const provider = await getActiveProviderForUser('tts', userIdContext.getStore())
     if (!provider) {
       throw new Error('未配置语音合成供应商。请在设置中配置 API Key。')
     }
@@ -888,7 +903,7 @@ export const aiClient = {
     } catch (error) {
       await db.storyboard.update({
         where: { id: storyboardId },
-        data: { status: 'failed' },
+        data: { ttsAudioUrl: null },
       })
       throw error
     }
@@ -904,7 +919,7 @@ export const aiClient = {
     responsePreview?: string
   }> {
     try {
-      const provider = await getActiveProviderForUser(category, this._userId)
+      const provider = await getActiveProviderForUser(category, userIdContext.getStore())
       if (!provider) {
         return {
           success: false,

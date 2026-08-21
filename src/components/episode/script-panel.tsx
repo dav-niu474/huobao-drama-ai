@@ -5,7 +5,7 @@ import { Loader2, Sparkles, RefreshCw, Download, BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
-import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-execution-panel'
 import { statusBadge } from './helpers'
 import type { ScriptPanelProps } from './types'
 
@@ -162,7 +162,7 @@ export function ScriptPanel({
           agentType="script_rewriter"
           agentName="剧本改写专家"
           isRunning={agentExec.isRunning('script_rewriter')}
-          logs={agentExec.logs['script_rewriter'] || []}
+          logs={(agentExec.logs['script_rewriter'] as AgentLogEntry[]) || []}
           resultText={agentExec.resultTexts['script_rewriter']}
           duration={agentExec.durations['script_rewriter']}
           error={agentExec.errors['script_rewriter']}

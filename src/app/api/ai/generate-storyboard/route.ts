@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
+import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Storyboard } from '@prisma/client'
 
 interface StoryboardShot {
   shotNumber: number
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
     const { episodeId } = await request.json()
 
     if (!episodeId) {
@@ -90,31 +91,30 @@ ${charactersInfo ? `角色列表：\n${charactersInfo}\n` : ''}${scenesInfo ? `�
         temperature: 0.5,
       })
 
-      await db.storyboard.deleteMany({
-        where: { episodeId },
+      const savedStoryboards: Storyboard[] = []
+      await db.$transaction(async (tx) => {
+        await tx.storyboard.deleteMany({ where: { episodeId } })
+        for (const shot of shots) {
+          const saved = await tx.storyboard.create({
+            data: {
+              episodeId,
+              shotNumber: shot.shotNumber || savedStoryboards.length + 1,
+              title: shot.title || '',
+              shotType: shot.shotType || 'medium',
+              cameraAngle: shot.cameraAngle || 'eye-level',
+              cameraMovement: shot.cameraMovement || 'static',
+              action: shot.action || '',
+              dialogue: shot.dialogue || null,
+              dialogueChar: shot.dialogueChar || null,
+              duration: shot.duration ?? 3.0,
+              imagePrompt: shot.imagePrompt || null,
+              videoPrompt: shot.videoPrompt || null,
+              atmosphere: shot.atmosphere || null,
+            },
+          })
+          savedStoryboards.push(saved)
+        }
       })
-
-      const savedStoryboards = []
-      for (const shot of shots) {
-        const saved = await db.storyboard.create({
-          data: {
-            episodeId,
-            shotNumber: shot.shotNumber || savedStoryboards.length + 1,
-            title: shot.title || '',
-            shotType: shot.shotType || 'medium',
-            cameraAngle: shot.cameraAngle || 'eye-level',
-            cameraMovement: shot.cameraMovement || 'static',
-            action: shot.action || '',
-            dialogue: shot.dialogue || null,
-            dialogueChar: shot.dialogueChar || null,
-            duration: shot.duration ?? 3.0,
-            imagePrompt: shot.imagePrompt || null,
-            videoPrompt: shot.videoPrompt || null,
-            atmosphere: shot.atmosphere || null,
-          },
-        })
-        savedStoryboards.push(saved)
-      }
 
       await db.episode.update({
         where: { id: episodeId },
@@ -129,6 +129,7 @@ ${charactersInfo ? `角色列表：\n${charactersInfo}\n` : ''}${scenesInfo ? `�
       })
       throw aiError
     }
+    })
   } catch (error) {
     console.error('Failed to generate storyboard:', error)
     return NextResponse.json(

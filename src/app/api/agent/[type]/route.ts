@@ -35,6 +35,10 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ type: string }> }
 ) {
+  // Auth check — only logged in users can read agent config
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   const { type } = await params
 
   if (!isValidAgentType(type)) {

@@ -6,7 +6,7 @@
 
 import { db } from '@/lib/db'
 import { getArtPrompt, validateArtStyle } from '@/lib/art-prompt-loader'
-import { aiClient } from '@/lib/ai-config'
+import { aiClient, userIdContext } from '@/lib/ai-config'
 
 // ============================================================
 // Types
@@ -66,139 +66,143 @@ export async function polishAssetPrompts(
   let polished = 0
   let skipped = 0
 
-  // Set userId on aiClient for per-user provider resolution
-  if (options?.userId) {
-    aiClient._userId = options.userId
-  }
-
-  try {
-    // Polish characters
-    if (characterTemplate) {
-      const characters = await db.character.findMany({
-        where: {
-          dramaId,
-          ...(options?.overwriteExisting ? {} : { imagePrompt: null }),
-        },
-      })
-
-      for (const character of characters) {
-        try {
-          const result = await polishCharacterPromptInternal(
-            character,
-            characterTemplate,
-            artStyle
-          )
-          if (result.newPrompt && result.newPrompt !== result.oldPrompt) {
-            polished++
-          } else {
-            skipped++
-          }
-        } catch (err) {
-          console.error(
-            `[prompt-polisher] Failed to polish character ${character.name}:`,
-            err instanceof Error ? err.message : String(err)
-          )
-          skipped++
-        }
-      }
-
-      // Also handle characters that already have prompts but are being re-polished
-      if (options?.overwriteExisting) {
-        // Already handled above — overwriteExisting means we don't filter by imagePrompt: null
-      }
-    } else {
-      // No template — skip all characters
-      const charCount = await db.character.count({ where: { dramaId } })
-      skipped += charCount
-    }
-
-    // Polish scenes
-    if (sceneTemplate) {
-      const scenes = await db.scene.findMany({
-        where: {
-          dramaId,
-          ...(options?.overwriteExisting ? {} : { prompt: '' }),
-        },
-      })
-
-      // Also get scenes with null/empty prompt
-      if (!options?.overwriteExisting) {
-        const scenesWithNullPrompt = await db.scene.findMany({
+  // Run the entire polish pass inside the user's ALS context so aiClient
+  // resolves per-user provider keys correctly.
+  const run = async () => {
+    try {
+      // Polish characters
+      if (characterTemplate) {
+        const characters = await db.character.findMany({
           where: {
             dramaId,
-            prompt: null,
+            ...(options?.overwriteExisting ? {} : { imagePrompt: null }),
           },
         })
-        // Merge (scenes with '' are already included, add null ones)
-        const existingIds = new Set(scenes.map((s) => s.id))
-        for (const s of scenesWithNullPrompt) {
-          if (!existingIds.has(s.id)) {
-            scenes.push(s)
-          }
-        }
-      }
 
-      for (const scene of scenes) {
-        try {
-          const result = await polishScenePromptInternal(
-            scene,
-            sceneTemplate,
-            artStyle
-          )
-          if (result.newPrompt && result.newPrompt !== result.oldPrompt) {
-            polished++
-          } else {
+        for (const character of characters) {
+          try {
+            const result = await polishCharacterPromptInternal(
+              character,
+              characterTemplate,
+              artStyle
+            )
+            if (result.newPrompt && result.newPrompt !== result.oldPrompt) {
+              polished++
+            } else {
+              skipped++
+            }
+          } catch (err) {
+            console.error(
+              `[prompt-polisher] Failed to polish character ${character.name}:`,
+              err instanceof Error ? err.message : String(err)
+            )
             skipped++
           }
-        } catch (err) {
-          console.error(
-            `[prompt-polisher] Failed to polish scene ${scene.location}:`,
-            err instanceof Error ? err.message : String(err)
-          )
-          skipped++
         }
+
+        // Also handle characters that already have prompts but are being re-polished
+        if (options?.overwriteExisting) {
+          // Already handled above — overwriteExisting means we don't filter by imagePrompt: null
+        }
+      } else {
+        // No template — skip all characters
+        const charCount = await db.character.count({ where: { dramaId } })
+        skipped += charCount
       }
-    } else {
-      const sceneCount = await db.scene.count({ where: { dramaId } })
-      skipped += sceneCount
-    }
 
-    // Polish props
-    if (propTemplate) {
-      const props = await db.prop.findMany({
-        where: {
-          dramaId,
-          ...(options?.overwriteExisting ? {} : { imagePrompt: null }),
-        },
-      })
+      // Polish scenes
+      if (sceneTemplate) {
+        const scenes = await db.scene.findMany({
+          where: {
+            dramaId,
+            ...(options?.overwriteExisting ? {} : { prompt: '' }),
+          },
+        })
 
-      for (const prop of props) {
-        try {
-          const result = await polishPropPromptInternal(
-            prop,
-            propTemplate,
-            artStyle
-          )
-          if (result.newPrompt && result.newPrompt !== result.oldPrompt) {
-            polished++
-          } else {
+        // Also get scenes with null/empty prompt
+        if (!options?.overwriteExisting) {
+          const scenesWithNullPrompt = await db.scene.findMany({
+            where: {
+              dramaId,
+              prompt: null as any,
+            },
+          })
+          // Merge (scenes with '' are already included, add null ones)
+          const existingIds = new Set(scenes.map((s) => s.id))
+          for (const s of scenesWithNullPrompt) {
+            if (!existingIds.has(s.id)) {
+              scenes.push(s)
+            }
+          }
+        }
+
+        for (const scene of scenes) {
+          try {
+            const result = await polishScenePromptInternal(
+              scene,
+              sceneTemplate,
+              artStyle
+            )
+            if (result.newPrompt && result.newPrompt !== result.oldPrompt) {
+              polished++
+            } else {
+              skipped++
+            }
+          } catch (err) {
+            console.error(
+              `[prompt-polisher] Failed to polish scene ${scene.location}:`,
+              err instanceof Error ? err.message : String(err)
+            )
             skipped++
           }
-        } catch (err) {
-          console.error(
-            `[prompt-polisher] Failed to polish prop ${prop.name}:`,
-            err instanceof Error ? err.message : String(err)
-          )
-          skipped++
         }
+      } else {
+        const sceneCount = await db.scene.count({ where: { dramaId } })
+        skipped += sceneCount
       }
-    } else {
-      const propCount = await db.prop.count({ where: { dramaId } })
-      skipped += propCount
+
+      // Polish props
+      if (propTemplate) {
+        const props = await db.prop.findMany({
+          where: {
+            dramaId,
+            ...(options?.overwriteExisting ? {} : { imagePrompt: null }),
+          },
+        })
+
+        for (const prop of props) {
+          try {
+            const result = await polishPropPromptInternal(
+              prop,
+              propTemplate,
+              artStyle
+            )
+            if (result.newPrompt && result.newPrompt !== result.oldPrompt) {
+              polished++
+            } else {
+              skipped++
+            }
+          } catch (err) {
+            console.error(
+              `[prompt-polisher] Failed to polish prop ${prop.name}:`,
+              err instanceof Error ? err.message : String(err)
+            )
+            skipped++
+          }
+        }
+      } else {
+        const propCount = await db.prop.count({ where: { dramaId } })
+        skipped += propCount
+      }
+    } finally {
+      // ALS context is auto-unwound — nothing to clear manually
     }
-  } finally {
-    // Clear userId on aiClient
-    aiClient._userId = undefined
+  }
+
+  if (options?.userId) {
+    await userIdContext.run(options.userId, run)
+  } else {
+    await run()
   }
 
   return { polished, skipped }

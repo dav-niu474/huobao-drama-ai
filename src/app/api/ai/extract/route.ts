@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
+import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Character, Scene } from '@prisma/client'
 
 interface ExtractedData {
   characters: Array<{
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
     const { episodeId, dramaId } = await request.json()
 
     if (!episodeId || !dramaId) {
@@ -66,32 +67,52 @@ export async function POST(request: NextRequest) {
 
       const { characters = [], scenes = [] } = extracted
 
-      const savedCharacters = []
+      const savedCharacters: Character[] = []
       for (const char of characters) {
-        const saved = await db.character.create({
-          data: {
-            dramaId,
-            name: char.name || 'Unknown',
-            role: char.role || 'supporting',
-            gender: char.gender || 'unknown',
-            appearance: char.appearance || '',
-            personality: char.personality || '',
-          },
+        const charData = {
+          role: char.role || 'supporting',
+          gender: char.gender || 'unknown',
+          appearance: char.appearance || '',
+          personality: char.personality || '',
+        }
+        const existing = await db.character.findFirst({
+          where: { dramaId, name: char.name || 'Unknown' },
         })
+        let saved
+        if (existing) {
+          saved = await db.character.update({
+            where: { id: existing.id },
+            data: charData,
+          })
+        } else {
+          saved = await db.character.create({
+            data: { dramaId, name: char.name || 'Unknown', ...charData },
+          })
+        }
         savedCharacters.push(saved)
       }
 
-      const savedScenes = []
+      const savedScenes: Scene[] = []
       for (const scene of scenes) {
-        const saved = await db.scene.create({
-          data: {
-            dramaId,
-            location: scene.location || 'Unknown',
-            timeOfDay: scene.timeOfDay || 'day',
-            description: scene.description || '',
-            prompt: scene.prompt || '',
-          },
+        const sceneData = {
+          timeOfDay: scene.timeOfDay || 'day',
+          description: scene.description || '',
+          prompt: scene.prompt || '',
+        }
+        const existingScene = await db.scene.findFirst({
+          where: { dramaId, location: scene.location || 'Unknown' },
         })
+        let saved
+        if (existingScene) {
+          saved = await db.scene.update({
+            where: { id: existingScene.id },
+            data: sceneData,
+          })
+        } else {
+          saved = await db.scene.create({
+            data: { dramaId, location: scene.location || 'Unknown', ...sceneData },
+          })
+        }
         savedScenes.push(saved)
       }
 
@@ -111,6 +132,7 @@ export async function POST(request: NextRequest) {
       })
       throw aiError
     }
+    })
   } catch (error) {
     console.error('Failed to extract characters and scenes:', error)
     return NextResponse.json(

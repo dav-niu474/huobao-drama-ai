@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import { AgentExecutionPanel } from '@/components/agent-execution-panel'
+import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-execution-panel'
 import { api } from '@/lib/api'
 import type { VoicePanelProps } from './types'
 
@@ -283,7 +283,7 @@ export function VoicePanel({
           agentType="voice_assigner"
           agentName="音色分配师"
           isRunning={agentExec.isRunning('voice_assigner')}
-          logs={agentExec.logs['voice_assigner'] || []}
+          logs={(agentExec.logs['voice_assigner'] as AgentLogEntry[]) || []}
           resultText={agentExec.resultTexts['voice_assigner']}
           duration={agentExec.durations['voice_assigner']}
           error={agentExec.errors['voice_assigner']}

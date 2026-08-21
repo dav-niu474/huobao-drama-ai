@@ -221,7 +221,7 @@ export const authOptions: NextAuthOptions = {
       // Update session (e.g., when user updates profile)
       if (trigger === 'update' && session) {
         token.name = session.name ?? token.name
-        token.role = session.role ?? token.role
+        // token.role = session.role ?? token.role  // REMOVED: prevents privilege escalation
         token.avatar = session.avatar ?? token.avatar
       }
 

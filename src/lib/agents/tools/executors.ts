@@ -6,6 +6,7 @@
 // to pass these IDs (preventing hallucination).
 // ============================================================
 
+import { AsyncLocalStorage } from 'async_hooks'
 import { db } from '@/lib/db'
 import { VoiceEntry, getActiveProviderVoices, VOICE_CATALOG } from '@/lib/voice-catalog'
 
@@ -31,11 +32,14 @@ export function storeUploadedText(text: string): string {
 
 /**
  * Retrieve and remove uploaded text by temp ID.
+ * If no tempId is provided, falls back to the AsyncLocalStorage context.
  */
-function consumeUploadedText(tempId: string): string | null {
-  const text = uploadedTextStore.get(tempId)
+function consumeUploadedText(tempId?: string): string | null {
+  const id = tempId ?? uploadContext.getStore()
+  if (!id) return null
+  const text = uploadedTextStore.get(id)
   if (text) {
-    uploadedTextStore.delete(tempId)
+    uploadedTextStore.delete(id)
   }
   return text || null
 }
@@ -81,22 +85,33 @@ export interface ParsedScriptResult {
   summary: string
 }
 
-// Track the tempId currently being processed
-let currentUploadTempId: string | null = null
+// AsyncLocalStorage carries the per-request upload tempId so the
+// script_parser agent tools can read uploaded text without a module-level global.
+const uploadContext = new AsyncLocalStorage<string>()
 
 /**
- * Set the current upload temp ID for the script_parser agent.
- * Called before agent execution starts.
+ * Run a callback within an upload-temp-id context.
+ * Agent tools executed inside `callback` can call `readUploadedText`
+ * (or `consumeUploadedText()` without args) to retrieve the uploaded text.
  */
-export function setCurrentUploadTempId(tempId: string): void {
-  currentUploadTempId = tempId
+export function runWithUploadTempId<T>(tempId: string, callback: () => Promise<T>): Promise<T> {
+  return uploadContext.run(tempId, callback)
 }
 
 /**
- * Clear the current upload temp ID after agent execution.
+ * @deprecated Use `runWithUploadTempId(tempId, callback)` instead.
+ * Kept for backward compatibility — no-op since the tempId is now
+ * propagated via AsyncLocalStorage.
+ */
+export function setCurrentUploadTempId(_tempId: string): void {
+  // no-op: use runWithUploadTempId to set the ALS context.
+}
+
+/**
+ * @deprecated No-op kept for backward compatibility.
  */
 export function clearCurrentUploadTempId(): void {
-  currentUploadTempId = null
+  // no-op: ALS context auto-unwinds.
 }
 
 export type ToolExecutor = (
@@ -109,10 +124,11 @@ export type ToolExecutor = (
 // ============================================================
 
 const readUploadedText: ToolExecutor = async (_params, _context) => {
-  if (!currentUploadTempId) {
+  const tempId = uploadContext.getStore()
+  if (!tempId) {
     throw new Error('No uploaded text available. The upload temp ID was not set.')
   }
-  const text = consumeUploadedText(currentUploadTempId)
+  const text = consumeUploadedText(tempId)
   if (!text) {
     throw new Error('Uploaded text not found or has expired. Please re-upload the file.')
   }
@@ -927,7 +943,7 @@ const assignVoice: ToolExecutor = async (params, context) => {
   const character = await db.character.findFirst({
     where: {
       dramaId: context.dramaId,
-      name: { equals: characterName, mode: 'insensitive' },
+      name: { equals: characterName },
     },
   })
 
@@ -1027,7 +1043,7 @@ const generateCharacterPrompt: ToolExecutor = async (params, context) => {
   const character = await db.character.findFirst({
     where: {
       dramaId: context.dramaId,
-      name: { equals: characterName, mode: 'insensitive' },
+      name: { equals: characterName },
     },
   })
 
@@ -1061,7 +1077,7 @@ const generateScenePrompt: ToolExecutor = async (params, context) => {
   const scene = await db.scene.findFirst({
     where: {
       dramaId: context.dramaId,
-      location: { equals: sceneLocation, mode: 'insensitive' },
+      location: { equals: sceneLocation },
     },
   })
 

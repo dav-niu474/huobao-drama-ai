@@ -79,6 +79,13 @@ export async function GET(
       },
     })
 
+    // SVG files can carry embedded <script> tags that execute when served
+    // inline. Force a download and disable MIME sniffing to mitigate XSS.
+    if (mimeType === 'image/svg+xml') {
+      response.headers.set('Content-Disposition', 'attachment')
+      response.headers.set('X-Content-Type-Options', 'nosniff')
+    }
+
     return response
   } catch (error) {
     console.error('[files] Error serving file:', error)

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { aiClient } from '@/lib/ai-config'
+import { aiClient, userIdContext, getActiveProviderForUser } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth-helpers'
-import { getActiveProviderForUser } from '@/lib/ai-config'
 import { recordGenerationCost, calcVideoCredits } from '@/lib/cost-tracker'
 
 // POST /api/ai/generate-video - Generate video for a storyboard shot (multi-provider)
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
     const { storyboardId, prompt, firstFrameUrl } = await request.json()
 
     if (!storyboardId) {
@@ -127,6 +126,7 @@ export async function POST(request: NextRequest) {
               model: modelName,
               credits: calcVideoCredits(5),
               generationMs: Date.now() - startTime,
+              userId: auth.userId,
             })
           } catch { /* non-blocking */ }
         }
@@ -157,6 +157,7 @@ export async function POST(request: NextRequest) {
           model: modelName,
           credits: calcVideoCredits(5),
           generationMs: Date.now() - startTime,
+          userId: auth.userId,
         })
       } catch { /* non-blocking */ }
     }
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       storyboard: updatedStoryboard,
       mode: frameUrl ? 'image-to-video' : 'text-to-video',
+    })
     })
   } catch (error) {
     console.error('Failed to generate video:', error)

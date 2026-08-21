@@ -41,7 +41,7 @@ export async function POST(
 
     // Check for duplicate name
     const existing = await db.prop.findFirst({
-      where: { dramaId: id, name: { equals: name, mode: 'insensitive' } },
+      where: { dramaId: id, name: { equals: name } },
     })
 
     if (existing) {

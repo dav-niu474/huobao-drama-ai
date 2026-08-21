@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { aiClient } from '@/lib/ai-config'
+import { aiClient, userIdContext, getActiveProviderForUser } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth-helpers'
-import { getActiveProviderForUser } from '@/lib/ai-config'
 import { recordGenerationCost, calcTtsCredits } from '@/lib/cost-tracker'
 import { saveDataUrl, isDataUrl } from '@/lib/file-storage'
 
@@ -13,12 +12,17 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now()
   let providerName = ''
   let modelName = ''
+  // Declare at function scope so the outer catch block can use them for rollback
+  let storyboardId: string | undefined
+  let previousStatus = 'pending'
 
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
-    const { storyboardId, text, voiceId, voiceStyle } = await request.json()
+    return await userIdContext.run(auth.userId, async () => {
+    const body = await request.json()
+    storyboardId = body.storyboardId
+    const { text, voiceId, voiceStyle } = body
 
     if (!storyboardId) {
       return NextResponse.json(
@@ -29,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     // Get storyboard from DB
     const storyboard = await db.storyboard.findUnique({
-      where: { id: storyboardId },
+      where: { id: storyboardId! },
     })
 
     if (!storyboard) {
@@ -110,14 +114,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Mark storyboard as processing
+    // Mark storyboard as processing — save previous status for rollback on failure
+    const existingStoryboard = await db.storyboard.findUnique({
+      where: { id: storyboardId! },
+      select: { status: true },
+    })
+    previousStatus = existingStoryboard?.status || 'pending'
+
     await db.storyboard.update({
-      where: { id: storyboardId },
+      where: { id: storyboardId! },
       data: { status: 'processing' },
     })
 
     // Generate TTS — aiClient now returns the audio data URL
-    const audioDataUrl = await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle || undefined)
+    const audioDataUrl = await aiClient.generateTts(storyboardId!, ttsText, resolvedVoiceId, resolvedVoiceStyle || undefined)
 
     // Save audio to file storage instead of storing base64 in DB
     let audioUrl = audioDataUrl
@@ -132,7 +142,7 @@ export async function POST(request: NextRequest) {
 
     // Update storyboard with file URL
     const updatedStoryboard = await db.storyboard.update({
-      where: { id: storyboardId },
+      where: { id: storyboardId! },
       data: { ttsAudioUrl: audioUrl, status: 'completed' },
     })
 
@@ -147,13 +157,26 @@ export async function POST(request: NextRequest) {
           model: modelName,
           credits: calcTtsCredits(),
           generationMs: Date.now() - startTime,
+          userId: auth.userId,
         })
       } catch { /* non-blocking */ }
     }
 
     return NextResponse.json({ storyboard: updatedStoryboard })
+    })
   } catch (error) {
     console.error('Failed to generate TTS:', error)
+    // Restore previous storyboard status & clear ttsAudioUrl
+    if (storyboardId) {
+      try {
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { ttsAudioUrl: null, status: previousStatus },
+        })
+      } catch {
+        // non-critical
+      }
+    }
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
       { error: message },

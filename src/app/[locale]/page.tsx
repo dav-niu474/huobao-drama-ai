@@ -14,6 +14,7 @@ import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
 import { MarketplacePage } from '@/components/marketplace/marketplace-page'
 import { SeriesPanel } from '@/components/series-panel'
+import { ErrorBoundary } from '@/components/error-boundary'
 import { Loader2 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
@@ -117,7 +118,9 @@ function AuthGuard() {
 export default function Home() {
   return (
     <SessionProvider refetchInterval={0} refetchOnWindowFocus={false}>
-      <AuthGuard />
+      <ErrorBoundary>
+        <AuthGuard />
+      </ErrorBoundary>
     </SessionProvider>
   )
 }

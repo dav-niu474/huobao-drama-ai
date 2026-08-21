@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { aiClient } from '@/lib/ai-config'
+import { aiClient, userIdContext } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { getActiveProviderForUser } from '@/lib/ai-config'
 import {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
     const {
       prompt,
       size,
@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
               model: modelName,
               credits: calcImageCredits(imageSize),
               generationMs: Date.now() - startTime,
+              userId: auth.userId,
             })
           } catch { /* non-blocking */ }
         }
@@ -207,6 +208,7 @@ export async function POST(request: NextRequest) {
           model: modelName,
           credits: calcImageCredits(imageSize),
           generationMs: Date.now() - startTime,
+          userId: auth.userId,
         })
       } catch { /* non-blocking */ }
     }
@@ -215,6 +217,7 @@ export async function POST(request: NextRequest) {
       imageUrl,
       prompt: enhancedPrompt,
       referenceCount: referenceImages.length,
+    })
     })
   } catch (error) {
     console.error('Failed to generate image:', error)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // ============================================================
 // Import Global Assets API
@@ -13,6 +14,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { id: episodeId } = await params
 
     const episode = await db.episode.findUnique({
@@ -98,6 +101,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { id: episodeId } = await params
     let overwrite = false
 

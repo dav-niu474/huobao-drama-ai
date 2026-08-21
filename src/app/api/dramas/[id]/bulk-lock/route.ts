@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/dramas/[id]/bulk-lock
 export async function POST(
@@ -14,20 +15,29 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 })
-    }
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
 
     const { id: dramaId } = await params
 
     // Verify drama exists
     const drama = await db.drama.findUnique({
       where: { id: dramaId },
-      select: { id: true, defaultLockedConfig: true },
+      select: { id: true, userId: true, defaultLockedConfig: true },
     })
     if (!drama) {
-      return NextResponse.json({ error: 'Drama not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    // Membership check: only the drama owner or an editor/owner member
+    // may bulk-modify episodes.
+    if (drama.userId !== auth.userId) {
+      const member = await db.dramaMember.findFirst({
+        where: { dramaId, userId: auth.userId, role: { in: ['owner', 'editor'] } },
+      })
+      if (!member) {
+        return NextResponse.json({ error: '无权操作此项目' }, { status: 403 })
+      }
     }
 
     const body = await request.json()

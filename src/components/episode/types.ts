@@ -358,4 +358,6 @@ export interface ProductionPanelProps {
   handleCopy: (text: string, fieldId: string) => Promise<void>
   setPreviewMode: (v: boolean) => void
   setCurrentPreviewShot: (v: number | ((prev: number) => number)) => void
+  // Optional navigation back to the storyboard tab (used by the "前往分镜" button)
+  setActiveStep?: (step: string) => void
 }

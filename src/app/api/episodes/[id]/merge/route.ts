@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-helpers'
 import {
   isFFmpegAvailable,
   mergeShots,
@@ -17,6 +18,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { id: episodeId } = await params
 
     // Check FFmpeg availability
@@ -184,6 +187,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { id: episodeId } = await params
 
     // Get the latest merge record for this episode

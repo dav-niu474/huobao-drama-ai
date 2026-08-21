@@ -57,7 +57,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     const taskId = (resp.task_id as string) || (resp.id as string)
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -154,7 +154,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     const taskId = resp.id as string | undefined
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -260,7 +260,7 @@ export class ViduVideoAdapter implements VideoProviderAdapter {
     const taskId = resp.task_id as string | undefined
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -364,7 +364,7 @@ export class AliVideoAdapter implements VideoProviderAdapter {
     const taskId = output?.task_id as string | undefined
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -424,6 +424,150 @@ export class AliVideoAdapter implements VideoProviderAdapter {
 }
 
 // ============================================================================
+// SCnet Seedance Video Adapter (国家超算互联网 Seedance)
+// Doc: https://www.scnet.cn/ac/openapi/doc/2.0/moduleapi/api/video/seedance.html
+// ============================================================================
+
+export class SCnetVideoAdapter implements VideoProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { prompt: string; firstFrameUrl?: string; lastFrameUrl?: string; duration?: number }
+  ): ProviderRequest {
+    const model = config.model || 'Seedance2.0'
+    const baseUrl = config.baseUrl || 'https://api.scnet.cn'
+    const duration = Math.max(4, Math.min(15, params.duration || 5))
+
+    // Build media array — Seedance supports first_frame / last_frame / reference_image / reference_video / reference_audio
+    const media: Array<{ type: string; url: string }> = []
+    if (params.firstFrameUrl) {
+      media.push({ type: 'first_frame', url: params.firstFrameUrl })
+    }
+    if (params.lastFrameUrl) {
+      media.push({ type: 'last_frame', url: params.lastFrameUrl })
+    }
+
+    const input: Record<string, unknown> = { prompt: params.prompt }
+    if (media.length > 0) {
+      input.media = media
+    }
+
+    return {
+      url: joinProviderUrl(baseUrl, '/api/llm/v1', '/videos/generations'),
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+        // Required by Seedance — marks request as async task submission
+        'X-MultiModal-Async': 'true',
+      },
+      body: {
+        model,
+        input,
+        parameters: {
+          generate_audio: false,
+          ratio: '16:9',
+          duration,
+          resolution: '720p',
+          watermark: false,
+          camera_fixed: false,
+        },
+      },
+    }
+  }
+
+  parseGenerateResponse(result: unknown): {
+    isAsync: boolean
+    taskId?: string
+    videoUrl?: string
+  } {
+    const resp = result as Record<string, unknown>
+    const output = resp.output as Record<string, unknown> | undefined
+    const taskId = output?.task_id as string | undefined
+
+    if (!taskId) {
+      // Surface original response so caller can show real API error
+      throw new Error(
+        `SCnet Seedance: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`
+      )
+    }
+
+    return { isAsync: true, taskId }
+  }
+
+  buildPollRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    taskId: string
+  ): ProviderRequest | null {
+    const baseUrl = config.baseUrl || 'https://api.scnet.cn'
+
+    return {
+      url: joinProviderUrl(baseUrl, '/api/llm/v1', `/tasks/${taskId}`),
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: null,
+    }
+  }
+
+  parsePollResponse(result: unknown): {
+    status: 'pending' | 'processing' | 'completed' | 'failed'
+    videoUrl?: string
+    error?: string
+  } {
+    const resp = result as Record<string, unknown>
+    const output = resp.output as Record<string, unknown> | undefined
+
+    if (!output) {
+      return { status: 'pending' }
+    }
+
+    const taskStatus = output.task_status as string
+
+    // succeeded — fetch video URL from output.results array
+    if (taskStatus === 'succeeded') {
+      const results = output.results as string[] | undefined
+      const videoUrl = results && results.length > 0 ? results[0] : undefined
+
+      if (!videoUrl) {
+        return {
+          status: 'failed',
+          error: 'SCnet Seedance: Task succeeded but results array is empty',
+        }
+      }
+      return { status: 'completed', videoUrl }
+    }
+
+    // failed — surface error_code + error_message
+    if (taskStatus === 'failed') {
+      const errCode = output.error_code as string | undefined
+      const errMsg = output.error_message as string | undefined
+      return {
+        status: 'failed',
+        error: `SCnet Seedance: Task failed - ${errCode || 'unknown'}: ${errMsg || 'No error message'}`,
+      }
+    }
+
+    // cancelled
+    if (taskStatus === 'cancelled') {
+      return {
+        status: 'failed',
+        error: 'SCnet Seedance: Task was cancelled',
+      }
+    }
+
+    // running
+    if (taskStatus === 'running') {
+      return { status: 'processing' }
+    }
+
+    // pending or any other non-terminal status
+    return { status: 'pending' }
+  }
+}
+
+// ============================================================================
 // Adapter Registry
 // ============================================================================
 
@@ -432,6 +576,7 @@ export const videoAdapters: Record<string, VideoProviderAdapter> = {
   volcengine: new VolcEngineVideoAdapter(),
   vidu: new ViduVideoAdapter(),
   ali: new AliVideoAdapter(),
+  scnet: new SCnetVideoAdapter(),
 }
 
 export function getVideoAdapter(provider: string): VideoProviderAdapter {

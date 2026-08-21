@@ -19,6 +19,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '无效的密钥' }, { status: 403 })
     }
 
+    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+    const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'unknown'
+    if (!isLocalhost && !process.env.VERCEL) {
+      console.warn(`[auth/fix-admin] Blocked remote access from IP: ${clientIp}`)
+      return NextResponse.json(
+        { error: '此端点仅限本地访问。请使用管理面板修改用户角色。' },
+        { status: 403 }
+      )
+    }
+    const userCount = await db.user.count()
+    if (userCount > 0 && !body.confirmOverwrite) {
+      return NextResponse.json(
+        { error: '已有用户存在。如需覆盖，请设置 confirmOverwrite: true。' },
+        { status: 400 }
+      )
+    }
+
     const adminEmail = email || 'admin@huobao.com'
     const adminPassword = password || 'admin123'
     const adminName = '管理员'

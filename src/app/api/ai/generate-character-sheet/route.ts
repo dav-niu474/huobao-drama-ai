@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { aiClient } from '@/lib/ai-config'
+import { aiClient, userIdContext } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { saveMediaFile } from '@/lib/file-storage'
 
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
     const { characterId, style, referenceImages } = await request.json() as {
       characterId: string
       style?: string
@@ -158,6 +158,7 @@ export async function POST(request: NextRequest) {
       },
       sheetImageUrl,
       portraitImageUrl,
+    })
     })
   } catch (error) {
     console.error('Failed to generate character sheet:', error)

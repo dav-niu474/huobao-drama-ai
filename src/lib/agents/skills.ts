@@ -17,6 +17,9 @@ const SKILL_FILE_MAP: Record<AgentType, string> = {
   storyboard_breaker: 'storyboard_breaker_SKILL.md',
   voice_assigner: 'voice_assigner_SKILL.md',
   grid_prompt_generator: 'grid_prompt_generator_SKILL.md',
+  story_skeleton: 'story_skeleton_SKILL.md',
+  adaptation_strategy: 'adaptation_strategy_SKILL.md',
+  script_generator: 'script_generator_SKILL.md',
 }
 
 /**

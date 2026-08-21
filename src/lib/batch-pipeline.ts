@@ -484,7 +484,7 @@ class BatchPipelineManager {
     // If still no rawContent, mark as skipped (we can't proceed without it)
     const finalEp = await db.episode.findUnique({ where: { id: episode.id } })
     if (!finalEp?.rawContent?.trim()) {
-      console.warn(`[BatchPipeline] Episode ${episode.episodeNumber} has no rawContent — skipping script steps`)
+      console.warn(`[BatchPipeline] Episode ${episode.id} has no rawContent — skipping script steps`)
     }
   }
 
@@ -806,16 +806,16 @@ class BatchPipelineManager {
         }
       )
       if (!response.ok) {
-        console.warn(`[BatchPipeline] Merge failed for episode ${episode.episodeNumber}`)
+        console.warn(`[BatchPipeline] Merge failed for episode ${episode.id}`)
       }
     } catch (err) {
-      console.warn(`[BatchPipeline] Merge failed for episode ${episode.episodeNumber}:`, err)
+      console.warn(`[BatchPipeline] Merge failed for episode ${episode.id}:`, err)
     }
   }
 
   // ── Internal: Check if batch is paused and wait ──────────────
 
-  private async checkPause(dramaId: string): Promise<void> {
+  private async checkPause(dramaId: string, signal?: AbortSignal): Promise<void> {
     const state = this.batches.get(dramaId)
     if (!state || state.status !== 'paused') return
 
@@ -830,6 +830,15 @@ class BatchPipelineManager {
           resolve()
         }
       }, 2000)
+
+      // Allow callers to abort the wait (e.g., when the batch is cancelled)
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearInterval(interval)
+          this.pauseResolvers.delete(dramaId)
+          resolve()
+        }, { once: true })
+      }
     })
   }
 }

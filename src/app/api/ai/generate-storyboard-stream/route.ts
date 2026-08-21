@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
+import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import type { Storyboard } from '@prisma/client'
 
 interface StoryboardShot {
   shotNumber: number
@@ -22,7 +23,7 @@ interface StoryboardShot {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth()
   if (auth.error) return auth.error
-  aiClient._userId = auth.userId
+  return await userIdContext.run(auth.userId, async () => {
   const { episodeId } = await request.json()
 
   if (!episodeId) {
@@ -129,18 +130,14 @@ export async function POST(request: NextRequest) {
           temperature: 0.5,
         })
 
-        // Step 5: Delete existing storyboards
+        // Step 5: Delete existing storyboards + save new ones in a single transaction
         controller.enqueue(encoder.encode(sendEvent({
           step: 'clearing',
           message: '正在清除旧分镜数据...',
           progress: 50,
         })))
 
-        await db.storyboard.deleteMany({
-          where: { episodeId },
-        })
-
-        // Step 6: Save storyboards one by one
+        // Step 6: Save storyboards one by one (within a transaction)
         controller.enqueue(encoder.encode(sendEvent({
           step: 'saving',
           message: `正在保存 ${shots.length} 个分镜镜头...`,
@@ -148,37 +145,40 @@ export async function POST(request: NextRequest) {
           detail: { totalShots: shots.length },
         })))
 
-        const savedStoryboards = []
-        for (let i = 0; i < shots.length; i++) {
-          const shot = shots[i]
-          const saved = await db.storyboard.create({
-            data: {
-              episodeId,
-              shotNumber: shot.shotNumber || savedStoryboards.length + 1,
-              title: shot.title || '',
-              shotType: shot.shotType || 'medium',
-              cameraAngle: shot.cameraAngle || 'eye-level',
-              cameraMovement: shot.cameraMovement || 'static',
-              action: shot.action || '',
-              dialogue: shot.dialogue || null,
-              dialogueChar: shot.dialogueChar || null,
-              duration: shot.duration ?? 3.0,
-              imagePrompt: shot.imagePrompt || null,
-              videoPrompt: shot.videoPrompt || null,
-              atmosphere: shot.atmosphere || null,
-            },
-          })
-          savedStoryboards.push(saved)
+        const savedStoryboards: Storyboard[] = []
+        await db.$transaction(async (tx) => {
+          await tx.storyboard.deleteMany({ where: { episodeId } })
+          for (let i = 0; i < shots.length; i++) {
+            const shot = shots[i]
+            const saved = await tx.storyboard.create({
+              data: {
+                episodeId,
+                shotNumber: shot.shotNumber || savedStoryboards.length + 1,
+                title: shot.title || '',
+                shotType: shot.shotType || 'medium',
+                cameraAngle: shot.cameraAngle || 'eye-level',
+                cameraMovement: shot.cameraMovement || 'static',
+                action: shot.action || '',
+                dialogue: shot.dialogue || null,
+                dialogueChar: shot.dialogueChar || null,
+                duration: shot.duration ?? 3.0,
+                imagePrompt: shot.imagePrompt || null,
+                videoPrompt: shot.videoPrompt || null,
+                atmosphere: shot.atmosphere || null,
+              },
+            })
+            savedStoryboards.push(saved)
 
-          // Send progress for each shot saved
-          const shotProgress = 55 + Math.round((i + 1) / shots.length * 40)
-          controller.enqueue(encoder.encode(sendEvent({
-            step: 'saving',
-            message: `正在保存镜头 ${i + 1}/${shots.length}：${shot.title || '未命名'}`,
-            progress: shotProgress,
-            detail: { currentShot: i + 1, totalShots: shots.length, shotTitle: shot.title },
-          })))
-        }
+            // Send progress for each shot saved
+            const shotProgress = 55 + Math.round((i + 1) / shots.length * 40)
+            controller.enqueue(encoder.encode(sendEvent({
+              step: 'saving',
+              message: `正在保存镜头 ${i + 1}/${shots.length}：${shot.title || '未命名'}`,
+              progress: shotProgress,
+              detail: { currentShot: i + 1, totalShots: shots.length, shotTitle: shot.title },
+            })))
+          }
+        })
 
         // Step 7: Complete
         await db.episode.update({
@@ -219,5 +219,6 @@ export async function POST(request: NextRequest) {
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
     },
+  })
   })
 }
