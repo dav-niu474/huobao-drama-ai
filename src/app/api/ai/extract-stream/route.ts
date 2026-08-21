@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
+import { aiClient, userIdContext, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/extract-stream - AI Extract Characters & Scenes with SSE progress
 export async function POST(request: NextRequest) {
   const auth = await requireAuth()
   if (auth.error) return auth.error
-  aiClient._userId = auth.userId
+  return await userIdContext.run(auth.userId, async () => {
   const { episodeId, dramaId } = await request.json()
 
   if (!episodeId || !dramaId) {
@@ -206,5 +206,6 @@ export async function POST(request: NextRequest) {
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
     },
+  })
   })
 }

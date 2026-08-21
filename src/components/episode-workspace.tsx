@@ -315,6 +315,14 @@ export function EpisodeWorkspace() {
     }).catch(() => {})
   }, [])
 
+  // ── AbortController for pollAsyncTask — cancelled on unmount ──
+  const pollAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    return () => {
+      pollAbortRef.current?.abort()
+    }
+  }, [])
+
   // ── Pipeline step completion info (for sidebar badges) ─────
 
   const getStepCompletionInfo = useCallback(
@@ -729,10 +737,13 @@ export function EpisodeWorkspace() {
     category: 'image' | 'video',
     taskId: string,
     interval = 5000,
-    maxPolls = 60
+    maxPolls = 60,
+    signal?: AbortSignal
   ): Promise<{ imageBase64?: string; videoUrl?: string } | null> => {
     for (let i = 0; i < maxPolls; i++) {
+      if (signal?.aborted) return null
       await new Promise((r) => setTimeout(r, interval))
+      if (signal?.aborted) return null
       try {
         const pollResult = await api.ai.pollStatus(category, taskId)
         if (pollResult.status === 'completed') {
@@ -742,6 +753,7 @@ export function EpisodeWorkspace() {
           throw new Error(pollResult.error || '生成失败')
         }
       } catch (err) {
+        if (signal?.aborted) return null
         if (i === maxPolls - 1) throw err
       }
     }
@@ -781,7 +793,10 @@ export function EpisodeWorkspace() {
       const result = await api.ai.generateSceneImage(sceneId) as Record<string, unknown>
       if (result.status === 'processing' && result.taskId) {
         toast({ title: '场景图生成中...' })
-        await pollAsyncTask('image', result.taskId as string)
+        pollAbortRef.current?.abort()
+        const controller = new AbortController()
+        pollAbortRef.current = controller
+        await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
       }
       toast({ title: '场景图已生成' })
       await fetchEpisode()
@@ -800,7 +815,10 @@ export function EpisodeWorkspace() {
       const result = await api.ai.generateCharacterImage(charId) as Record<string, unknown>
       if (result.status === 'processing' && result.taskId) {
         toast({ title: '角色头像生成中...' })
-        await pollAsyncTask('image', result.taskId as string)
+        pollAbortRef.current?.abort()
+        const controller = new AbortController()
+        pollAbortRef.current = controller
+        await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
       }
       toast({ title: '角色头像已生成' })
       await fetchEpisode()
@@ -843,7 +861,10 @@ export function EpisodeWorkspace() {
       ) as Record<string, unknown>
       if (result.status === 'processing' && result.taskId) {
         toast({ title: `镜头 ${storyboard.shotNumber} 图片生成中...` })
-        const pollResult = await pollAsyncTask('image', result.taskId as string)
+        pollAbortRef.current?.abort()
+        const controller = new AbortController()
+        pollAbortRef.current = controller
+        const pollResult = await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
         if (pollResult?.imageBase64) {
           await api.storyboards.update(storyboard.id, { firstFrameUrl: `data:image/png;base64,${pollResult.imageBase64}` })
         }
@@ -882,7 +903,10 @@ export function EpisodeWorkspace() {
         ) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
           setBatchProgress({ current: i + 1, total: pending.length, message: `图片 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
-          const pollResult = await pollAsyncTask('image', result.taskId as string)
+          pollAbortRef.current?.abort()
+          const controller = new AbortController()
+          pollAbortRef.current = controller
+          const pollResult = await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
           if (pollResult?.imageBase64) {
             await api.storyboards.update(sb.id, { firstFrameUrl: `data:image/png;base64,${pollResult.imageBase64}` })
           }
@@ -1013,7 +1037,10 @@ export function EpisodeWorkspace() {
       const result = await api.ai.generateVideo(storyboard.id, prompt, storyboard.firstFrameUrl ?? undefined) as Record<string, unknown>
       if (result.status === 'processing' && result.taskId) {
         toast({ title: `镜头 ${storyboard.shotNumber} 视频生成中...` })
-        await pollAsyncTask('video', result.taskId as string, 10000, 60)
+        pollAbortRef.current?.abort()
+        const controller = new AbortController()
+        pollAbortRef.current = controller
+        await pollAsyncTask('video', result.taskId as string, 10000, 60, controller.signal)
       }
       toast({ title: `镜头 ${storyboard.shotNumber} 视频已生成` })
       await fetchEpisode()
@@ -1071,7 +1098,10 @@ export function EpisodeWorkspace() {
         const result = await api.ai.generateVideo(sb.id, prompt, sb.firstFrameUrl ?? undefined) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
           setBatchProgress({ current: i + 1, total: pending.length, message: `视频 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
-          await pollAsyncTask('video', result.taskId as string, 10000, 60)
+          pollAbortRef.current?.abort()
+          const controller = new AbortController()
+          pollAbortRef.current = controller
+          await pollAsyncTask('video', result.taskId as string, 10000, 60, controller.signal)
         }
         successCount++
       } catch {
@@ -1102,7 +1132,10 @@ export function EpisodeWorkspace() {
         const result = await api.ai.generateCharacterImage(char.id) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
           setBatchProgress({ current: i + 1, total: charsPending.length, message: `角色头像 ${i + 1}/${charsPending.length} 异步生成中...` })
-          await pollAsyncTask('image', result.taskId as string)
+          pollAbortRef.current?.abort()
+          const controller = new AbortController()
+          pollAbortRef.current = controller
+          await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
         }
         successCount++
       } catch {
@@ -1133,7 +1166,10 @@ export function EpisodeWorkspace() {
         const result = await api.ai.generateSceneImage(scene.id) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
           setBatchProgress({ current: i + 1, total: scenesPending.length, message: `场景图 ${i + 1}/${scenesPending.length} 异步生成中...` })
-          await pollAsyncTask('image', result.taskId as string)
+          pollAbortRef.current?.abort()
+          const controller = new AbortController()
+          pollAbortRef.current = controller
+          await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
         }
         successCount++
       } catch {

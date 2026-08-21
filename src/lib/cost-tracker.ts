@@ -19,6 +19,7 @@ export interface RecordCostParams {
   credits: number
   tokensUsed?: number
   generationMs?: number
+  userId?: string
 }
 
 // ── Credit Calculation Helpers ─────────────────────────────────
@@ -84,10 +85,11 @@ export function recordGenerationCost(params: RecordCostParams): void {
           credits: params.credits,
           tokensUsed: params.tokensUsed || 0,
           count: 1,
+          ...(params.userId ? { userId: params.userId } : {}),
         },
       })
     } catch (err) {
       console.warn('[cost-tracker] Failed to record generation cost:', err instanceof Error ? err.message : String(err))
     }
-  })()
+  })().catch(err => console.error('[cost-tracker] Failed:', err))
 }

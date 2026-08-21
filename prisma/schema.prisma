@@ -235,6 +235,7 @@ model ImageGeneration {
   characterId     String?
   sceneId         String?
   dramaId         String?
+  userId          String?
   prompt          String
   model           String   @default("")
   provider        String   @default("")
@@ -256,6 +257,7 @@ model ImageGeneration {
   @@index([dramaId, status])
   @@index([dramaId, createdAt])
   @@index([dramaId, costCredits])
+  @@index([userId])
 }
 
 // ============ AI Provider Configuration ============
@@ -362,6 +364,7 @@ model GenerationCost {
   id         String   @id @default(cuid())
   dramaId    String
   episodeId  String? // null = drama-level
+  userId     String?
   category   String // "image" | "video" | "tts" | "llm"
   provider   String
   model      String
@@ -372,6 +375,8 @@ model GenerationCost {
   updatedAt  DateTime @updatedAt
 
   drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ============ Global Asset Library ============

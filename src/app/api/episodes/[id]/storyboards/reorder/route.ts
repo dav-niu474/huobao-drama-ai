@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/auth-helpers';
 
 // POST /api/episodes/[id]/storyboards/reorder - Batch reorder storyboards
 export async function POST(
@@ -7,6 +8,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth();
+    if (auth.error) return auth.error;
     const { id: episodeId } = await params;
     const body = await request.json();
     const { orderedIds } = body as { orderedIds: string[] };

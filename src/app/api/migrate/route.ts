@@ -242,6 +242,7 @@ const BASE_MIGRATIONS: { table: string; sql: string }[] = [
       "characterId" TEXT,
       "sceneId" TEXT,
       "dramaId" TEXT,
+      "userId" TEXT,
       "prompt" TEXT NOT NULL,
       "model" TEXT NOT NULL DEFAULT '',
       "provider" TEXT NOT NULL DEFAULT '',
@@ -395,6 +396,7 @@ const BASE_MIGRATIONS: { table: string; sql: string }[] = [
       "id" TEXT NOT NULL,
       "dramaId" TEXT NOT NULL,
       "episodeId" TEXT,
+      "userId" TEXT,
       "category" TEXT NOT NULL,
       "provider" TEXT NOT NULL,
       "model" TEXT NOT NULL,
@@ -821,6 +823,26 @@ const MIGRATIONS: { table: string; sql: string }[] = [
     table: 'PublishConfig_userId_idx',
     sql: `CREATE INDEX IF NOT EXISTS "PublishConfig_userId_idx" ON "PublishConfig"("userId");`,
   },
+
+  // ---- ImageGeneration: add userId column (incremental) ----
+  {
+    table: 'ImageGeneration_userId',
+    sql: `ALTER TABLE "ImageGeneration" ADD COLUMN IF NOT EXISTS "userId" TEXT;`,
+  },
+  {
+    table: 'ImageGeneration_userId_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "ImageGeneration_userId_idx" ON "ImageGeneration"("userId");`,
+  },
+
+  // ---- GenerationCost: add userId column (incremental) ----
+  {
+    table: 'GenerationCost_userId',
+    sql: `ALTER TABLE "GenerationCost" ADD COLUMN IF NOT EXISTS "userId" TEXT;`,
+  },
+  {
+    table: 'GenerationCost_userId_idx',
+    sql: `CREATE INDEX IF NOT EXISTS "GenerationCost_userId_idx" ON "GenerationCost"("userId");`,
+  },
 ]
 
 // Required tables (from Prisma schema)
@@ -860,6 +882,22 @@ export async function POST(request: NextRequest) {
         authorized = true
       }
     } catch {}
+
+    if (!authorized) {
+      let isFreshDeploy = false
+      try {
+        const userCount = await db.user.count()
+        isFreshDeploy = userCount === 0
+      } catch {
+        isFreshDeploy = true
+      }
+      if (!isFreshDeploy) {
+        return NextResponse.json(
+          { error: 'Unauthorized. Provide NEXTAUTH_SECRET as Bearer token or body.secret for existing deployments.' },
+          { status: 403 }
+        )
+      }
+    }
 
     // Also allow without auth for first-time setup (no admin user yet)
     // This is intentional — the migrate endpoint needs to work during initial deployment
@@ -975,7 +1013,17 @@ export async function POST(request: NextRequest) {
 }
 
 // GET /api/migrate - Check migration status
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authHeader = request.headers.get('authorization')
+  const urlSecret = new URL(request.url).searchParams.get('secret')
+  const secret = authHeader?.replace('Bearer ', '') || urlSecret
+  if (secret !== process.env.NEXTAUTH_SECRET) {
+    return NextResponse.json(
+      { status: 'unauthorized', message: 'Provide NEXTAUTH_SECRET to view migration status' },
+      { status: 403 }
+    )
+  }
+
   const dbUrl = process.env.DATABASE_URL || ''
   const isPostgres = dbUrl.startsWith('postgresql://') || dbUrl.startsWith('postgres://')
 

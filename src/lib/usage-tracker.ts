@@ -39,12 +39,13 @@ export async function recordUsage(
 
   for (const budget of budgets) {
     const prevUsage = budget.currentUsage
-    const newUsage = prevUsage + credits
 
-    await db.budget.update({
+    // Atomic increment prevents concurrent writes from racing.
+    const updated = await db.budget.update({
       where: { id: budget.id },
-      data: { currentUsage: newUsage },
+      data: { currentUsage: { increment: credits } },
     })
+    const newUsage = updated.currentUsage
 
     // Check thresholds and create alerts
     const prevPercent = (prevUsage / budget.limit) * 100

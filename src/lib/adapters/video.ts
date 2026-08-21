@@ -57,7 +57,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     const taskId = (resp.task_id as string) || (resp.id as string)
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -154,7 +154,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     const taskId = resp.id as string | undefined
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -260,7 +260,7 @@ export class ViduVideoAdapter implements VideoProviderAdapter {
     const taskId = resp.task_id as string | undefined
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }
@@ -364,7 +364,7 @@ export class AliVideoAdapter implements VideoProviderAdapter {
     const taskId = output?.task_id as string | undefined
 
     if (!taskId) {
-      return { isAsync: true }
+      throw new Error(`Video generation failed: API returned no task_id. Response: ${JSON.stringify(result).slice(0, 500)}`)
     }
 
     return { isAsync: true, taskId }

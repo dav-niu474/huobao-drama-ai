@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
-import { aiClient, getActiveProviderForUser } from '@/lib/ai-config'
+import { aiClient, userIdContext, getActiveProviderForUser } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 import {
   calculateGridResolution,
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
 
     const body = await request.json()
     const {
@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
     const imageGeneration = await db.imageGeneration.create({
       data: {
         dramaId: dramaId || null,
+        userId: auth.userId,
         prompt,
         model: '',
         provider: '',
@@ -276,6 +277,7 @@ export async function POST(request: NextRequest) {
 
       throw error
     }
+    })
   } catch (error) {
     console.error('Failed to generate grid image:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

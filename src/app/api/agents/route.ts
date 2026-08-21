@@ -4,6 +4,7 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth-helpers'
 import {
   AgentType,
   ALL_AGENT_TYPES,
@@ -20,6 +21,9 @@ import { loadAgentSkill } from '@/lib/agents/skills'
 
 export async function GET() {
   try {
+    // Auth check — only logged in users can list agent configs
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     // Load all DB configs at once
     const dbConfigs: Record<
       string,

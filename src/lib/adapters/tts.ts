@@ -54,17 +54,12 @@ export class MiniMaxTTSAdapter implements TTSProviderAdapter {
     // Check for error in base_resp
     const baseResp = resp.base_resp as Record<string, unknown> | undefined
     if (baseResp && (baseResp.status_code as number) !== 0) {
-      return {
-        format: 'mp3',
-        // Return empty audio on error — caller should check base_resp separately
-        // or we could throw; but the interface doesn't have an error field
-        // so we return minimal info
-      }
+      throw new Error(`MiniMax TTS API error: ${baseResp.status_msg || 'Unknown error'} (code: ${baseResp.status_code})`)
     }
 
     const data = resp.data as Record<string, unknown> | undefined
     if (!data) {
-      return { format: 'mp3' }
+      throw new Error('MiniMax TTS API error: response missing data field')
     }
 
     const audioHex = data.audio as string | undefined

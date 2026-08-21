@@ -45,30 +45,38 @@ export async function requireAuth(): Promise<AuthResult> {
  * Check if user can perform an AI generation action.
  * Tracks daily usage via ImageGeneration table.
  */
-export async function checkAiGenerationLimit(role: UserRole): Promise<NextResponse | null> {
-  // Count today's generations
+export async function checkAiGenerationLimit(role: UserRole, userId?: string): Promise<NextResponse | null> {
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
 
-  const todayCount = await db.imageGeneration.count({
-    where: {
-      createdAt: { gte: todayStart },
-    },
-  })
+  if (userId) {
+    try {
+      const userCount = await db.imageGeneration.count({
+        where: { createdAt: { gte: todayStart }, userId: userId },
+      })
+      if (!canUseAiGeneration(role, userCount)) {
+        return NextResponse.json(
+          { error: `今日AI生成次数已达上限（${userCount}次）。升级专业版可无限制使用。`, limit: true, todayCount: userCount },
+          { status: 403 }
+        )
+      }
+      return null
+    } catch {
+      console.warn('[auth-helpers] ImageGeneration.userId field not found, falling back to global count')
+    }
+  }
 
+  // Fallback: global count
+  const todayCount = await db.imageGeneration.count({
+    where: { createdAt: { gte: todayStart } },
+  })
   if (!canUseAiGeneration(role, todayCount)) {
-    const perms = canUseAiGeneration(role, 0) // just to get the limit info
     return NextResponse.json(
-      {
-        error: `今日AI生成次数已达上限（${todayCount}次）。升级专业版可无限制使用。`,
-        limit: true,
-        todayCount,
-      },
+      { error: `今日AI生成次数已达上限（${todayCount}次）。升级专业版可无限制使用。`, limit: true, todayCount },
       { status: 403 }
     )
   }
-
-  return null // No error, allowed
+  return null
 }
 
 /**
@@ -79,6 +87,6 @@ export async function requireAuthWithAiLimit(): Promise<AuthResult & { limitErro
   const auth = await requireAuth()
   if (auth.error) return auth
 
-  const limitError = await checkAiGenerationLimit(auth.role)
+  const limitError = await checkAiGenerationLimit(auth.role, auth.userId)
   return { ...auth, limitError: limitError ?? undefined }
 }

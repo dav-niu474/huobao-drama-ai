@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { aiClient, getActiveProviderForUser, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
+import { aiClient, userIdContext, getActiveProviderForUser, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/test-connection - Test AI provider connectivity
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
-    aiClient._userId = auth.userId
+    return await userIdContext.run(auth.userId, async () => {
     const body = await request.json().catch(() => ({}))
     const category = (body.category || 'llm') as AiCategory
     const testProvider = body.provider as string | undefined
@@ -235,6 +235,7 @@ export async function POST(request: NextRequest) {
 
     const result = await aiClient.testConnection(category)
     return NextResponse.json(result)
+    })
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown error occurred'

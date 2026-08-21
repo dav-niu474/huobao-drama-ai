@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-26
+
+### Security
+- 修复文件存储路径遍历漏洞 — path.resolve + startsWith 校验
+- 修复 JWT 角色提权漏洞 — 移除客户端信任的 token.role 更新
+- 修复 /api/migrate 端点无鉴权 — 已有用户必须提供 NEXTAUTH_SECRET
+- 修复 /api/auth/fix-admin 远程可调用 — IP 限制 + confirmOverwrite 确认
+- 修复 SVG XSS 风险 — Content-Disposition: attachment + nosniff 头
+
+### Fixed
+- 修复 AI 配额检查不区分用户 — checkAiGenerationLimit 添加 userId 过滤
+- 修复 Episode 6 个路由无鉴权 — 全部添加 requireAuth() 守卫
+- 修复 aiClient._userId 并发污染 — AsyncLocalStorage 替代全局属性
+- 修复 currentUploadTempId 并发不安全 — AsyncLocalStorage 替代全局变量
+- 修复 Usage Tracker 竞争条件 — increment 原子操作
+- 修复 setActiveProvider 非原子操作 — db.$transaction 包裹
+- 修复资源所有权缺失 — generations/bulk-lock 添加所有权校验
+- 修复 Agent 提示词暴露 — GET 端点添加 requireAuth()
+- 修复注册邮箱无验证 — 添加正则校验
+- 修复 TTS 失败标记分镜失败 — 只清空 ttsAudioUrl
+- 修复视频适配器无 taskId 时静默失败 — 改为 throw Error
+- 修复批量管线暂停中止挂起 — checkPause 添加 AbortSignal 监听
+- 修复 AI extract 无去重 — findFirst 查重后 update/create
+- 修复 generate-storyboard 非原子操作 — db.$transaction 包裹
+- 修复 TTS 状态不回滚 — 保存 previousStatus，catch 中恢复
+- 修复 MiniMax TTS 静默吞错 — 改为 throw Error
+- 修复 AsyncTaskError 反模式 — 创建正式 AsyncTaskError 类
+- 修复 Cost Tracker fire-and-forget — 添加 .catch() 错误处理
+- 修复轮询无取消机制 — AbortController + 组件卸载中断
+
+### Added
+- React ErrorBoundary 组件 — 防止白屏，提供重试/刷新按钮
+- ImageGeneration.userId / GenerationCost.userId 字段 — 支持按用户追踪
+
 ## [0.9.1] - 2026-06-03
 
 ### Fixed

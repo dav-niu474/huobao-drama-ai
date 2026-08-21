@@ -815,7 +815,7 @@ class BatchPipelineManager {
 
   // ── Internal: Check if batch is paused and wait ──────────────
 
-  private async checkPause(dramaId: string): Promise<void> {
+  private async checkPause(dramaId: string, signal?: AbortSignal): Promise<void> {
     const state = this.batches.get(dramaId)
     if (!state || state.status !== 'paused') return
 
@@ -830,6 +830,15 @@ class BatchPipelineManager {
           resolve()
         }
       }, 2000)
+
+      // Allow callers to abort the wait (e.g., when the batch is cancelled)
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearInterval(interval)
+          this.pauseResolvers.delete(dramaId)
+          resolve()
+        }, { once: true })
+      }
     })
   }
 }
