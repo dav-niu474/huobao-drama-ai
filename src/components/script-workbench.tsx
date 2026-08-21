@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Zap,
   Eye,
+  X,
 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════
@@ -170,6 +171,10 @@ export function ScriptWorkbench() {
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
 
+  // ── Event Extraction ──
+  const [extractingEvents, setExtractingEvents] = useState(false)
+  const [eventsData, setEventsData] = useState<Array<{ chapter: string; characters: string; event: string; mainline: string; density: string; estimatedDuration: string; emotion: string }> | null>(null)
+
   // ── Upload / Parse ──
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
@@ -292,6 +297,7 @@ export function ScriptWorkbench() {
         setParsedContent(pc)
         if (pc.skeleton) setSkeletonEdit(pc.skeleton)
         if (pc.strategy) setStrategyEdit(pc.strategy)
+        if (Array.isArray(pc.events)) setEventsData(pc.events)
       } catch { /* ignore */ }
       return true
     } catch {
@@ -448,6 +454,34 @@ export function ScriptWorkbench() {
       }
     } finally {
       if (mountedRef.current) setReparsing(false)
+    }
+  }
+
+  const handleExtractEvents = async () => {
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
+    setExtractingEvents(true)
+    try {
+      const result = await api.ai.extractEvents(dramaId, {
+        start: episodeRangeStart,
+        end: episodeRangeEnd,
+      })
+      if (!mountedRef.current) return
+      setEventsData(result.events)
+      toastRef.current({
+        title: '事件提取完成',
+        description: `共提取 ${result.events.length} 个章节事件`,
+      })
+    } catch (err: any) {
+      if (mountedRef.current) {
+        toastRef.current({
+          title: '事件提取失败',
+          description: err.message || '请稍后重试',
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      if (mountedRef.current) setExtractingEvents(false)
     }
   }
 
@@ -749,6 +783,10 @@ export function ScriptWorkbench() {
                 <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
               </div>
               <div className="space-y-1.5">
+                <Button size="sm" className="w-full h-7 text-xs gap-1.5" variant="outline" onClick={handleExtractEvents} disabled={!novel || extractingEvents || isGenerating}>
+                  {extractingEvents ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3 text-amber-500" />}
+                  提取章节事件
+                </Button>
                 <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateSkeleton} disabled={!novel || generatingSkeleton || isGenerating}>
                   {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3" />}
                   生成故事骨架
@@ -1014,6 +1052,38 @@ export function ScriptWorkbench() {
 
         {/* ═══ Right Column (w-80) — 和 Center 是兄弟节点 ═══ */}
         <div className="w-80 border-l border-border flex flex-col overflow-hidden shrink-0">
+          {/* Events Display */}
+          {eventsData && eventsData.length > 0 && (
+            <div className="border-b border-border p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Zap className="size-3 text-amber-500" />
+                  章节事件 ({eventsData.length})
+                </span>
+                <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => setEventsData(null)}>
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {eventsData.map((ev, idx) => (
+                  <div key={idx} className="text-[10px] p-2 bg-muted/40 rounded border border-border/40">
+                    <div className="font-medium text-foreground mb-0.5">{ev.chapter}</div>
+                    <div className="text-muted-foreground">
+                      <span className="text-blue-500">{ev.characters}</span>
+                      <span className="mx-1">·</span>
+                      <span>{ev.event}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-[9px] text-muted-foreground/70">
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">{ev.mainline}</Badge>
+                      <span>{ev.density}密度</span>
+                      <span>{ev.estimatedDuration}</span>
+                      <span>{ev.emotion}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="px-4 py-3 border-b border-border shrink-0">
             <span className="text-xs font-medium text-muted-foreground">进度统计</span>
           </div>

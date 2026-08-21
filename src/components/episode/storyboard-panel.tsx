@@ -16,6 +16,7 @@ import {
   Mic,
   Upload,
   Wand2,
+  List,
   ChevronDown,
   Copy,
   Grid as GridIcon,
@@ -30,9 +31,18 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-execution-panel'
 import { GridGenerateDialog } from './grid-generate-dialog'
 import { statusBadge, shotTypeLabel } from './helpers'
+import { api } from '@/lib/api'
+import { useToast } from '@/hooks/use-toast'
 import type { StoryboardPanelProps } from './types'
 
 export function StoryboardPanel({
@@ -58,8 +68,63 @@ export function StoryboardPanel({
   handleUpload,
   handleCopy,
   handleGridGenerate,
+  onRefresh,
+  workspaceModels,
 }: StoryboardPanelProps) {
+  const { toast } = useToast()
   const [gridDialogOpen, setGridDialogOpen] = useState(false)
+  const [generatingTable, setGeneratingTable] = useState(false)
+  const [polishingPrompts, setPolishingPrompts] = useState(false)
+  const [storyboardTable, setStoryboardTable] = useState<string | null>(null)
+  const [showTableDialog, setShowTableDialog] = useState(false)
+
+  // Generate a structured storyboard table (markdown) from the episode script
+  const handleGenerateTable = async () => {
+    if (!episode) return
+    setGeneratingTable(true)
+    try {
+      const result = await api.ai.generateStoryboardTable(episode.id)
+      setStoryboardTable(result.storyboardTable)
+      setShowTableDialog(true)
+      toast({
+        title: '分镜表生成完成',
+        description: `资产: ${result.assetCount.characters}角色 / ${result.assetCount.scenes}场景 / ${result.assetCount.props}道具`,
+      })
+    } catch (err: any) {
+      toast({
+        title: '分镜表生成失败',
+        description: err.message || '请稍后重试',
+        variant: 'destructive',
+      })
+    } finally {
+      setGeneratingTable(false)
+    }
+  }
+
+  // Polish storyboard image+video prompts for the selected video model
+  const handlePolishPrompts = async () => {
+    if (!episode) return
+    setPolishingPrompts(true)
+    try {
+      const videoModel = workspaceModels?.video || undefined
+      const result = await api.ai.polishStoryboardPrompts(episode.id, videoModel)
+      toast({
+        title: '提示词优化完成',
+        description: `已更新 ${result.updated} 个分镜的提示词（模式: ${result.mode}）`,
+      })
+      // Trigger refresh to show updated prompts
+      if (onRefresh) await onRefresh()
+    } catch (err: any) {
+      toast({
+        title: '提示词优化失败',
+        description: err.message || '请稍后重试',
+        variant: 'destructive',
+      })
+    } finally {
+      setPolishingPrompts(false)
+    }
+  }
+
   // Empty state
   if (storyboards.length === 0 && !isStoryboarding && !aiLoading) {
     return (
@@ -175,6 +240,28 @@ export function StoryboardPanel({
               </Badge>
             </Button>
           )}
+          {/* Generate structured storyboard table (markdown) */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleGenerateTable}
+            disabled={aiLoading || generatingTable || !episode?.scriptContent}
+            className="gap-1.5"
+          >
+            {generatingTable ? <Loader2 className="size-3.5 animate-spin" /> : <List className="size-3.5" />}
+            生成分镜表
+          </Button>
+          {/* Polish image+video prompts for selected video model */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handlePolishPrompts}
+            disabled={aiLoading || polishingPrompts || storyboards.length === 0}
+            className="gap-1.5"
+          >
+            {polishingPrompts ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />}
+            优化提示词
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -548,6 +635,27 @@ export function StoryboardPanel({
         gridState={gridState}
         handleGridGenerate={handleGridGenerate}
       />
+
+      {/* Storyboard table preview dialog */}
+      <Dialog open={showTableDialog} onOpenChange={setShowTableDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>分镜表</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
+            <pre className="text-xs whitespace-pre-wrap font-mono p-4">{storyboardTable}</pre>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => navigator.clipboard.writeText(storyboardTable || '')}
+            >
+              复制
+            </Button>
+            <Button onClick={() => setShowTableDialog(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

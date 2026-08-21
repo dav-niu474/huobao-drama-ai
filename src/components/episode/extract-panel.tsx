@@ -191,10 +191,36 @@ export function ExtractPanel({
   globalAssetsImported,
   importingAssets,
   onReimportGlobalAssets,
+  // Refresh parent data after AI asset extraction
+  onRefresh,
 }: ExtractPanelProps) {
   const { toast } = useToast()
   const [savingToLibrary, setSavingToLibrary] = useState<string | null>(null)
   const [lockingStyle, setLockingStyle] = useState<string | null>(null)
+  const [extractingAssets, setExtractingAssets] = useState(false)
+
+  // AI asset extraction (direct asset_extractor agent call, no agent UI)
+  const handleAiExtractAssets = async () => {
+    if (!episode) return
+    setExtractingAssets(true)
+    try {
+      const result = await api.ai.extractAssets(episode.id)
+      toast({
+        title: 'AI 资产提取完成',
+        description: `共提取 ${result.extracted} 项，新增角色 ${result.created.characters}、场景 ${result.created.scenes}、道具 ${result.created.props}`,
+      })
+      // Trigger parent refresh
+      if (onRefresh) await onRefresh()
+    } catch (err: any) {
+      toast({
+        title: 'AI 资产提取失败',
+        description: err.message || '请稍后重试',
+        variant: 'destructive',
+      })
+    } finally {
+      setExtractingAssets(false)
+    }
+  }
 
   // Save entity to asset library
   const handleSaveToLibrary = async (type: 'character' | 'scene' | 'prop', id: string, name: string) => {
@@ -355,6 +381,17 @@ export function ExtractPanel({
               重新导入全局
             </Button>
           )}
+          {/* AI 智能提取 — direct asset_extractor call (faster, no agent UI) */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleAiExtractAssets}
+            disabled={aiLoading || isExtracting || extractingAssets || !episode?.scriptContent}
+            className="gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
+          >
+            {extractingAssets ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+            AI 智能提取
+          </Button>
           {/* PR-F: Supplement with AI button */}
           {globalAssetsImported && (
             <Button
@@ -364,7 +401,7 @@ export function ExtractPanel({
               disabled={aiLoading || isExtracting}
               className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950/30"
             >
-              <Sparkles className="size-3.5" />
+              <RefreshCw className="size-3.5" />
               AI补充提取
             </Button>
           )}
