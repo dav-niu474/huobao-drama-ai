@@ -7,37 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — 模型切换不生效 (P0)
+### Fixed — 剧本工坊全流程可用 (P0)
 
-#### 根因 #1: 管理员切换 AiProvider 时 UserProvider 仍优先
-- `getActiveProviderForUser` 中 UserProvider 优先级永远高于 AiProvider
-- 管理员在"平台共享 Key"区域切换 radio 只改了 AiProvider.isActive
-- 但管理员的 UserProvider.isActive=true 记录仍然存在并优先返回
-- **修复**: 管理员切换 AiProvider 时，自动反激活自身在该 category 的 UserProvider
-  - 新增 `DELETE /api/settings/user-provider?category=X` 端点（按 category 批量反激活）
-  - 新增 `api.userProvider.deactivate(category)` 前端 helper
-  - `handleSetActive` 切换后自动调用 deactivate + 刷新 UserProvider 列表
+#### 根因: NVIDIA 默认模型 EOL
+- `deepseek-ai/deepseek-v4-pro` 已于 2026-08-07 下线，所有 AI 调用报 410
+- 之前修复改的 `z-ai/glm-5.1` 也已 EOL（2026-07-02）
+- **修复**: NVIDIA 默认模型改为 `meta/llama-3.3-70b-instruct`（稳定可用）
 
-#### 根因 #2: AgentConfig.model 静默覆盖 Provider.model
-- 管理员曾在"AI 智能体配置"里为某个 agent 填过 model（如 'deepseek-chat'）
-- 该值在 `executeAgent` 中静默覆盖 provider 的 model，切换 provider 后仍用旧 model 名
-- **修复**: AgentConfig UI 增加警告徽章 + 清空按钮
-  - model 非空时显示琥珀色"覆盖全局模型"徽章
-  - "清空（跟随全局 LLM）"按钮一键恢复跟随全局
+#### 根因: 已存 DB 的 EOL 模型仍会被返回
+- 用户之前在设置中配置的 EOL 模型仍存在 DB 中
+- `getActiveProvider` / `getActiveProviderForUser` 会优先返回 DB 中的 model
+- **修复**: 新增 `EOL_MODEL_REPLACEMENTS` 映射表 + `resolveModel` 函数
+  - 自动将 `z-ai/glm-5.1` 和 `deepseek-ai/deepseek-v4-pro` 替换为 `meta/llama-3.3-70b-instruct`
+  - 在 getActiveProvider 和 getActiveProviderForUser 中统一使用
 
-#### 根因 #3: workshop 路由缺少 userIdContext.run 包裹
-- `generate-skeleton` / `generate-strategy` / `generate-scripts` 三个路由未用 `userIdContext.run` 包裹
-- 导致 agent 工具内部的 `aiClient.*` 调用无法通过 AsyncLocalStorage 获取 userId
-- **修复**: 三个路由的 POST handler 全部用 `userIdContext.run(auth.userId, async () => { ... })` 包裹
+#### 新增: z-ai-sdk 免 Key 内置 LLM 供应商
+- 用户无需配置任何 API Key 即可使用剧本工坊全流程
+- 基于 `z-ai-web-dev-sdk`（项目已集成）
+- 默认模型 `glm-4.6`，支持 GLM-4.6/4.5/4.5-air
+- 在 `provider-presets.ts` 中添加为 LLM 类别首个供应商
+- `getActiveProvider` 在无任何 DB/env 配置时自动回退到 z-ai-sdk
+- `chatCompletion` 和 `callLLMWithTools` 专门支持 z-ai-sdk 路径
+
+#### 改进: 用户友好的错误信息
+- `callLLMWithTools` 和 `chatCompletion` 根据 HTTP 状态码返回友好错误：
+  - 401/403 → "AI 供应商认证失败：请检查 API Key 是否正确配置"
+  - 404 → "模型不可用：{model} 可能已下线，请在设置中切换其他模型"
+  - 410 → "模型已下线：{model} 已停止服务，请在设置中切换其他模型"
+  - 429 → "请求频率超限：请稍后重试或联系供应商提升配额"
+  - 5xx → "AI 供应商服务异常：请稍后重试"
+- 5 个 workshop 路由的 catch 块统一使用友好错误格式
+
+### E2E 全流程测试验证 (全部通过)
+- ✅ 提取章节事件 — 返回 7 字段事件表
+- ✅ 生成故事骨架 — 返回完整 XML（三幕结构/人物小传/付费卡点）
+- ✅ 生成改编策略 — 返回完整 XML（节奏控制/角色处理/台词风格）
+- ✅ 批量生成剧本 — 3 集全部 completed
+- ✅ 单集重新生成 — 返回完整剧本内容
+
+### Fixed — 模型切换不生效 (前次合并)
+- 管理员切换 AiProvider 时自动反激活自身 UserProvider
+- AgentConfig.model 覆盖警告徽章 + 清空按钮
+- workshop 三路由补齐 userIdContext.run 包裹
 
 ### Fixed — Script Workshop API & UI (前次合并)
 - parse 路由误报成功 → AI 失败时设 parseStatus='failed'
 - generate-scripts 误报成功 → 所有集失败时返回 500
 - episodes POST 无鉴权 → 添加 requireAuth + 所有权检查
-- episodes GET 无所有权检查 → 添加 drama.userId 校验
 - ai-config 占位符识别 → 过滤 your-key-here/sk-your-/nvapi-your- 等
-- NVIDIA 默认模型 EOL → z-ai/glm-5.1 改为 deepseek-ai/deepseek-v4-pro
-- UI 重设计 → 与项目详情页保持一致风格（单栏居中 + Stepper + Card）
+- UI 重设计 → 与项目详情页保持一致风格
 
 ### E2E 接口测试验证
 - 18/19 测试通过（1 个是测试断言写错，201 是正确响应）

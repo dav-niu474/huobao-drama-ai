@@ -118,14 +118,21 @@ ${skeletonContent}`
         novelId: novel.id,
       })
     })
-  } catch (error) {
-    console.error('[generate-strategy] Failed:', error)
+  } catch (error: any) {
+    const errMsg = error?.message || (error instanceof Error ? error.message : String(error))
+    console.error('[generate-strategy] Failed:', errMsg)
+
+    // If the error message already looks user-friendly (HTTP / 供应商 / 模型 / API Key),
+    // surface it as-is; otherwise wrap it with a friendlier prefix.
+    const isFriendly =
+      typeof errMsg === 'string' &&
+      (errMsg.includes('HTTP') ||
+        errMsg.includes('供应商') ||
+        errMsg.includes('模型') ||
+        errMsg.includes('API Key'))
+
     return NextResponse.json(
-      {
-        error: `改编策略生成失败: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      },
+      { error: isFriendly ? errMsg : `改编策略生成失败: ${errMsg}` },
       { status: 500 }
     )
   }

@@ -24,15 +24,31 @@ export interface ProviderPreset {
 export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
   llm: [
     {
+      provider: 'z-ai-sdk',
+      name: 'Z.ai 内置 LLM（免 Key）',
+      defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
+      defaultModel: 'glm-4.6',
+      description: 'Z.ai 内置 LLM — 免配置 API Key，开箱即用，适合快速体验',
+      envKey: '',  // No env key needed — uses z-ai-web-dev-sdk
+      availableModels: [
+        { id: 'glm-4.6', name: 'GLM-4.6', tags: ['推荐', '免Key', '稳定'] },
+        { id: 'glm-4.5', name: 'GLM-4.5', tags: ['免Key'] },
+        { id: 'glm-4.5-air', name: 'GLM-4.5 Air', tags: ['免Key', '快速'] },
+      ],
+    },
+    {
       provider: 'nvidia',
       name: 'NVIDIA NIM',
       defaultBaseUrl: 'https://integrate.api.nvidia.com/v1',
-      // Note: 'z-ai/glm-5.1' is EOL — use deepseek-v4-pro as the safe default
-      defaultModel: 'deepseek-ai/deepseek-v4-pro',
+      // Note: 'deepseek-ai/deepseek-v4-pro' EOL on 2026-08-07, 'z-ai/glm-5.1' EOL on 2026-07-02
+      // Using 'meta/llama-3.3-70b-instruct' as stable default
+      defaultModel: 'meta/llama-3.3-70b-instruct',
       description: 'NVIDIA NIM API — GLM5.1, DeepSeek V4, MiniMax, Llama, Qwen 等 70+ 模型',
       envKey: 'NVIDIA_API_KEY',
       availableModels: [
-        { id: 'deepseek-ai/deepseek-v4-pro', name: 'DeepSeek V4 Pro', tags: ['推荐', '最新'] },
+        { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', tags: ['推荐', '稳定'] },
+        { id: 'qwen/qwen3.5-122b-a10b', name: 'Qwen 3.5 122B', tags: ['稳定'] },
+        { id: 'deepseek-ai/deepseek-v4-pro', name: 'DeepSeek V4 Pro (已弃用)', tags: ['已弃用'] },
         { id: 'deepseek-ai/deepseek-v4-flash', name: 'DeepSeek V4 Flash', tags: ['快速'] },
         { id: 'deepseek-ai/deepseek-v3.2', name: 'DeepSeek V3.2' },
         { id: 'deepseek-ai/deepseek-v3.1-terminus', name: 'DeepSeek V3.1 Terminus' },
@@ -42,14 +58,12 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
         { id: 'minimaxai/minimax-m2.7', name: 'MiniMax M2.7', tags: ['最新'] },
         { id: 'minimaxai/minimax-m2.5', name: 'MiniMax M2.5' },
         { id: 'qwen/qwen3.5-397b-a17b', name: 'Qwen 3.5 397B', tags: ['推荐', '最新'] },
-        { id: 'qwen/qwen3.5-122b-a10b', name: 'Qwen 3.5 122B' },
         { id: 'qwen/qwen3-next-80b-a3b-instruct', name: 'Qwen 3 Next 80B' },
         { id: 'qwen/qwen3-next-80b-a3b-thinking', name: 'Qwen 3 Next Thinking 80B', tags: ['推理'] },
         { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5', tags: ['最新'] },
         { id: 'moonshotai/kimi-k2-instruct', name: 'Kimi K2' },
         { id: 'moonshotai/kimi-k2-thinking', name: 'Kimi K2 Thinking', tags: ['推理'] },
         { id: 'meta/llama-4-maverick-17b-128e-instruct', name: 'Llama 4 Maverick', tags: ['最新'] },
-        { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' },
         { id: 'meta/llama-3.1-405b-instruct', name: 'Llama 3.1 405B' },
         { id: 'meta/llama-3.1-70b-instruct', name: 'Llama 3.1 70B' },
         { id: 'meta/llama-3.1-8b-instruct', name: 'Llama 3.1 8B', tags: ['快速'] },

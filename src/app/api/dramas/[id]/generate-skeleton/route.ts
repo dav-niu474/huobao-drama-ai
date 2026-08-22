@@ -107,10 +107,17 @@ export async function POST(
       skeletonInput = [header, separator, ...rows].join('\n')
       inputMode = 'events'
     } else {
-      // Fallback: build full novel text from chapters (truncated).
+      // Fallback: build full novel text from chapters (truncated to fit LLM context).
+      // Note: full novel text is much larger than the events table and may exceed
+      // the model's context window for long novels. The text is truncated to
+      // MAX_CHARS below to avoid HTTP 413 / context overflow errors, but this
+      // means later chapters are skipped — skeleton quality may be reduced.
+      // Recommended: run extract-events first to get a denser per-chapter summary.
       console.warn(
-        '[generate-skeleton] No events table found in parsedContent — falling back to full novel text. ' +
-          'Run extract-events first for better skeleton quality.'
+        '[generate-skeleton] No events table found in parsedContent — ' +
+          'falling back to full novel text (truncated to MAX_CHARS chars). ' +
+          'For better skeleton quality and to avoid context overflow on long novels, ' +
+          'run the extract-events API first to generate a per-chapter events table.'
       )
       const chapters = JSON.parse(novel.chapters) as Array<{
         index: number
@@ -121,6 +128,8 @@ export async function POST(
         .map((ch) => `## ${ch.title}\n\n${ch.content}`)
         .join('\n\n---\n\n')
 
+      // Truncate to MAX_CHARS to avoid LLM context overflow.
+      // 80000 chars ≈ 20k tokens — safe for most modern LLMs (>=8k context).
       const MAX_CHARS = 80000
       skeletonInput =
         novelText.length > MAX_CHARS
@@ -169,14 +178,21 @@ ${skeletonInput}`
         novelId: novel.id,
       })
     })
-  } catch (error) {
-    console.error('[generate-skeleton] Failed:', error)
+  } catch (error: any) {
+    const errMsg = error?.message || (error instanceof Error ? error.message : String(error))
+    console.error('[generate-skeleton] Failed:', errMsg)
+
+    // If the error message already looks user-friendly (HTTP / 供应商 / 模型 / API Key),
+    // surface it as-is; otherwise wrap it with a friendlier prefix.
+    const isFriendly =
+      typeof errMsg === 'string' &&
+      (errMsg.includes('HTTP') ||
+        errMsg.includes('供应商') ||
+        errMsg.includes('模型') ||
+        errMsg.includes('API Key'))
+
     return NextResponse.json(
-      {
-        error: `骨架生成失败: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      },
+      { error: isFriendly ? errMsg : `骨架生成失败: ${errMsg}` },
       { status: 500 }
     )
   }

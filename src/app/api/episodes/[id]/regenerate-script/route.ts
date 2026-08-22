@@ -92,8 +92,20 @@ ${strategy.slice(0, 2000)}
         where: { id },
         data: { scriptStatus: 'failed' },
       })
+      const errMsg = error?.message || (error instanceof Error ? error.message : String(error))
+      console.error('[regenerate-script] Failed:', errMsg)
+
+      // If the error message already looks user-friendly (HTTP / 供应商 / 模型 / API Key),
+      // surface it as-is; otherwise wrap it with a friendlier prefix.
+      const isFriendly =
+        typeof errMsg === 'string' &&
+        (errMsg.includes('HTTP') ||
+          errMsg.includes('供应商') ||
+          errMsg.includes('模型') ||
+          errMsg.includes('API Key'))
+
       return NextResponse.json(
-        { error: error?.message || '生成失败' },
+        { error: isFriendly ? errMsg : `剧本重新生成失败: ${errMsg}` },
         { status: 500 }
       )
     }
