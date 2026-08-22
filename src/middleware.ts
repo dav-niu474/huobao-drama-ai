@@ -11,20 +11,30 @@ const intlMiddleware = createMiddleware(routing)
 // ============================================================
 // API route protection — cookie-based auth check
 // ============================================================
+// IMPORTANT: Do NOT add trailing slashes to prefix entries.
+// `isApiProtected` checks `pathname === prefix || pathname.startsWith(prefix + '/')`,
+// so a trailing slash on the prefix would only match the bare prefix
+// (e.g. `/api/ai/`) and silently skip sub-paths like `/api/ai/generate-image`.
 const protectedPrefixes = [
   '/api/dramas',
   '/api/episodes',
   '/api/characters',
   '/api/scenes',
   '/api/storyboards',
-  '/api/ai/',
-  '/api/agent/',
+  '/api/ai',
+  '/api/agent',
   '/api/agents',
+  '/api/novels',
   '/api/settings',
   '/api/upload',
   '/api/auth/profile',
   '/api/auth/users',
   '/api/series',
+  '/api/props',
+  '/api/marketplace',
+  '/api/budgets',
+  '/api/publish',
+  '/api/generations',
 ]
 
 function isApiProtected(pathname: string): boolean {

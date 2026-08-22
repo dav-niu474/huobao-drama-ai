@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/auth-helpers';
 
 // GET /api/dramas/[id]/episodes - List episodes for a drama
 export async function GET(
@@ -36,42 +37,58 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAuth();
+    if (auth.error) return auth.error;
+
     const { id: dramaId } = await params;
-    const body = await request.json();
-    const { title } = body;
 
-    // Get current max episode number
-    const maxEpisode = await db.episode.findFirst({
-      where: { dramaId },
-      orderBy: { episodeNumber: 'desc' },
-      select: { episodeNumber: true },
+    // Verify drama exists and user has access
+    const drama = await db.drama.findUnique({
+      where: { id: dramaId },
+      select: { userId: true, defaultLockedConfig: true },
     });
+    if (!drama) {
+      return NextResponse.json({ error: 'Drama not found' }, { status: 404 });
+    }
+    if (drama.userId && drama.userId !== auth.userId && auth.role !== 'admin') {
+      return NextResponse.json({ error: '无权访问此项目' }, { status: 403 });
+    }
 
-    const episodeNumber = (maxEpisode?.episodeNumber ?? 0) + 1;
+    const body = await request.json().catch(() => ({}));
+    const { title, episodeNumber } = body;
+
+    // If episodeNumber provided, use it; otherwise auto-increment from max
+    let epNumber: number;
+    if (typeof episodeNumber === 'number' && Number.isFinite(episodeNumber)) {
+      epNumber = Math.floor(episodeNumber);
+    } else {
+      const maxEp = await db.episode.aggregate({
+        where: { dramaId },
+        _max: { episodeNumber: true },
+      });
+      epNumber = (maxEp._max.episodeNumber || 0) + 1;
+    }
 
     // Copy defaultLockedConfig from drama to new episode
     let lockedConfig = 'null';
-    const drama = await db.drama.findUnique({
-      where: { id: dramaId },
-      select: { defaultLockedConfig: true },
-    });
-    if (drama?.defaultLockedConfig && drama.defaultLockedConfig !== 'null') {
+    if (drama.defaultLockedConfig && drama.defaultLockedConfig !== 'null') {
       lockedConfig = drama.defaultLockedConfig;
     }
 
     const episode = await db.episode.create({
       data: {
         dramaId,
-        episodeNumber,
-        title: title || `第${episodeNumber}集`,
+        episodeNumber: epNumber,
+        title: title || `第${epNumber}集`,
         lockedConfig,
       },
     });
 
     // Update totalEpisodes on drama
+    const count = await db.episode.count({ where: { dramaId } });
     await db.drama.update({
       where: { id: dramaId },
-      data: { totalEpisodes: episodeNumber },
+      data: { totalEpisodes: count },
     });
 
     return NextResponse.json(episode, { status: 201 });
