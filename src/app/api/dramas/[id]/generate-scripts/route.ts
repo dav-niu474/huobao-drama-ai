@@ -72,15 +72,23 @@ export async function POST(
       const { id: dramaId } = await params
 
     // Parse request body
-    let body: {
-      skeletonContent?: string
-      strategyContent?: string
-      episodeRange?: [number, number]
-    }
-    try {
-      body = await request.json()
-    } catch {
-      body = {}
+    const body = await request.json().catch(() => ({}))
+    const {
+      startEpisode = 1,
+      endEpisode = 10,
+      skeleton: skeletonBody,
+      strategy: strategyBody,
+      targetDuration = '120s', // '90s' | '120s' | '180s' | '300s'
+      genreStyle = '',         // '都市' | '古装' | '悬疑' | etc.
+      targetPlatform = '',    // 'douyin' | 'kuaishou' | 'wechat' | 'long'
+    } = body as {
+      startEpisode?: number
+      endEpisode?: number
+      skeleton?: string
+      strategy?: string
+      targetDuration?: string
+      genreStyle?: string
+      targetPlatform?: string
     }
 
     // Validate drama exists
@@ -115,8 +123,8 @@ export async function POST(
       parsedContent = {}
     }
 
-    const skeletonContent = body.skeletonContent || (parsedContent.skeleton as string)
-    const strategyContent = body.strategyContent || (parsedContent.strategy as string)
+    const skeletonContent = skeletonBody || (parsedContent.skeleton as string)
+    const strategyContent = strategyBody || (parsedContent.strategy as string)
 
     if (!skeletonContent) {
       return NextResponse.json(
@@ -147,13 +155,13 @@ export async function POST(
       episodeDecisions.push({ episodeNumber: 1 })
     }
 
-    // Apply episode range filter if provided
-    let targetEpisodes = episodeDecisions
-    if (body.episodeRange) {
-      const [start, end] = body.episodeRange
-      targetEpisodes = episodeDecisions.filter(
-        (ep) => ep.episodeNumber >= start && ep.episodeNumber <= end
-      )
+    // Apply episode range filter
+    let targetEpisodes = episodeDecisions.filter(
+      (ep) => ep.episodeNumber >= startEpisode && ep.episodeNumber <= endEpisode
+    )
+    // Fallback: if filter excluded everything, keep all decisions
+    if (targetEpisodes.length === 0) {
+      targetEpisodes = episodeDecisions
     }
 
     // Get or create episodes
@@ -232,6 +240,26 @@ export async function POST(
           ? chapterContent.slice(0, MAX_CHAPTER_CHARS) + '\n\n...(内容过长已截断)'
           : chapterContent
 
+      // Duration / platform / style configuration
+      const durationMap: Record<string, string> = {
+        '90s': '约 90 秒（150-250 字）',
+        '120s': '约 2 分钟（300-400 字）',
+        '180s': '约 3 分钟（450-600 字）',
+        '300s': '约 5 分钟（750-1000 字）',
+      }
+      const durationDesc = durationMap[targetDuration] || durationMap['120s']
+
+      const platformMap: Record<string, string> = {
+        'douyin': '抖音（90秒强钩子，节奏极快，每15秒一个反转）',
+        'kuaishou': '快手（接地气，情感共鸣强）',
+        'wechat': '微信视频号（偏剧情向，节奏适中）',
+        'long': '长视频平台（节奏舒缓，铺垫充分）',
+      }
+      const platformDesc = targetPlatform ? platformMap[targetPlatform] : ''
+
+      const styleHint = genreStyle ? `\n7. 题材风格：${genreStyle}，对白和场景需符合该题材调性` : ''
+      const platformHint = platformDesc ? `\n8. 目标平台：${platformDesc}` : ''
+
       const prompt = `请基于以下信息，为第${decision.episodeNumber}集生成完整的短剧剧本。
 
 ## 故事骨架
@@ -243,11 +271,36 @@ ${strategyContent}
 ## 本集相关章节内容
 ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创作）'}
 
-请生成第${decision.episodeNumber}集的完整剧本，确保：
-1. 严格遵循改编策略
-2. 时长约2分钟（300-400字）
-3. 结尾设置悬念钩子
-4. 对白口语化、简练有力`
+## 输出格式要求（必须严格遵守）
+
+每集剧本使用 <scriptItem name="EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}"> XML标签包裹。
+
+每个场景必须包含以下结构：
+
+【场景编号】场景一
+[场景标题]
+内景/外景 - 地点 - 时间（日/夜）
+
+[场景描述]
+2-3 句环境描写，侧重视觉效果和氛围。
+
+[动作指示]
+角色行为描述，用方括号包裹。
+
+角色名
+（对白内容，口语化，简练有力）
+
+[转场指示]
+
+## 硬约束
+1. 每集 3-5 个场景
+2. 时长${durationDesc}
+3. 对白不超过总字数的 40%
+4. 结尾必须有悬念钩子，用 [钩子] 标注
+5. 角色名独占一行，对白用（）包裹
+6. 严格遵循改编策略中的台词风格和节奏控制${styleHint}${platformHint}
+
+请直接输出剧本，不要其他说明。`
 
       try {
         // Execute script_generator agent
@@ -261,10 +314,12 @@ ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创�
         )
 
         // Update episode with generated script
+        // NOTE: rawContent 保留为小说章节原文，不要用生成剧本覆盖
         await db.episode.update({
           where: { id: episode.id },
           data: {
-            rawContent: result.text,
+            // Only set rawContent if it's empty (preserve existing novel source text)
+            ...(episode.rawContent ? {} : { rawContent: truncatedChapterContent || '' }),
             scriptContent: result.text,
             scriptStatus: 'completed',
           },

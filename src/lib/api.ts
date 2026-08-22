@@ -212,9 +212,13 @@ export const api = {
     generateScripts: (
       dramaId: string,
       data: {
-        skeletonContent: string
-        strategyContent: string
-        episodeRange?: [number, number]
+        skeleton?: string
+        strategy?: string
+        startEpisode?: number
+        endEpisode?: number
+        targetDuration?: string
+        genreStyle?: string
+        targetPlatform?: string
       }
     ) =>
       request<{

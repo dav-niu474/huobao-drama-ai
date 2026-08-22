@@ -11,13 +11,22 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select'
+import {
   BookOpen,
   FileText,
   Loader2,
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Clapperboard,
   Sparkles,
   Brain,
   Play,
@@ -146,6 +155,7 @@ export function ScriptWorkbench() {
   // ── Zustand store ──
   const selectedDramaId = useAppStore((s) => s.selectedDramaId)
   const navigateToProject = useAppStore((s) => s.navigateToProject)
+  const navigateToEpisode = useAppStore((s) => s.navigateToEpisode)
   const currentDrama = useAppStore((s) => s.currentDrama)
 
   // ── Toast via ref (avoid re-render from toast changes) ──
@@ -172,6 +182,9 @@ export function ScriptWorkbench() {
   const [generationProgress, setGenerationProgress] = useState(0)
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
+  const [targetDuration, setTargetDuration] = useState<string>('120s')
+  const [genreStyle, setGenreStyle] = useState<string>('')
+  const [targetPlatform, setTargetPlatform] = useState<string>('')
 
   // ── Event Extraction ──
   const [extractingEvents, setExtractingEvents] = useState(false)
@@ -586,9 +599,13 @@ export function ScriptWorkbench() {
       const skeleton = editingSkeleton ? skeletonEdit : parsedContent.skeleton
       const strategy = editingStrategy ? strategyEdit : parsedContent.strategy
       const result = await api.dramas.generateScripts(dramaId, {
-        skeletonContent: skeleton || '',
-        strategyContent: strategy || '',
-        episodeRange: [episodeRangeStart, episodeRangeEnd],
+        skeleton: skeleton || '',
+        strategy: strategy || '',
+        startEpisode: episodeRangeStart,
+        endEpisode: episodeRangeEnd,
+        targetDuration,
+        genreStyle,
+        targetPlatform,
       })
       if (!mountedRef.current) return
       setGenerationProgress(100)
@@ -667,7 +684,7 @@ export function ScriptWorkbench() {
       case 'events': return !!novel
       case 'skeleton': return !!parsedContent.skeleton
       case 'strategy': return !!parsedContent.strategy
-      case 'scripts': return false // last step
+      case 'scripts': return episodes.length > 0 && episodes.every((ep) => ep.scriptStatus === 'completed')
       default: return false
     }
   })()
@@ -1403,13 +1420,50 @@ export function ScriptWorkbench() {
                       <span className="text-muted-foreground/40">·</span>
                       <span>{progressPercent}%</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] text-muted-foreground">集范围</span>
                         <Input type="number" min={1} value={episodeRangeStart} onChange={(e) => setEpisodeRangeStart(parseInt(e.target.value) || 1)} className="h-7 text-xs w-16" />
                         <span className="text-[10px] text-muted-foreground">至</span>
                         <Input type="number" min={1} value={episodeRangeEnd} onChange={(e) => setEpisodeRangeEnd(parseInt(e.target.value) || 10)} className="h-7 text-xs w-16" />
                       </div>
+                      <Select value={targetDuration} onValueChange={setTargetDuration}>
+                        <SelectTrigger className="h-7 w-28 text-xs">
+                          <SelectValue placeholder="单集时长" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="90s">90 秒（竖屏）</SelectItem>
+                          <SelectItem value="120s">2 分钟（标准）</SelectItem>
+                          <SelectItem value="180s">3 分钟（剧情）</SelectItem>
+                          <SelectItem value="300s">5 分钟（长集）</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={genreStyle} onValueChange={setGenreStyle}>
+                        <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectValue placeholder="题材风格" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="都市">都市</SelectItem>
+                          <SelectItem value="古装">古装</SelectItem>
+                          <SelectItem value="悬疑">悬疑</SelectItem>
+                          <SelectItem value="科幻">科幻</SelectItem>
+                          <SelectItem value="甜宠">甜宠</SelectItem>
+                          <SelectItem value="复仇">复仇</SelectItem>
+                          <SelectItem value="励志">励志</SelectItem>
+                          <SelectItem value="校园">校园</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={targetPlatform} onValueChange={setTargetPlatform}>
+                        <SelectTrigger className="h-7 w-28 text-xs">
+                          <SelectValue placeholder="目标平台" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="douyin">抖音</SelectItem>
+                          <SelectItem value="kuaishou">快手</SelectItem>
+                          <SelectItem value="wechat">微信视频号</SelectItem>
+                          <SelectItem value="long">长视频平台</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={loadScriptStatus}>
                         <RefreshCw className="size-3" />刷新状态
                       </Button>
@@ -1418,11 +1472,44 @@ export function ScriptWorkbench() {
                   {isGenerating && generationProgress > 0 && (
                     <Progress value={generationProgress} className="h-1.5" />
                   )}
+                  {/* Completion banner — all episodes generated, ready to enter production pipeline */}
+                  {episodes.length > 0 && episodes.every((ep) => ep.scriptStatus === 'completed') && (
+                    <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="size-4 text-emerald-500" />
+                        <span className="text-sm font-medium">全部 {episodes.length} 集剧本已生成完毕，可以进入管线制作</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="gap-1"
+                        onClick={() => navigateToEpisode(selectedDramaId!, episodes[0].id)}
+                      >
+                        进入第一集制作
+                        <ChevronRight className="size-3.5" />
+                      </Button>
+                    </div>
+                  )}
                   {episodes.map((ep) => (
-                    <Card key={ep.id} className="border-border/50 py-0 gap-0">
+                    <Card
+                      key={ep.id}
+                      className={`border-border/50 py-0 gap-0 ${ep.scriptStatus === 'completed' ? 'cursor-pointer hover:border-emerald-500/40 transition-colors' : ''}`}
+                      onClick={() => {
+                        if (ep.scriptStatus === 'completed' && selectedDramaId) {
+                          navigateToEpisode(selectedDramaId, ep.id)
+                        }
+                      }}
+                    >
                       <CardHeader
                         className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors"
-                        onClick={() => handleViewEpisodeScript(ep.id)}
+                        onClick={(e) => {
+                          // If script is completed, let the card-level onClick handle navigation
+                          // (don't stop propagation so the event bubbles up to the Card).
+                          // Otherwise, expand/collapse the inline preview.
+                          if (ep.scriptStatus !== 'completed') {
+                            e.stopPropagation()
+                            handleViewEpisodeScript(ep.id)
+                          }
+                        }}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -1452,6 +1539,20 @@ export function ScriptWorkbench() {
                                 <RotateCcw className="size-3" />
                               )}
                               重新生成
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-7 text-xs gap-1"
+                              disabled={ep.scriptStatus !== 'completed'}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (selectedDramaId) navigateToEpisode(selectedDramaId, ep.id)
+                              }}
+                              title="进入此集的管线制作工作台"
+                            >
+                              <Clapperboard className="size-3" />
+                              进入制作
                             </Button>
                             <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
                           </div>
@@ -1520,15 +1621,31 @@ export function ScriptWorkbench() {
             )}
           </div>
 
-          <Button
-            size="sm"
-            onClick={handleNextStep}
-            disabled={!canAdvance}
-            className="gap-1"
-          >
-            <span className="hidden sm:inline">下一步</span>
-            <ChevronRight className="size-4" />
-          </Button>
+          {activeTab === 'scripts' ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                if (selectedDramaId && episodes[0]?.id) {
+                  navigateToEpisode(selectedDramaId, episodes[0].id)
+                }
+              }}
+              disabled={!canAdvance}
+              className="gap-1"
+            >
+              <span className="hidden sm:inline">进入制作</span>
+              <ChevronRight className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleNextStep}
+              disabled={!canAdvance}
+              className="gap-1"
+            >
+              <span className="hidden sm:inline">下一步</span>
+              <ChevronRight className="size-4" />
+            </Button>
+          )}
         </div>
       </footer>
     </div>
