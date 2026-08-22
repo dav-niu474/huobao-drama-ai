@@ -412,10 +412,17 @@ export function ScriptWorkbench() {
       if (!mountedRef.current) return
       setNovel(result.novel)
       setChapters(result.chapters || [])
-      toastRef.current({ title: '小说上传成功' })
-      setParsing(true)
-      setParseProgress({ current: 0, total: 1, message: '开始解析...' })
-      await api.novels.parse(result.novel.id)
+      toastRef.current({ 
+        title: '小说上传成功',
+        description: `已识别 ${result.chapters?.length || 0} 个章节，可点击「提取章节事件」生成事件摘要`
+      })
+      // Note: Do NOT auto-trigger api.novels.parse() here.
+      // Chapter splitting is already done during upload (parseStatus='parsed').
+      // The parse endpoint triggers AI event extraction which is:
+      //   1. Optional (skeleton can fall back to full text)
+      //   2. Slow (may timeout in serverless)
+      //   3. Can leave parseStatus stuck on 'parsing' if the background task fails
+      // Users can manually click "提取章节事件" button to run event extraction.
     } catch (err: any) {
       if (mountedRef.current) {
         toastRef.current({ title: '上传失败', description: err.message || '请检查文件格式', variant: 'destructive' })
@@ -446,12 +453,10 @@ export function ScriptWorkbench() {
       setChapters(result.chapters || [])
       toastRef.current({
         title: '文本提交成功',
-        description: `已识别 ${result.chapters?.length || 0} 个章节`,
+        description: `已识别 ${result.chapters?.length || 0} 个章节，可点击「提取章节事件」生成事件摘要`,
       })
-      // Auto-trigger parse if chapters are not yet split
-      setParsing(true)
-      setParseProgress({ current: 0, total: 1, message: '开始解析...' })
-      await api.novels.parse(result.novel.id)
+      // Note: Do NOT auto-trigger api.novels.parse() — same reasoning as handleFileUpload.
+      // Chapters are already split during upload; AI event extraction is a separate manual step.
     } catch (err: any) {
       if (mountedRef.current) {
         toastRef.current({

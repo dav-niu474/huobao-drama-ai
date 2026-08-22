@@ -52,19 +52,40 @@ export async function POST(
     }
 
     // Check if novel has been parsed (chapters extracted)
+    // 'pending' = chapters not yet split (shouldn't happen with current upload flow)
     if (novel.parseStatus === 'pending') {
       return NextResponse.json(
-        { error: '小说尚未解析，请先执行小说解析', code: 'NOVEL_NOT_PARSED' },
+        { error: '小说尚未解析，请先上传小说文件', code: 'NOVEL_NOT_PARSED' },
         { status: 400 }
       )
     }
 
+    // Handle stuck 'parsing' state:
+    // In serverless environments, the background parse task may not complete,
+    // leaving parseStatus stuck on 'parsing'. If the novel was uploaded more
+    // than 5 minutes ago, treat it as 'parsed' (chapters are already split
+    // during upload — the parse endpoint only does optional AI event extraction).
     if (novel.parseStatus === 'parsing') {
-      return NextResponse.json(
-        { error: '小说正在解析中，请等待解析完成', code: 'NOVEL_PARSING' },
-        { status: 409 }
-      )
+      const updatedAt = new Date(novel.updatedAt).getTime()
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+      if (updatedAt < fiveMinutesAgo) {
+        // Stuck for >5 min — reset to 'parsed' and continue
+        console.warn(`[generate-skeleton] Novel ${novel.id} stuck in 'parsing' for >5min — resetting to 'parsed'`)
+        await db.novel.update({
+          where: { id: novel.id },
+          data: { parseStatus: 'parsed' },
+        })
+      } else {
+        return NextResponse.json(
+          { error: '小说正在解析中，请等待解析完成（约1-2分钟）', code: 'NOVEL_PARSING' },
+          { status: 409 }
+        )
+      }
     }
+
+    // 'failed' parse status is OK — chapters are still split, just AI event
+    // extraction failed. We can still generate skeleton using full text fallback.
+    // 'parsed' status is the normal case — proceed.
 
     // Load existing parsedContent so we can reuse the events table if present.
     // The events table is a much smaller, denser summary than the full novel
