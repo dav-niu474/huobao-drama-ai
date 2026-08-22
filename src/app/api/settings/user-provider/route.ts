@@ -225,14 +225,31 @@ export async function POST(request: NextRequest) {
 
 // ============================================================
 // DELETE /api/settings/user-provider
-// Deletes a user's provider config.
-// Body: { category, provider }
+// Two modes:
+//   1. Query param `?category=llm` — deactivate ALL user providers
+//      for the current user in that category. Used when admin switches
+//      to a platform AiProvider — clears user-level override so the
+//      platform key takes effect (otherwise UserProvider wins in
+//      getActiveProviderForUser).
+//   2. Body `{ category, provider }` — delete a specific provider record.
 // ============================================================
 export async function DELETE(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
 
+    // Mode 1: deactivate-all via query param
+    const queryCategory = request.nextUrl.searchParams.get('category') as AiCategory | null
+    if (queryCategory) {
+      await db.userProvider.updateMany({
+        where: { userId: auth.userId, category: queryCategory, isActive: true },
+        data: { isActive: false },
+      })
+      const providers = await buildUserProvidersMap(auth.userId)
+      return NextResponse.json({ success: true, providers })
+    }
+
+    // Mode 2: delete-specific via body
     const data = await request.json()
     const { category, provider } = data
 

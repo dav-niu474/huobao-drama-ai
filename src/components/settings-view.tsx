@@ -1330,6 +1330,25 @@ function AgentConfigCard({
                   <p className="text-[10px] text-muted-foreground">
                     {ts('followGlobalLlm')}
                   </p>
+                  {model && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+                        覆盖全局模型
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-[10px] h-5 px-2 text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          setModel('')
+                          handleSave({ model: null })
+                        }}
+                      >
+                        清空（跟随全局 LLM）
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Temperature */}
@@ -1579,6 +1598,22 @@ export function SettingsView() {
           isActive: true,
         })
         updateProvidersFromResponse(result.providers)
+
+        // Also deactivate this admin's own UserProvider for the same category.
+        // Otherwise UserProvider takes priority over AiProvider in
+        // getActiveProviderForUser and the admin's platform switch silently
+        // does not take effect (Script Workshop bug).
+        try {
+          const deactivateResult = await api.userProvider.deactivate(category)
+          if (deactivateResult?.providers) {
+            setUserProvidersData(
+              deactivateResult.providers as Record<string, ProviderConfig[]>
+            )
+          }
+        } catch {
+          // Non-critical — admin may not have a UserProvider record for this category
+        }
+
         toast({ title: ts('providerSwitched') })
       } catch (err) {
         toast({
