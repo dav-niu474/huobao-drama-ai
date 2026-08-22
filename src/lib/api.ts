@@ -1133,6 +1133,15 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+
+    // Deactivate ALL user providers for the current user in the given category.
+    // Used when admin switches to a platform AiProvider — clears the
+    // user-level override so the platform key takes effect.
+    deactivate: (category: string) =>
+      request<{ success: boolean; providers: Record<string, ProviderConfig[]> }>(
+        `/api/settings/user-provider?category=${encodeURIComponent(category)}`,
+        { method: 'DELETE' }
+      ),
   },
 
   // ---- Grid Image Generation ----

@@ -7,29 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — Script Workshop API & UI (P0)
+### Fixed — 模型切换不生效 (P0)
 
-#### 后端 Bug 修复
-- **parse 路由误报成功** — AI 失败时仍设 `parseStatus:'parsed'`，现在检查所有 group 是否全失败，全失败时设为 `'failed'`
-- **generate-scripts 误报成功** — 所有集生成失败时仍返回 200 + `totalGenerated:0`，现在返回 500 + 错误信息
-- **episodes POST 完全无鉴权** — 添加 `requireAuth()` + 所有权检查 + 支持 body 中的 `episodeNumber`
-- **episodes GET 缺少所有权检查** — 添加 `drama.userId` 校验，跨用户访问返回 403
-- **ai-config 占位符识别** — `getActiveProvider` 现在过滤 `your-key-here`/`sk-your-`/`nvapi-your-` 等占位符，避免无效 API Key 触发实际请求
-- **NVIDIA 默认模型 EOL** — `z-ai/glm-5.1`（2026-07-02 下线）改为 `deepseek-ai/deepseek-v4-pro`
-- **middleware 前缀匹配** — `/api/ai/` 带尾斜杠导致子路径不匹配，已修正
+#### 根因 #1: 管理员切换 AiProvider 时 UserProvider 仍优先
+- `getActiveProviderForUser` 中 UserProvider 优先级永远高于 AiProvider
+- 管理员在"平台共享 Key"区域切换 radio 只改了 AiProvider.isActive
+- 但管理员的 UserProvider.isActive=true 记录仍然存在并优先返回
+- **修复**: 管理员切换 AiProvider 时，自动反激活自身在该 category 的 UserProvider
+  - 新增 `DELETE /api/settings/user-provider?category=X` 端点（按 category 批量反激活）
+  - 新增 `api.userProvider.deactivate(category)` 前端 helper
+  - `handleSetActive` 切换后自动调用 deactivate + 刷新 UserProvider 列表
 
-#### 前端 Bug 修复 (script-workbench.tsx)
-- **handleGenerateScripts 不识别失败** — 现在检查 `totalGenerated === 0` 并显示错误 toast
-- **loadNovelData 忽略 group_N.error** — 现在扫描 parsedContent 中的 group 错误并提示用户
-- **handleReparse 不清空状态** — 重切章节后清空 parsedContent/eventsData/skeletonEdit/strategyEdit
+#### 根因 #2: AgentConfig.model 静默覆盖 Provider.model
+- 管理员曾在"AI 智能体配置"里为某个 agent 填过 model（如 'deepseek-chat'）
+- 该值在 `executeAgent` 中静默覆盖 provider 的 model，切换 provider 后仍用旧 model 名
+- **修复**: AgentConfig UI 增加警告徽章 + 清空按钮
+  - model 非空时显示琥珀色"覆盖全局模型"徽章
+  - "清空（跟随全局 LLM）"按钮一键恢复跟随全局
 
-#### UI 重设计 — 与项目详情页保持一致
-- 移除 3 栏布局（左栏章节列表 + 中栏内容 + 右栏统计），改为与 project-detail 一致的单栏居中布局
-- 顶部 sticky header + 返回按钮 + 状态徽章 + 删除小说按钮
-- Pipeline Stepper 样式与 ThreeStageProgress 一致（primary 激活 / emerald 完成 / muted 待办）
-- 内容区使用 Card 组件包裹，与 project-detail 视觉风格统一
-- 底部 action bar：上一步 / 当前步骤主操作 / 下一步
-- 上传/粘贴空态改为居中 Card，样式与 project-detail 空态一致
+#### 根因 #3: workshop 路由缺少 userIdContext.run 包裹
+- `generate-skeleton` / `generate-strategy` / `generate-scripts` 三个路由未用 `userIdContext.run` 包裹
+- 导致 agent 工具内部的 `aiClient.*` 调用无法通过 AsyncLocalStorage 获取 userId
+- **修复**: 三个路由的 POST handler 全部用 `userIdContext.run(auth.userId, async () => { ... })` 包裹
+
+### Fixed — Script Workshop API & UI (前次合并)
+- parse 路由误报成功 → AI 失败时设 parseStatus='failed'
+- generate-scripts 误报成功 → 所有集失败时返回 500
+- episodes POST 无鉴权 → 添加 requireAuth + 所有权检查
+- episodes GET 无所有权检查 → 添加 drama.userId 校验
+- ai-config 占位符识别 → 过滤 your-key-here/sk-your-/nvapi-your- 等
+- NVIDIA 默认模型 EOL → z-ai/glm-5.1 改为 deepseek-ai/deepseek-v4-pro
+- UI 重设计 → 与项目详情页保持一致风格（单栏居中 + Stepper + Card）
 
 ### E2E 接口测试验证
 - 18/19 测试通过（1 个是测试断言写错，201 是正确响应）

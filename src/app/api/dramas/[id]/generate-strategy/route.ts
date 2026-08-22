@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 import { executeAgent } from '@/lib/agents/factory'
+import { userIdContext } from '@/lib/ai-config'
 
 export async function POST(
   request: NextRequest,
@@ -19,7 +20,12 @@ export async function POST(
     const auth = await requireAuth()
     if (auth.error) return auth.error
 
-    const { id: dramaId } = await params
+    // Wrap entire handler body in userIdContext so downstream LLM calls
+    // (getActiveProviderForUser) resolve the current user's provider
+    // correctly — fixes Script Workshop using stale provider after admin
+    // switches the platform AiProvider.
+    return await userIdContext.run(auth.userId, async () => {
+      const { id: dramaId } = await params
 
     // Parse request body
     let body: { skeletonContent?: string }
@@ -107,9 +113,10 @@ ${skeletonContent}`
       },
     })
 
-    return NextResponse.json({
-      strategy: result.text,
-      novelId: novel.id,
+      return NextResponse.json({
+        strategy: result.text,
+        novelId: novel.id,
+      })
     })
   } catch (error) {
     console.error('[generate-strategy] Failed:', error)
