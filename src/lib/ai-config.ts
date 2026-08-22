@@ -123,6 +123,28 @@ export interface ProviderConfig {
  * Load the active provider config for a given category from DB.
  * Falls back to env vars if no DB config is active.
  */
+
+// Map of EOL (end-of-life) model IDs to their recommended replacements.
+// When a stored DB record uses one of these, we transparently substitute the stable model.
+const EOL_MODEL_REPLACEMENTS: Record<string, string> = {
+  'z-ai/glm-5.1': 'meta/llama-3.3-70b-instruct',
+  'deepseek-ai/deepseek-v4-pro': 'meta/llama-3.3-70b-instruct',
+}
+
+function resolveModel(provider: string, storedModel: string, preset?: { defaultModel?: string }): string {
+  // If stored model exists and is NOT in the EOL list, use it
+  if (storedModel && !EOL_MODEL_REPLACEMENTS[storedModel]) {
+    return storedModel
+  }
+  // If stored model IS in the EOL list, replace it
+  if (storedModel && EOL_MODEL_REPLACEMENTS[storedModel]) {
+    console.warn(`[ai-config] Stored model '${storedModel}' for provider '${provider}' is EOL — substituting '${EOL_MODEL_REPLACEMENTS[storedModel]}'`)
+    return EOL_MODEL_REPLACEMENTS[storedModel]
+  }
+  // Fall back to preset default
+  return preset?.defaultModel || ''
+}
+
 export async function getActiveProvider(category: AiCategory): Promise<ProviderConfig | null> {
   // Try DB first
   const dbProvider = await db.aiProvider.findFirst({
@@ -151,7 +173,7 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
         name: dbProvider.name || preset?.name || dbProvider.provider,
         apiKey: realDbKey || realEnvKey,
         baseUrl: dbProvider.baseUrl || preset?.defaultBaseUrl || '',
-        model: dbProvider.model || preset?.defaultModel || '',
+        model: resolveModel(dbProvider.provider, dbProvider.model, preset),
         isActive: true,
       }
     }
@@ -179,6 +201,23 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
         apiKey,
         baseUrl: preset.defaultBaseUrl,
         model: preset.defaultModel,
+        isActive: true,
+      }
+    }
+  }
+
+  // Fallback: for LLM category only, use the built-in z-ai-sdk (no API key required)
+  // This ensures the app works out-of-the-box without any configuration
+  if (category === 'llm') {
+    const zAiPreset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'z-ai-sdk')
+    if (zAiPreset) {
+      return {
+        category,
+        provider: 'z-ai-sdk',
+        name: zAiPreset.name,
+        apiKey: '',  // No key needed
+        baseUrl: zAiPreset.defaultBaseUrl,
+        model: zAiPreset.defaultModel,
         isActive: true,
       }
     }
@@ -225,7 +264,7 @@ export async function getActiveProviderForUser(category: AiCategory, userId?: st
         name: preset?.name ?? userProvider.provider,
         apiKey: userProvider.apiKey,
         baseUrl: userProvider.baseUrl || preset?.defaultBaseUrl || '',
-        model: userProvider.model || preset?.defaultModel || '',
+        model: resolveModel(userProvider.provider, userProvider.model, preset),
         isActive: true,
       }
     }
@@ -485,6 +524,29 @@ export const aiClient = {
       throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
     }
 
+    // z-ai-sdk uses z-ai-web-dev-sdk instead of HTTP fetch — no API key required
+    if (provider.provider === 'z-ai-sdk') {
+      try {
+        const { default: ZAI } = await import('z-ai-web-dev-sdk')
+        const zai = await ZAI.create()
+        const completion = await zai.chat.completions.create({
+          model: options?.model || provider.model,
+          messages,
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.max_tokens ?? 4096,
+        })
+        return completion
+      } catch (err: any) {
+        console.error('[z-ai-sdk] chat failed:', err.message)
+        // Fallback to HTTP if SDK fails (user may have configured ZAI_API_KEY env var)
+        const errMsg = err.message || 'Z.ai SDK 调用失败'
+        if (errMsg.includes('API key') || errMsg.includes('apiKey') || errMsg.includes('401')) {
+          throw new Error('Z.ai 内置 LLM 认证失败：请检查是否安装 z-ai-web-dev-sdk 或配置其他 LLM 供应商')
+        }
+        throw new Error(`Z.ai LLM 调用失败: ${errMsg}`)
+      }
+    }
+
     const body = {
       model: options?.model || provider.model,
       messages,
@@ -514,7 +576,29 @@ export const aiClient = {
 
     if (!res.ok) {
       const text = await res.text().catch(() => 'Unknown error')
-      throw new Error(`LLM API error (${res.status}): ${text.slice(0, 300)}`)
+
+      // Provide user-friendly error messages based on status code
+      let friendlyError: string
+      if (res.status === 401 || res.status === 403) {
+        friendlyError = `AI 供应商认证失败 (HTTP ${res.status})：请检查 API Key 是否正确配置`
+      } else if (res.status === 404) {
+        const modelMatch = text.match(/model[^"]*"?([^"]+)"?/i)
+        const modelName = modelMatch ? modelMatch[1] : '当前模型'
+        friendlyError = `模型不可用 (HTTP 404)：${modelName} 可能已下线，请在设置中切换其他模型`
+      } else if (res.status === 410) {
+        const eolMatch = text.match(/model['"]?\s*['"]?([^'"]+)['"]?.*?(\d{4}-\d{2}-\d{2})/i)
+        const modelName = eolMatch ? eolMatch[1] : '当前模型'
+        friendlyError = `模型已下线 (HTTP 410)：${modelName} 已停止服务，请在设置中切换其他模型`
+      } else if (res.status === 429) {
+        friendlyError = `请求频率超限 (HTTP 429)：请稍后重试或联系供应商提升配额`
+      } else if (res.status >= 500) {
+        friendlyError = `AI 供应商服务异常 (HTTP ${res.status})：请稍后重试`
+      } else {
+        friendlyError = `AI 调用失败 (HTTP ${res.status})：${text.slice(0, 200)}`
+      }
+
+      console.error(`[aiClient.chatCompletion] ${friendlyError}`, { status: res.status, url: provider.baseUrl, model: options?.model || provider.model })
+      throw new Error(friendlyError)
     }
 
     return res.json()

@@ -246,15 +246,21 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ events: allEvents })
     })
-  } catch (error) {
-    console.error('[extract-events] POST failed:', error)
+  } catch (error: any) {
+    const errMsg = error?.message || (error instanceof Error ? error.message : String(error))
+    console.error('[extract-events] POST failed:', errMsg)
+
+    // If the error message already looks user-friendly (HTTP / 供应商 / 模型 / API Key),
+    // surface it as-is; otherwise wrap it with a friendlier prefix.
+    const isFriendly =
+      typeof errMsg === 'string' &&
+      (errMsg.includes('HTTP') ||
+        errMsg.includes('供应商') ||
+        errMsg.includes('模型') ||
+        errMsg.includes('API Key'))
+
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to extract events',
-      },
+      { error: isFriendly ? errMsg : `事件提取失败: ${errMsg}` },
       { status: 500 }
     )
   }

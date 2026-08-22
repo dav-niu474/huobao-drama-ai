@@ -163,6 +163,7 @@ export async function POST(
       title: string
       scriptStatus: string
     }> = []
+    let firstFailureMessage: string | null = null
 
     for (const decision of targetEpisodes) {
       // Find or create episode
@@ -275,11 +276,18 @@ ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创�
           title: episode.title,
           scriptStatus: 'completed',
         })
-      } catch (error) {
+      } catch (error: any) {
+        const errMsg = error?.message || (error instanceof Error ? error.message : String(error))
         console.error(
           `[generate-scripts] Episode ${decision.episodeNumber} failed:`,
-          error
+          errMsg
         )
+
+        // Remember the first failure message so we can surface it to the user
+        // in the all-failed response (below) for easier debugging.
+        if (firstFailureMessage === null) {
+          firstFailureMessage = typeof errMsg === 'string' ? errMsg : String(errMsg)
+        }
 
         // Mark episode as failed
         await db.episode.update({
@@ -303,14 +311,28 @@ ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创�
       data: { totalEpisodes },
     })
 
-    // If every episode failed, surface a 500 so the client can show an error
+    // If every episode failed, surface a 500 so the client can show an error.
+    // Include the first failure's friendly error message when available so the
+    // user knows *why* (e.g. API Key wrong, model EOL, rate-limited, etc.).
     const allFailed =
       generatedEpisodes.length > 0 &&
       generatedEpisodes.every((e) => e.scriptStatus === 'failed')
     if (allFailed) {
+      const isFriendly =
+        typeof firstFailureMessage === 'string' &&
+        (firstFailureMessage.includes('HTTP') ||
+          firstFailureMessage.includes('供应商') ||
+          firstFailureMessage.includes('模型') ||
+          firstFailureMessage.includes('API Key'))
+      const error =
+        firstFailureMessage && isFriendly
+          ? firstFailureMessage
+          : `所有集生成都失败，请检查 AI 配置后重试${
+              firstFailureMessage ? `（${firstFailureMessage}）` : ''
+            }`
       return NextResponse.json(
         {
-          error: '所有集生成都失败，请检查 AI 配置后重试',
+          error,
           episodes: generatedEpisodes,
           totalGenerated: 0,
         },
@@ -325,14 +347,21 @@ ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创�
         ).length,
       })
     })
-  } catch (error) {
-    console.error('[generate-scripts] Failed:', error)
+  } catch (error: any) {
+    const errMsg = error?.message || (error instanceof Error ? error.message : String(error))
+    console.error('[generate-scripts] Failed:', errMsg)
+
+    // If the error message already looks user-friendly (HTTP / 供应商 / 模型 / API Key),
+    // surface it as-is; otherwise wrap it with a friendlier prefix.
+    const isFriendly =
+      typeof errMsg === 'string' &&
+      (errMsg.includes('HTTP') ||
+        errMsg.includes('供应商') ||
+        errMsg.includes('模型') ||
+        errMsg.includes('API Key'))
+
     return NextResponse.json(
-      {
-        error: `剧本生成失败: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      },
+      { error: isFriendly ? errMsg : `剧本生成失败: ${errMsg}` },
       { status: 500 }
     )
   }

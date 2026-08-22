@@ -141,6 +141,47 @@ async function callLLMWithTools(
     throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
   }
 
+  // z-ai-sdk uses z-ai-web-dev-sdk instead of HTTP fetch — no API key required
+  // Use non-streaming chat completions via SDK
+  if (provider.provider === 'z-ai-sdk') {
+    try {
+      const { default: ZAI } = await import('z-ai-web-dev-sdk')
+      const zai = await ZAI.create()
+      const body: Record<string, unknown> = {
+        model: options.model || provider.model,
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+          ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+        })),
+        temperature: options.temperature ?? 0.7,
+        max_tokens: options.maxTokens ?? 4096,
+      }
+      if (tools.length > 0) {
+        body.tools = tools
+        body.tool_choice = 'auto'
+      }
+      const completion = await zai.chat.completions.create(body as any)
+      const choice = completion.choices?.[0]
+      return {
+        message: {
+          role: choice?.message?.role || 'assistant',
+          content: choice?.message?.content || null,
+          tool_calls: choice?.message?.tool_calls as ToolCallMessage[] | undefined,
+        },
+        finishReason: choice?.finish_reason || 'stop',
+      }
+    } catch (err: any) {
+      console.error('[z-ai-sdk] callLLMWithTools failed:', err.message)
+      const errMsg = err.message || 'Z.ai SDK 调用失败'
+      if (errMsg.includes('API key') || errMsg.includes('apiKey') || errMsg.includes('401')) {
+        throw new Error('Z.ai 内置 LLM 认证失败：请检查是否安装 z-ai-web-dev-sdk 或配置其他 LLM 供应商')
+      }
+      throw new Error(`Z.ai LLM 调用失败: ${errMsg}`)
+    }
+  }
+
   const body: Record<string, unknown> = {
     model: options.model || provider.model,
     messages: messages.map((m) => ({
@@ -257,7 +298,31 @@ async function callLLMWithTools(
 
     if (!res.ok) {
       const text = await res.text().catch(() => 'Unknown error')
-      throw new Error(`LLM API error (${res.status}): ${text.slice(0, 500)}`)
+
+      // Provide user-friendly error messages based on status code
+      let friendlyError: string
+      if (res.status === 401 || res.status === 403) {
+        friendlyError = `AI 供应商认证失败 (HTTP ${res.status})：请检查 API Key 是否正确配置`
+      } else if (res.status === 404) {
+        // Model not found — extract model name from error if possible
+        const modelMatch = text.match(/model[^"]*"?([^"]+)"?/i)
+        const modelName = modelMatch ? modelMatch[1] : '当前模型'
+        friendlyError = `模型不可用 (HTTP 404)：${modelName} 可能已下线，请在设置中切换其他模型`
+      } else if (res.status === 410) {
+        // Gone — model EOL
+        const eolMatch = text.match(/model['"]?\s*['"]?([^'"]+)['"]?.*?(\d{4}-\d{2}-\d{2})/i)
+        const modelName = eolMatch ? eolMatch[1] : '当前模型'
+        friendlyError = `模型已下线 (HTTP 410)：${modelName} 已停止服务，请在设置中切换其他模型`
+      } else if (res.status === 429) {
+        friendlyError = `请求频率超限 (HTTP 429)：请稍后重试或联系供应商提升配额`
+      } else if (res.status >= 500) {
+        friendlyError = `AI 供应商服务异常 (HTTP ${res.status})：请稍后重试`
+      } else {
+        friendlyError = `AI 调用失败 (HTTP ${res.status})：${text.slice(0, 200)}`
+      }
+
+      console.error(`[callLLMWithTools] ${friendlyError}`, { status: res.status, url: provider.baseUrl, model: options.model || provider.model })
+      throw new Error(friendlyError)
     }
 
     if (!res.body) {
