@@ -17,8 +17,28 @@ import type {
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options)
   if (!res.ok) {
+    // Try to parse error body — some endpoints return structured error JSON
+    // (e.g. { error: "...", episodes: [...], totalGenerated: 0 }) that the
+    // caller needs to inspect. If we can parse JSON, return it as the result
+    // so the caller can check fields like totalGenerated.
     const text = await res.text().catch(() => 'Unknown error')
-    throw new Error(`API ${res.status}: ${text}`)
+    try {
+      const json = JSON.parse(text)
+      // If the response has an 'error' field AND no other useful fields,
+      // throw it as an Error (preserving existing behavior for simple errors).
+      // But if it has episodes/totalGenerated etc., return it so the caller
+      // can handle partial failures gracefully.
+      if (json.error && !json.episodes && json.totalGenerated === undefined) {
+        throw new Error(json.error || text)
+      }
+      // Return structured error response for the caller to handle
+      return json as T
+    } catch (parseErr) {
+      if (parseErr instanceof Error && parseErr.message !== text) {
+        throw parseErr // Re-throw if it was a JSON.parse success with error field
+      }
+      throw new Error(`API ${res.status}: ${text.slice(0, 200)}`)
+    }
   }
   return res.json() as Promise<T>
 }
@@ -222,6 +242,7 @@ export const api = {
       }
     ) =>
       request<{
+        error?: string
         episodes: Array<{
           id: string
           episodeNumber: number
