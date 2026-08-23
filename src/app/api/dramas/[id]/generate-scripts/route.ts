@@ -173,6 +173,15 @@ export async function POST(
     }> = []
     let firstFailureMessage: string | null = null
 
+    // Before the for loop, fetch all existing completed episodes for this drama.
+    // These serve as "previous episode" context for剧情衔接 when generating
+    // subsequent episodes in this run (or for reruns of a subset).
+    const existingEpisodes = await db.episode.findMany({
+      where: { dramaId, scriptStatus: 'completed' },
+      orderBy: { episodeNumber: 'asc' },
+      select: { id: true, episodeNumber: true, title: true, scriptContent: true },
+    })
+
     for (const decision of targetEpisodes) {
       // Find or create episode
       let episode = await db.episode.findUnique({
@@ -260,7 +269,39 @@ export async function POST(
       const styleHint = genreStyle ? `\n7. 题材风格：${genreStyle}，对白和场景需符合该题材调性` : ''
       const platformHint = platformDesc ? `\n8. 目标平台：${platformDesc}` : ''
 
+      // Find the previous episode (N-1) for剧情衔接 — prefer the
+      // pre-loop snapshot of already-completed episodes; fall back to a
+      // fresh DB lookup in case episode N-1 was completed earlier in this
+      // very run (the snapshot won't contain rows created/updated here).
+      let previousEpisode = existingEpisodes.find(
+        (ep) => ep.episodeNumber === decision.episodeNumber - 1
+      )
+      if (!previousEpisode && decision.episodeNumber > 1) {
+        const freshPrev = await db.episode.findUnique({
+          where: {
+            dramaId_episodeNumber: {
+              dramaId,
+              episodeNumber: decision.episodeNumber - 1,
+            },
+          },
+          select: { id: true, episodeNumber: true, title: true, scriptContent: true },
+        })
+        if (freshPrev && freshPrev.scriptContent) {
+          previousEpisode = freshPrev
+        }
+      }
+
+      const previousScriptContext = previousEpisode?.scriptContent
+        ? `\n## 上一集剧本（用于剧情衔接，不要重复内容）\n<scriptItem name="${previousEpisode.title}">${previousEpisode.scriptContent}</scriptItem>`
+        : '\n（这是第一集，无需衔接上一集）'
+
       const prompt = `请基于以下信息，为第${decision.episodeNumber}集生成完整的短剧剧本。
+
+## 项目配置
+- 集数：${targetEpisodes.length}集
+- 单集时长：${durationDesc}
+- 平台规格：${platformDesc || '未指定'}
+- 风格定位：${genreStyle || '未指定'}
 
 ## 故事骨架
 ${skeletonContent}
@@ -270,35 +311,46 @@ ${strategyContent}
 
 ## 本集相关章节内容
 ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创作）'}
+${previousScriptContext}
 
-## 输出格式要求（必须严格遵守）
+## 输出格式（必须严格遵守）
 
-每集剧本使用 <scriptItem name="EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}"> XML标签包裹。
+用 <scriptItem name="EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}"> XML标签包裹整集剧本。
 
-每个场景必须包含以下结构：
+剧本内部格式：
 
-【场景编号】场景一
-[场景标题]
-内景/外景 - 地点 - 时间（日/夜）
+# {作品名} EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}
+# 目标时长：${durationDesc}
+# 平台：${platformDesc || '竖屏9:16'} | 风格：${genreStyle || '都市'} | 节拍：3秒情绪冲击+15秒反转
 
-[场景描述]
-2-3 句环境描写，侧重视觉效果和氛围。
+---
 
-[动作指示]
-角色行为描述，用方括号包裹。
+## 剧情梗概
+{200-300字概括}
 
-角色名
-（对白内容，口语化，简练有力）
+---
 
-[转场指示]
+{场号} {场景名} {时间}/{光线}
+人物：{人物1} {人物2}
+
+△{场景环境描述}
+△{人物动作描写}
+{人物名}：{台词}
+△{后续动作}
+
+OS（{人物名}，{情绪}）：{内心独白}
+
+---
 
 ## 硬约束
-1. 每集 3-5 个场景
-2. 时长${durationDesc}
-3. 对白不超过总字数的 40%
-4. 结尾必须有悬念钩子，用 [钩子] 标注
-5. 角色名独占一行，对白用（）包裹
-6. 严格遵循改编策略中的台词风格和节奏控制${styleHint}${platformHint}
+1. 每集 3-5 个场景，场景段落正文 ≤ 1000 字
+2. 单句台词 ≤ 20字
+3. △描述必须可直接用于 AI 视频生成
+4. 画面描述用 △ 标记，"写人怎么干"而非"人干什么"
+5. 转场用 --- 分隔，特殊转场用 [硬切] [淡入] [闪白]
+6. 结尾设置悬念钩子
+7. 台词零删改，忠于原作精神
+${styleHint}${platformHint}
 
 请直接输出剧本，不要其他说明。`
 
