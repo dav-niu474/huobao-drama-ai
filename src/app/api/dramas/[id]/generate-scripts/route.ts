@@ -147,22 +147,16 @@ export async function POST(
       content: string
     }>
 
-    // Parse episode decisions from skeleton
-    const episodeDecisions = parseEpisodeDecisions(skeletonContent)
-
-    // If no episode decisions found, create a default single episode
-    if (episodeDecisions.length === 0) {
-      episodeDecisions.push({ episodeNumber: 1 })
+    // Generate episode list directly from user-specified range
+    // (previously used parseEpisodeDecisions() to extract episode numbers from skeleton text,
+    //  but that was unreliable — skeleton might mention "第5集" in examples, causing wrong episode numbers)
+    const episodeNumbers: number[] = []
+    for (let i = startEpisode; i <= endEpisode; i++) {
+      episodeNumbers.push(i)
     }
-
-    // Apply episode range filter
-    let targetEpisodes = episodeDecisions.filter(
-      (ep) => ep.episodeNumber >= startEpisode && ep.episodeNumber <= endEpisode
-    )
-    // Fallback: if filter excluded everything, keep all decisions
-    if (targetEpisodes.length === 0) {
-      targetEpisodes = episodeDecisions
-    }
+    const targetEpisodes: EpisodeDecision[] = episodeNumbers.map((n) => ({
+      episodeNumber: n,
+    }))
 
     // Get or create episodes
     const generatedEpisodes: Array<{
@@ -205,14 +199,8 @@ export async function POST(
         .slice(startChapterIdx, endChapterIdx)
         .map((ch) => ch.index)
 
-        // 用原文集数标题，而不是"第N集"或"片段N"
-        const sourceChaptersForTitle = chapters
-          .slice(startChapterIdx, endChapterIdx)
-        const chapterTitles = sourceChaptersForTitle
-          .map((ch) => ch.title)
-          .filter(Boolean)
-        const episodeTitle = decision.coreEvent
-          || (chapterTitles.length > 0 ? chapterTitles.join(' / ') : `第${decision.episodeNumber}集`)
+        // Use EPXX format — will be updated after AI generates proper title from script
+        const episodeTitle = `EP${String(decision.episodeNumber).padStart(2, '0')}`
 
         episode = await db.episode.create({
           data: {
@@ -365,14 +353,40 @@ ${styleHint}${platformHint}
           { userId: auth.userId }
         )
 
-        // Update episode with generated script
-        // NOTE: rawContent 保留为小说章节原文，不要用生成剧本覆盖
+        // Parse the <scriptItem> XML wrapper from the LLM output
+        // The LLM wraps the script in <scriptItem name="...">...</scriptItem>
+        // We need to extract just the inner content and the name (for episode title)
+        let scriptContent = result.text
+        let episodeTitle = episode.title
+
+        // Extract <scriptItem name="...">content</scriptItem>
+        const scriptItemMatch = scriptContent.match(
+          /<scriptItem\s+name="([^"]+)">([\s\S]*?)<\/scriptItem>/
+        )
+        if (scriptItemMatch) {
+          episodeTitle = scriptItemMatch[1].trim()
+          scriptContent = scriptItemMatch[2].trim()
+        } else {
+          // If no XML wrapper, try to extract title from first line starting with #
+          const titleMatch = scriptContent.match(/^#\s+(.+)$/m)
+          if (titleMatch) {
+            episodeTitle = titleMatch[1].trim()
+          }
+          // Remove any stray <scriptItem> tags
+          scriptContent = scriptContent
+            .replace(/<scriptItem\s+name="[^"]*">/g, '')
+            .replace(/<\/scriptItem>/g, '')
+            .trim()
+        }
+
+        // Update episode with cleaned script content and proper title
         await db.episode.update({
           where: { id: episode.id },
           data: {
             // Only set rawContent if it's empty (preserve existing novel source text)
             ...(episode.rawContent ? {} : { rawContent: truncatedChapterContent || '' }),
-            scriptContent: result.text,
+            scriptContent: scriptContent,
+            title: episodeTitle,
             scriptStatus: 'completed',
           },
         })
@@ -380,7 +394,7 @@ ${styleHint}${platformHint}
         generatedEpisodes.push({
           id: episode.id,
           episodeNumber: decision.episodeNumber,
-          title: episode.title,
+          title: episodeTitle,
           scriptStatus: 'completed',
         })
       } catch (error: any) {
