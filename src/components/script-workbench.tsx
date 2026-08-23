@@ -594,43 +594,60 @@ export function ScriptWorkbench() {
     const dramaId = selectedDramaIdRef.current
     if (!dramaId) return
     setGeneratingScripts(true)
-    setGenerationProgress(10)
+    setGenerationProgress(0)
     try {
       const skeleton = editingSkeleton ? skeletonEdit : parsedContent.skeleton
       const strategy = editingStrategy ? strategyEdit : parsedContent.strategy
-      const result = await api.dramas.generateScripts(dramaId, {
-        skeleton: skeleton || '',
-        strategy: strategy || '',
-        startEpisode: episodeRangeStart,
-        endEpisode: episodeRangeEnd,
-        targetDuration,
-        genreStyle,
-        targetPlatform,
-      })
-      if (!mountedRef.current) return
+
+      // Generate episodes one by one to avoid Vercel timeout (60s on Hobby plan).
+      // Each episode takes ~20-30s, so batching 3+ in one request would exceed
+      // the timeout. By calling generate-scripts with startEpisode=endEpisode=N
+      // for each episode, each request stays under the timeout.
+      const totalEpisodes = episodeRangeEnd - episodeRangeStart + 1
+      let totalGenerated = 0
+      let lastError: string | null = null
+
+      for (let epNum = episodeRangeStart; epNum <= episodeRangeEnd; epNum++) {
+        setGenerationProgress(Math.round(((epNum - episodeRangeStart) / totalEpisodes) * 100))
+        try {
+          const result = await api.dramas.generateScripts(dramaId, {
+            skeleton: skeleton || '',
+            strategy: strategy || '',
+            startEpisode: epNum,
+            endEpisode: epNum,
+            targetDuration,
+            genreStyle,
+            targetPlatform,
+          })
+          if (result.episodes && result.episodes.some((e) => e.scriptStatus === 'completed')) {
+            totalGenerated++
+          } else if (result.error) {
+            lastError = result.error
+          }
+        } catch (epErr: any) {
+          // Individual episode failure — continue to next episode
+          lastError = epErr.message
+        }
+        if (!mountedRef.current) return
+      }
+
       setGenerationProgress(100)
       await loadScriptStatus()
-      // Bug fix: the generate-scripts endpoint always returns 200 even when
-      // every episode failed (e.g. AI supplier misconfigured). Inspect the
-      // per-episode scriptStatus to decide which toast to show.
-      const totalRequested = result.episodes?.length || 0
-      if (
-        result.totalGenerated === 0 ||
-        (result.episodes && result.episodes.every((e) => e.scriptStatus === 'failed'))
-      ) {
+
+      if (totalGenerated === 0) {
         toastRef.current({
           title: '剧本生成失败',
-          description: '请检查 AI 供应商配置后重试',
+          description: lastError || '请检查 AI 供应商配置后重试',
           variant: 'destructive',
         })
-      } else if (result.totalGenerated < totalRequested) {
+      } else if (totalGenerated < totalEpisodes) {
         toastRef.current({
-          title: `部分剧本生成成功 (${result.totalGenerated}/${totalRequested})`,
+          title: `部分剧本生成成功 (${totalGenerated}/${totalEpisodes})`,
           description: '部分集生成失败，可点击单集「重新生成」按钮重试',
           variant: 'default',
         })
       } else {
-        toastRef.current({ title: `剧本生成完成，成功 ${result.totalGenerated} 集` })
+        toastRef.current({ title: `剧本生成完成，成功 ${totalGenerated} 集` })
       }
       setActiveTab('scripts')
     } catch (err: any) {
