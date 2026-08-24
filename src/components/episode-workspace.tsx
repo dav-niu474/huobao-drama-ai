@@ -1945,13 +1945,20 @@ export function EpisodeWorkspace() {
       {/* ── Top Bar ────────────────────────────────────────── */}
       <header className="flex-shrink-0 border-b border-border/50 bg-background/80 backdrop-blur-md z-10">
         <div className="flex items-center gap-3 px-4 py-2.5">
-          {/* Breadcrumb: 项目名 > 管线生产 > 第N集 */}
-          <button
-            onClick={() => navigateToProject(selectedDramaId!)}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-28"
+          {/* Breadcrumb: 返回项目 > 项目名 > 管线生产 > 第N集 */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
+            className="text-muted-foreground hover:text-foreground -ml-2 gap-1"
           >
+            <ArrowLeft className="size-4" />
+            <span className="hidden sm:inline">返回项目</span>
+          </Button>
+          <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
+          <span className="text-sm text-muted-foreground truncate max-w-28">
             {dramaTitle}
-          </button>
+          </span>
           <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
           <span className="text-sm text-muted-foreground">管线生产</span>
           <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
