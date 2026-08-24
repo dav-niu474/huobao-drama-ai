@@ -283,7 +283,7 @@ export async function POST(
         ? `\n## 上一集剧本（用于剧情衔接，不要重复内容）\n<scriptItem name="${previousEpisode.title}">${previousEpisode.scriptContent}</scriptItem>`
         : '\n（这是第一集，无需衔接上一集）'
 
-      const prompt = `请基于以下信息，为第${decision.episodeNumber}集生成完整的短剧剧本。
+      const prompt = `请为第${decision.episodeNumber}集生成完整的短剧剧本。
 
 ## 项目配置
 - 集数：${targetEpisodes.length}集
@@ -297,50 +297,18 @@ ${skeletonContent}
 ## 改编策略
 ${strategyContent}
 
-## 本集相关章节内容
+## 本集相关章节原文
 ${truncatedChapterContent || '（无特定章节，请基于骨架和策略创作）'}
 ${previousScriptContext}
 
-## 输出格式（必须严格遵守）
+请严格按照 SKILL.md 中的执行流程生成剧本：
+1. 先阐述 200-300 字创作思路（场景组织、重点情绪与冲突、节奏把控）
+2. 将完整剧本包裹在 <scriptItem name="EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}"> XML 标签中输出，开闭标签必须成对出现，中间不得插入非剧本内容
+3. 剧本内部必须包含：文件头（3 行 # 注释：标题/目标时长/平台风格）→ 剧情梗概（200-300 字）→ 场景段落（△标记场景描述、人物名：台词、OS画外音），场景之间用 --- 分隔
+4. 完成后返回一句简短确认（如"第${decision.episodeNumber}集剧本已写入"），不复述剧本内容
 
-用 <scriptItem name="EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}"> XML标签包裹整集剧本。
-
-剧本内部格式：
-
-# {作品名} EP${String(decision.episodeNumber).padStart(2, '0')}：${decision.coreEvent || '核心事件'}
-# 目标时长：${durationDesc}
-# 平台：${platformDesc || '竖屏9:16'} | 风格：${genreStyle || '都市'} | 节拍：3秒情绪冲击+15秒反转
-
----
-
-## 剧情梗概
-{200-300字概括}
-
----
-
-{场号} {场景名} {时间}/{光线}
-人物：{人物1} {人物2}
-
-△{场景环境描述}
-△{人物动作描写}
-{人物名}：{台词}
-△{后续动作}
-
-OS（{人物名}，{情绪}）：{内心独白}
-
----
-
-## 硬约束
-1. 每集 3-5 个场景，场景段落正文 ≤ 1000 字
-2. 单句台词 ≤ 20字
-3. △描述必须可直接用于 AI 视频生成
-4. 画面描述用 △ 标记，"写人怎么干"而非"人干什么"
-5. 转场用 --- 分隔，特殊转场用 [硬切] [淡入] [闪白]
-6. 结尾设置悬念钩子
-7. 台词零删改，忠于原作精神
-${styleHint}${platformHint}
-
-请直接输出剧本，不要其他说明。`
+输出格式与硬约束以 SKILL.md 为准（三大密度自检 / 黄金单集公式 / 节奏 3-15-45 / 钩子级反转 / 自查清单）。
+${styleHint}${platformHint}`
 
       try {
         // Execute script_generator agent

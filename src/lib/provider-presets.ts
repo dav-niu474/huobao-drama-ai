@@ -217,6 +217,18 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
   ],
   image: [
     {
+      provider: 'z-ai-sdk',
+      name: 'Z.ai 内置图片生成（免 Key）',
+      defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
+      defaultModel: 'cogview-4',
+      description: 'Z.ai 内置图片生成 — 免配置 API Key，开箱即用',
+      envKey: '',
+      availableModels: [
+        { id: 'cogview-4', name: 'CogView-4', tags: ['推荐', '免Key'] },
+        { id: 'cogview-3-plus', name: 'CogView-3 Plus', tags: ['免Key'] },
+      ],
+    },
+    {
       provider: 'openai',
       name: 'OpenAI',
       defaultBaseUrl: 'https://api.openai.com/v1',
@@ -320,6 +332,17 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
   ],
   video: [
     {
+      provider: 'z-ai-sdk',
+      name: 'Z.ai 内置视频生成（免 Key）',
+      defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
+      defaultModel: 'cogvideox-2',
+      description: 'Z.ai 内置视频生成 — 免配置 API Key（注意：内置 SDK 暂未直接支持视频生成，请在设置中配置其他视频供应商）',
+      envKey: '',
+      availableModels: [
+        { id: 'cogvideox-2', name: 'CogVideoX-2', tags: ['推荐', '免Key'] },
+      ],
+    },
+    {
       provider: 'minimax',
       name: 'MiniMax 海螺 AI',
       defaultBaseUrl: 'https://api.minimax.chat',
@@ -408,6 +431,17 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     },
   ],
   tts: [
+    {
+      provider: 'z-ai-sdk',
+      name: 'Z.ai 内置语音合成（免 Key）',
+      defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
+      defaultModel: 'cogtts',
+      description: 'Z.ai 内置语音合成 — 免配置 API Key',
+      envKey: '',
+      availableModels: [
+        { id: 'cogtts', name: 'CogTTS', tags: ['推荐', '免Key'] },
+      ],
+    },
     {
       provider: 'minimax',
       name: 'MiniMax',

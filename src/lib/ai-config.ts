@@ -206,20 +206,18 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
     }
   }
 
-  // Fallback: for LLM category only, use the built-in z-ai-sdk (no API key required)
+  // Fallback: for ALL categories, try z-ai-sdk (no API key required)
   // This ensures the app works out-of-the-box without any configuration
-  if (category === 'llm') {
-    const zAiPreset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'z-ai-sdk')
-    if (zAiPreset) {
-      return {
-        category,
-        provider: 'z-ai-sdk',
-        name: zAiPreset.name,
-        apiKey: '',  // No key needed
-        baseUrl: zAiPreset.defaultBaseUrl,
-        model: zAiPreset.defaultModel,
-        isActive: true,
-      }
+  const zAiPreset = PROVIDER_PRESETS[category]?.find((p) => p.provider === 'z-ai-sdk')
+  if (zAiPreset) {
+    return {
+      category,
+      provider: 'z-ai-sdk',
+      name: zAiPreset.name,
+      apiKey: '',  // No key needed
+      baseUrl: zAiPreset.defaultBaseUrl,
+      model: zAiPreset.defaultModel,
+      isActive: true,
     }
   }
 
@@ -664,6 +662,33 @@ export const aiClient = {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
     }
 
+    // z-ai-sdk: use z-ai-web-dev-sdk for image generation (no API key required)
+    if (provider.provider === 'z-ai-sdk') {
+      try {
+        const { default: ZAI } = await import('z-ai-web-dev-sdk')
+        const zai = await ZAI.create()
+        // SDK supports a limited set of sizes; default to 1024x1024 and
+        // silently fall back if the requested size is not supported.
+        const allowedSizes = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'] as const
+        type AllowedSize = typeof allowedSizes[number]
+        const requestedSize = options?.size ?? '1024x1024'
+        const size: AllowedSize = (allowedSizes as readonly string[]).includes(requestedSize)
+          ? (requestedSize as AllowedSize)
+          : '1024x1024'
+        const result = await zai.images.generations.create({
+          model: provider.model,
+          prompt: prompt,
+          size,
+        })
+        // The SDK downloads image URLs and returns base64-encoded PNG data.
+        const imageBase64 = result.data?.[0]?.base64
+        if (!imageBase64) throw new Error('Z.ai 图片生成返回空结果')
+        return imageBase64
+      } catch (err: any) {
+        throw new Error(`Z.ai 图片生成失败: ${err.message}`)
+      }
+    }
+
     // All providers use the adapter pattern
     const { getImageAdapter } = await import('@/lib/adapters/image')
     const adapter = getImageAdapter(provider.provider)
@@ -883,6 +908,11 @@ export const aiClient = {
       throw new Error('未配置视频生成供应商。请在设置中配置 API Key。')
     }
 
+    // z-ai-sdk: SDK does not currently support video generation
+    if (provider.provider === 'z-ai-sdk') {
+      throw new Error('Z.ai 内置视频生成暂不可用，请在设置中配置其他视频供应商')
+    }
+
     // Update status
     await db.storyboard.update({
       where: { id: storyboardId },
@@ -973,6 +1003,42 @@ export const aiClient = {
     const provider = await getActiveProviderForUser('tts', userIdContext.getStore())
     if (!provider) {
       throw new Error('未配置语音合成供应商。请在设置中配置 API Key。')
+    }
+
+    // z-ai-sdk: use z-ai-web-dev-sdk for TTS (no API key required)
+    if (provider.provider === 'z-ai-sdk') {
+      try {
+        const { default: ZAI } = await import('z-ai-web-dev-sdk')
+        const zai = await ZAI.create()
+        const response: Response = await zai.audio.tts.create({
+          model: provider.model,
+          input: text,
+          voice: voiceId,
+          speed: 1.0,
+        })
+        if (!response.ok) {
+          const errText = await response.text().catch(() => 'Unknown error')
+          throw new Error(`TTS API错误 (${response.status}): ${errText.slice(0, 300)}`)
+        }
+        // The SDK returns the raw audio response — convert to a data URL
+        const contentType = response.headers.get('content-type') || 'audio/mpeg'
+        const ext = contentType.includes('wav') ? 'wav' : contentType.includes('ogg') ? 'ogg' : 'mp3'
+        const buffer = Buffer.from(await response.arrayBuffer())
+        const base64 = buffer.toString('base64')
+        const audioDataUrl = `data:audio/${ext};base64,${base64}`
+        // Persist on storyboard record (mirror existing flow)
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { ttsAudioUrl: audioDataUrl },
+        })
+        return audioDataUrl
+      } catch (err: any) {
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { ttsAudioUrl: null },
+        })
+        throw new Error(`Z.ai 语音合成失败: ${err.message}`)
+      }
     }
 
     try {
