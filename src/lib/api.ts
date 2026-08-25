@@ -470,6 +470,112 @@ export const api = {
           body: JSON.stringify({ overwrite }),
         }
       ),
+
+    // ── Novel import & event extraction (raw step) ──
+    // Import pasted novel text — backend splits into chapters via splitChapters().
+    importNovel: (
+      episodeId: string,
+      text: string,
+      fileName?: string
+    ) =>
+      request<{
+        success: boolean
+        chapters: Array<{ index: number; title: string; content: string }>
+        chapterCount: number
+        textLength: number
+        fileName?: string
+      }>(`/api/episodes/${episodeId}/novel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, fileName }),
+      }),
+
+    // Import an uploaded .txt / .docx file.
+    importNovelFile: async (episodeId: string, file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`/api/episodes/${episodeId}/novel`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
+        try {
+          const json = JSON.parse(text)
+          throw new Error(json.error || text)
+        } catch {
+          throw new Error(`Upload failed: ${res.status}`)
+        }
+      }
+      return res.json() as Promise<{
+        success: boolean
+        chapters: Array<{ index: number; title: string; content: string }>
+        chapterCount: number
+        textLength: number
+        fileName?: string
+      }>
+    },
+
+    // Fetch the stored chapters (and optional extracted events) for an episode.
+    getNovelChapters: (episodeId: string) =>
+      request<{
+        chapters: Array<{
+          index: number
+          title: string
+          content: string
+          event?: string
+          characters?: string
+          mainline?: string
+          density?: string
+          estimatedDuration?: string
+          emotion?: string
+        }>
+        rawContent: string
+        hasEvents?: boolean
+      }>(`/api/episodes/${episodeId}/novel`),
+
+    // Run AI event extraction on the episode's chapters.
+    extractEvents: (episodeId: string) =>
+      request<{
+        success: boolean
+        events: Array<{
+          chapterIndex: number
+          title: string
+          event: string
+          characters: string
+          mainline: string
+          density: string
+          estimatedDuration: string
+          emotion: string
+        }>
+        chapters: Array<{
+          index: number
+          title: string
+          content: string
+          event?: string
+          characters?: string
+          mainline?: string
+          density?: string
+          estimatedDuration?: string
+          emotion?: string
+        }>
+        chapterCount: number
+      }>(`/api/episodes/${episodeId}/extract-events`, {
+        method: 'POST',
+      }),
+
+    // Persist updated chapter list (after edits/deletes). Reuses the
+    // generic episode PATCH endpoint — `sourceChapterIds` is an allowed
+    // field there and is stored as JSON.
+    saveNovelChapters: (
+      episodeId: string,
+      chapters: Array<{ index: number; title: string; content: string; event?: string; characters?: string; mainline?: string; density?: string; estimatedDuration?: string; emotion?: string }>
+    ) =>
+      request<Episode>(`/api/episodes/${episodeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceChapterIds: chapters }),
+      }).then(() => ({ success: true })),
   },
 
   // ---- Characters ----

@@ -1696,6 +1696,7 @@ export function EpisodeWorkspace() {
               aiLoading={aiLoading}
               isRewriting={agentExec.isRunning('script_rewriter')}
               episode={episode}
+              episodeId={selectedEpisodeId || undefined}
               agentExec={agentExec}
               activeStep={scriptStep === 0 ? 'raw' : 'rewrite'}
               handleSaveRaw={handleSaveRaw}
