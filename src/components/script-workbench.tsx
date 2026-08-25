@@ -32,9 +32,11 @@ import {
   Play,
   RotateCcw,
   FileUp,
+  Settings,
   RefreshCw,
   Zap,
   Eye,
+  Globe,
   X,
   Trash2,
 } from 'lucide-react'
@@ -116,18 +118,17 @@ function EmptyState({
 }
 
 // ════════════════════════════════════════════════════════════
-// Pipeline step type — 5-stage Stepper
+// Pipeline step type — 3-stage Stepper (simplified from 5-stage)
+// 上传小说 → 生成配置 → 剧本列表
 // ════════════════════════════════════════════════════════════
 
-type TabKey = 'source' | 'events' | 'skeleton' | 'strategy' | 'scripts'
+type TabKey = 'source' | 'config' | 'scripts'
 
-const PIPELINE_STEPS: { key: TabKey; label: string; icon: typeof Eye }[] = [
-  { key: 'source', label: '章节原文', icon: FileText },
-  { key: 'events', label: '章节事件', icon: Zap },
-  { key: 'skeleton', label: '故事骨架', icon: Brain },
-  { key: 'strategy', label: '改编策略', icon: Sparkles },
-  { key: 'scripts', label: '剧本输出', icon: Play },
-]
+const PIPELINE_STEPS = [
+  { key: 'source', label: '上传小说', icon: FileUp },
+  { key: 'config', label: '生成配置', icon: Settings },
+  { key: 'scripts', label: '剧本列表', icon: Play },
+] as const
 
 // ════════════════════════════════════════════════════════════
 // Main Component — 彻底重写 v7
@@ -180,6 +181,7 @@ export function ScriptWorkbench() {
   const [generatingStrategy, setGeneratingStrategy] = useState(false)
   const [generatingScripts, setGeneratingScripts] = useState(false)
   const [generationProgress, setGenerationProgress] = useState(0)
+  const [episodeCount, setEpisodeCount] = useState(5) // default 5 episodes
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
   const [targetDuration, setTargetDuration] = useState<string>('120s')
@@ -549,7 +551,7 @@ export function ScriptWorkbench() {
       setSkeletonEdit(result.skeleton)
       setGenerationProgress(100)
       toastRef.current({ title: '故事骨架生成完成' })
-      setActiveTab('skeleton')
+      setActiveTab('config') // skeleton tab merged into config
     } catch (err: any) {
       if (mountedRef.current) {
         toastRef.current({ title: '骨架生成失败', description: err.message, variant: 'destructive' })
@@ -577,7 +579,7 @@ export function ScriptWorkbench() {
       setStrategyEdit(result.strategy)
       setGenerationProgress(100)
       toastRef.current({ title: '改编策略生成完成' })
-      setActiveTab('strategy')
+      setActiveTab('config') // strategy tab merged into config
     } catch (err: any) {
       if (mountedRef.current) {
         toastRef.current({ title: '策略生成失败', description: err.message, variant: 'destructive' })
@@ -662,6 +664,111 @@ export function ScriptWorkbench() {
     }
   }
 
+  // ════════════════════════════════════════════════════════════
+  // handleGenerateAll — 一键生成剧本 (used by the 'config' step)
+  //
+  // Combines all 3 internal phases (skeleton + strategy + scripts)
+  // into one click so the user no longer has to manually walk
+  // through 5 separate steps. Progress is reported via
+  // generationProgress: 0→10 (skeleton) → 30→50 (strategy) → 50→100 (scripts)
+  // ════════════════════════════════════════════════════════════
+  const handleGenerateAll = async () => {
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
+    setGeneratingScripts(true)
+    setGenerationProgress(0)
+    try {
+      const skeleton0 = editingSkeleton ? skeletonEdit : (parsedContent.skeleton || '')
+      const strategy0 = editingStrategy ? strategyEdit : (parsedContent.strategy || '')
+
+      // Phase 1: Auto-generate skeleton if not exists
+      if (!skeleton0) {
+        setGenerationProgress(10)
+        toastRef.current({ title: '正在生成故事骨架...' })
+        await api.dramas.generateSkeleton(dramaId)
+        // Re-read parsedContent
+        const novelRes = await api.novels.get(novelIdRef.current!)
+        try {
+          const pc = JSON.parse(novelRes.parsedContent || '{}')
+          setParsedContent(pc)
+          if (pc.skeleton) setSkeletonEdit(pc.skeleton)
+        } catch { /* ignore */ }
+      }
+      setGenerationProgress(30)
+
+      // Phase 2: Auto-generate strategy if not exists
+      const currentSkeleton = editingSkeleton ? skeletonEdit : (parsedContent.skeleton || '')
+      if (!strategy0 && currentSkeleton) {
+        setGenerationProgress(35)
+        toastRef.current({ title: '正在生成改编策略...' })
+        await api.dramas.generateStrategy(dramaId, currentSkeleton)
+        const novelRes = await api.novels.get(novelIdRef.current!)
+        try {
+          const pc = JSON.parse(novelRes.parsedContent || '{}')
+          setParsedContent(pc)
+          if (pc.strategy) setStrategyEdit(pc.strategy)
+        } catch { /* ignore */ }
+      }
+      setGenerationProgress(50)
+
+      // Phase 3: Generate scripts (逐集调用)
+      const currentStrategy = editingStrategy ? strategyEdit : (parsedContent.strategy || '')
+      const totalEpisodes = episodeCount
+      let totalGenerated = 0
+      let lastError: string | null = null
+
+      for (let epNum = 1; epNum <= totalEpisodes; epNum++) {
+        setGenerationProgress(50 + Math.round((epNum / totalEpisodes) * 50))
+        try {
+          const result = await api.dramas.generateScripts(dramaId, {
+            skeleton: currentSkeleton || '',
+            strategy: currentStrategy || '',
+            startEpisode: epNum,
+            endEpisode: epNum,
+            targetDuration,
+            genreStyle,
+            targetPlatform,
+          })
+          if (result.episodes?.some((e) => e.scriptStatus === 'completed')) {
+            totalGenerated++
+          } else if (result.error) {
+            lastError = result.error
+          }
+        } catch (epErr: any) {
+          lastError = epErr.message
+        }
+        if (!mountedRef.current) return
+      }
+
+      setGenerationProgress(100)
+      await loadScriptStatus()
+
+      if (totalGenerated === 0) {
+        toastRef.current({
+          title: '剧本生成失败',
+          description: lastError || '请检查 AI 供应商配置',
+          variant: 'destructive',
+        })
+      } else if (totalGenerated < totalEpisodes) {
+        toastRef.current({
+          title: `部分成功 (${totalGenerated}/${totalEpisodes})`,
+          description: '可点击单集重新生成',
+          variant: 'default',
+        })
+      } else {
+        toastRef.current({ title: `剧本生成完成，${totalGenerated} 集` })
+      }
+      setActiveTab('scripts')
+    } catch (err: any) {
+      toastRef.current({ title: '生成失败', description: err.message, variant: 'destructive' })
+    } finally {
+      if (mountedRef.current) {
+        setGeneratingScripts(false)
+        setGenerationProgress(0)
+      }
+    }
+  }
+
   const handleViewEpisodeScript = async (episodeId: string) => {
     if (expandedEpisode === episodeId) { setExpandedEpisode(null); return }
     setExpandedEpisode(episodeId)
@@ -698,9 +805,7 @@ export function ScriptWorkbench() {
   const canAdvance = (() => {
     switch (activeTab) {
       case 'source': return !!(novel && chapters.length > 0)
-      case 'events': return !!novel
-      case 'skeleton': return !!parsedContent.skeleton
-      case 'strategy': return !!parsedContent.strategy
+      case 'config': return !!(novel && episodeCount > 0)
       case 'scripts': return episodes.length > 0 && episodes.every((ep) => ep.scriptStatus === 'completed')
       default: return false
     }
@@ -720,43 +825,16 @@ export function ScriptWorkbench() {
   const stepPrimaryAction = (() => {
     switch (activeTab) {
       case 'source':
-        if (!novel) {
-          return {
-            label: uploading ? '上传中...' : '上传小说文件',
-            onClick: () => fileInputRef.current?.click(),
-            Icon: FileUp,
-            disabled: uploading,
-          }
-        }
-        return null
-      case 'events':
+        return null // Upload happens in-content
+      case 'config':
         return {
-          label: extractingEvents ? '提取中...' : (eventsData?.length ? '重新提取事件' : '提取章节事件'),
-          onClick: handleExtractEvents,
-          Icon: Zap,
-          disabled: !novel || extractingEvents || isGenerating,
-        }
-      case 'skeleton':
-        return {
-          label: generatingSkeleton ? '生成中...' : (parsedContent.skeleton ? '重新生成骨架' : '生成故事骨架'),
-          onClick: handleGenerateSkeleton,
-          Icon: Brain,
+          label: '一键生成剧本',
+          onClick: handleGenerateAll,
+          Icon: Sparkles,
           disabled: !novel || isGenerating,
         }
-      case 'strategy':
-        return {
-          label: generatingStrategy ? '生成中...' : (parsedContent.strategy ? '重新生成策略' : '生成改编策略'),
-          onClick: handleGenerateStrategy,
-          Icon: Sparkles,
-          disabled: !parsedContent.skeleton || isGenerating,
-        }
       case 'scripts':
-        return {
-          label: generatingScripts ? '生成中...' : '批量生成剧本',
-          onClick: handleGenerateScripts,
-          Icon: Play,
-          disabled: !parsedContent.strategy || generatingScripts || isGenerating,
-        }
+        return null // Episodes are listed, "进入制作" per episode
       default:
         return null
     }
@@ -934,9 +1012,7 @@ export function ScriptWorkbench() {
               const isActive = activeTab === step.key
               const isCompleted =
                 (step.key === 'source' && chapters.length > 0) ||
-                (step.key === 'events' && !!eventsData?.length) ||
-                (step.key === 'skeleton' && !!parsedContent.skeleton) ||
-                (step.key === 'strategy' && !!parsedContent.strategy) ||
+                (step.key === 'config' && !!(parsedContent.skeleton && parsedContent.strategy)) ||
                 (step.key === 'scripts' && episodes.length > 0)
               const Icon = step.icon
               const isDisabled = !novel && step.key !== 'source'
@@ -1200,217 +1276,249 @@ export function ScriptWorkbench() {
             </div>
           )}
 
-          {/* ── Tab: 章节事件 ── */}
-          {activeTab === 'events' && (
+          {/* ── Tab: 生成配置 ── */}
+          {/* NEW: Combines the old events/skeleton/strategy steps into one click.
+              User configures episode count, chapter range, duration, style,
+              platform; then clicks "一键生成剧本" which internally auto-runs
+              skeleton → strategy → scripts in sequence via handleGenerateAll. */}
+          {activeTab === 'config' && (
             <div className="space-y-4">
               {!dataReady ? (
                 <div className="flex flex-col items-center justify-center py-16">
                   <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
                   <p className="text-sm text-muted-foreground">正在加载数据...</p>
                 </div>
-              ) : eventsData && eventsData.length > 0 ? (
-                <Card className="border-border/50 py-0 gap-0">
-                  <CardHeader className="border-b border-border/50 py-3 px-4">
-                    <div className="flex items-center justify-between gap-3">
+              ) : !novel ? (
+                <EmptyState
+                  icon={<Settings className="size-10 text-amber-500" />}
+                  title="尚未上传小说"
+                  description="请先回到第一步上传小说文件或粘贴文本，解析完成后再来此生成配置"
+                />
+              ) : (
+                <>
+                  {/* Header card — shows source-novel summary */}
+                  <Card className="border-border/50 py-0 gap-0">
+                    <CardHeader className="border-b border-border/50 py-3 px-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300 shrink-0">
+                            小说
+                          </Badge>
+                          <span className="text-sm font-medium truncate">
+                            {novel.title || '未命名小说'}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            · {chapters.length} 章
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setActiveTab('source')}
+                        >
+                          <ChevronLeft className="size-3" />查看原文
+                        </Button>
+                      </div>
+                    </CardHeader>
+                  </Card>
+
+                  {/* Generation config card */}
+                  <Card className="border-border/50 py-0 gap-0">
+                    <CardHeader className="border-b border-border/50 py-3 px-4">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">
-                          已提取
+                        <Settings className="size-4 text-primary" />
+                        <CardTitle className="text-sm">生成配置</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-4 space-y-4">
+                      {/* Episode count — single input, replaces range start/end */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                            <Play className="size-3 text-muted-foreground" />
+                            集数
+                          </label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={200}
+                            value={episodeCount}
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value) || 0
+                              setEpisodeCount(n)
+                              // keep episodeRangeStart/End in sync for internal handlers
+                              setEpisodeRangeStart(1)
+                              setEpisodeRangeEnd(n)
+                            }}
+                            className="h-9 text-sm"
+                            disabled={isGenerating}
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            将生成 {episodeCount > 0 ? episodeCount : 0} 集短剧剧本
+                          </p>
+                        </div>
+
+                        {/* Chapter range — which chapters to base scripts on */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                            <FileText className="size-3 text-muted-foreground" />
+                            章节范围
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="number"
+                              min={1}
+                              max={chapters.length || 1}
+                              value={episodeRangeStart}
+                              onChange={(e) => setEpisodeRangeStart(Math.max(1, parseInt(e.target.value) || 1))}
+                              className="h-9 text-sm w-20"
+                              disabled={isGenerating}
+                            />
+                            <span className="text-xs text-muted-foreground">至</span>
+                            <Input
+                              type="number"
+                              min={episodeRangeStart}
+                              max={chapters.length || 999}
+                              value={Math.min(episodeRangeEnd, chapters.length || episodeRangeEnd)}
+                              onChange={(e) => setEpisodeRangeEnd(Math.max(episodeRangeStart, parseInt(e.target.value) || episodeRangeStart))}
+                              className="h-9 text-sm w-20"
+                              disabled={isGenerating}
+                            />
+                            <span className="text-[10px] text-muted-foreground shrink-0">/ {chapters.length} 章</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">
+                            选择用作剧本素材的章节范围
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Duration / Style / Platform — three selectors side by side */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                            <Clapperboard className="size-3 text-muted-foreground" />
+                            单集时长
+                          </label>
+                          <Select value={targetDuration} onValueChange={setTargetDuration} disabled={isGenerating}>
+                            <SelectTrigger className="h-9 text-sm">
+                              <SelectValue placeholder="选择时长" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="90s">90 秒（竖屏）</SelectItem>
+                              <SelectItem value="120s">2 分钟（标准）</SelectItem>
+                              <SelectItem value="180s">3 分钟（剧情）</SelectItem>
+                              <SelectItem value="300s">5 分钟（长集）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                            <Brain className="size-3 text-muted-foreground" />
+                            题材风格
+                          </label>
+                          <Select value={genreStyle} onValueChange={setGenreStyle} disabled={isGenerating}>
+                            <SelectTrigger className="h-9 text-sm">
+                              <SelectValue placeholder="选择风格" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="都市">都市</SelectItem>
+                              <SelectItem value="古装">古装</SelectItem>
+                              <SelectItem value="悬疑">悬疑</SelectItem>
+                              <SelectItem value="科幻">科幻</SelectItem>
+                              <SelectItem value="甜宠">甜宠</SelectItem>
+                              <SelectItem value="复仇">复仇</SelectItem>
+                              <SelectItem value="励志">励志</SelectItem>
+                              <SelectItem value="校园">校园</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                            <Globe className="size-3 text-muted-foreground" />
+                            目标平台
+                          </label>
+                          <Select value={targetPlatform} onValueChange={setTargetPlatform} disabled={isGenerating}>
+                            <SelectTrigger className="h-9 text-sm">
+                              <SelectValue placeholder="选择平台" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="douyin">抖音</SelectItem>
+                              <SelectItem value="kuaishou">快手</SelectItem>
+                              <SelectItem value="wechat">微信视频号</SelectItem>
+                              <SelectItem value="long">长视频平台</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Skeleton/Strategy status pills — show whether intermediate
+                          artifacts already exist (so the user knows handleGenerateAll
+                          will skip those phases). */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] gap-1 px-1.5 ${
+                            parsedContent.skeleton
+                              ? 'text-emerald-600 border-emerald-300'
+                              : 'text-muted-foreground'
+                          }`}
+                        >
+                          {parsedContent.skeleton ? <Check className="size-2.5" /> : <Brain className="size-2.5" />}
+                          故事骨架 {parsedContent.skeleton ? '已就绪' : '待生成'}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          共 {eventsData.length} 条章节事件
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] gap-1 px-1.5 ${
+                            parsedContent.strategy
+                              ? 'text-emerald-600 border-emerald-300'
+                              : 'text-muted-foreground'
+                          }`}
+                        >
+                          {parsedContent.strategy ? <Check className="size-2.5" /> : <Sparkles className="size-2.5" />}
+                          改编策略 {parsedContent.strategy ? '已就绪' : '待生成'}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          点击下方按钮将自动完成：骨架 → 策略 → 剧本
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEventsData(null)}>
-                          <X className="size-3" />清除
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleExtractEvents} disabled={!novel || extractingEvents || isGenerating}>
-                          {extractingEvents ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3 text-amber-500" />}
-                          重新提取
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/40 text-muted-foreground">
-                          <tr>
-                            <th className="text-left font-medium px-3 py-2">章节</th>
-                            <th className="text-left font-medium px-3 py-2">角色</th>
-                            <th className="text-left font-medium px-3 py-2">事件</th>
-                            <th className="text-left font-medium px-3 py-2">主线</th>
-                            <th className="text-left font-medium px-3 py-2">密度</th>
-                            <th className="text-left font-medium px-3 py-2">预计时长</th>
-                            <th className="text-left font-medium px-3 py-2">情绪</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {eventsData.map((ev, idx) => (
-                            <tr key={idx} className="border-t border-border/40 hover:bg-muted/20">
-                              <td className="px-3 py-2 font-medium text-foreground">{ev.chapter}</td>
-                              <td className="px-3 py-2 text-blue-500">{ev.characters}</td>
-                              <td className="px-3 py-2 text-muted-foreground">{ev.event}</td>
-                              <td className="px-3 py-2">
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">{ev.mainline}</Badge>
-                              </td>
-                              <td className="px-3 py-2 text-muted-foreground">{ev.density}</td>
-                              <td className="px-3 py-2 text-muted-foreground">{ev.estimatedDuration}</td>
-                              <td className="px-3 py-2 text-muted-foreground">{ev.emotion}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <EmptyState
-                  icon={<Zap className="size-10 text-amber-500" />}
-                  title="章节事件"
-                  description="提取每章的角色、事件、情绪密度等结构化事件信息，作为生成骨架与剧本的参考"
-                  actionLabel={extractingEvents ? '提取中...' : '提取章节事件'}
-                  onAction={handleExtractEvents}
-                  disabled={!novel || extractingEvents || isGenerating}
-                />
-              )}
-            </div>
-          )}
+                    </CardContent>
+                  </Card>
 
-          {/* ── Tab: 故事骨架 ── */}
-          {activeTab === 'skeleton' && (
-            <div className="space-y-4">
-              {!dataReady ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
-                  <p className="text-sm text-muted-foreground">正在加载数据...</p>
-                </div>
-              ) : parsedContent.skeleton ? (
-                <Card className="border-border/50 py-0 gap-0">
-                  <CardHeader className="border-b border-border/50 py-3 px-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300 shrink-0">已生成</Badge>
-                        {parsedContent.skeletonGeneratedAt && (
-                          <span className="text-[10px] text-muted-foreground truncate">
-                            {new Date(parsedContent.skeletonGeneratedAt).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {editingSkeleton ? (
-                          <>
-                            <Button variant="default" size="sm" className="h-7 text-xs gap-1" onClick={handleSaveSkeleton} disabled={savingSkeleton || isGenerating}>
-                              {savingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                              保存
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                              setSkeletonEdit(parsedContent.skeleton || '')
-                              setEditingSkeleton(false)
-                            }}>
-                              <X className="size-3" />取消
-                            </Button>
-                          </>
+                  {/* Big primary action — 一键生成剧本 */}
+                  <Card className="border-primary/30 bg-primary/5 py-0 gap-0">
+                    <CardContent className="p-4 flex flex-col items-center gap-3">
+                      {isGenerating && generationProgress > 0 && (
+                        <div className="w-full max-w-md space-y-1.5">
+                          <Progress value={generationProgress} className="h-2" />
+                          <p className="text-[10px] text-center text-muted-foreground">
+                            {generationProgress < 30 ? '正在生成故事骨架...'
+                              : generationProgress < 50 ? '正在生成改编策略...'
+                              : `正在生成剧本 (${Math.round((generationProgress - 50) / 50 * episodeCount)}/${episodeCount})...`}
+                          </p>
+                        </div>
+                      )}
+                      <Button
+                        size="lg"
+                        className="w-full max-w-md h-11 text-sm gap-2"
+                        onClick={handleGenerateAll}
+                        disabled={!novel || isGenerating || episodeCount <= 0}
+                      >
+                        {isGenerating ? (
+                          <Loader2 className="size-4 animate-spin" />
                         ) : (
-                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingSkeleton(true)}>
-                            <FileText className="size-3" />编辑
-                          </Button>
+                          <Sparkles className="size-4" />
                         )}
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateSkeleton} disabled={isGenerating}>
-                          {generatingSkeleton ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
-                          重新生成
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4">
-                    {editingSkeleton ? (
-                      <Textarea value={skeletonEdit} onChange={(e) => setSkeletonEdit(e.target.value)} className="min-h-[500px] text-sm font-mono" placeholder="编辑故事骨架内容..." />
-                    ) : (
-                      <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
-                        {parsedContent.skeleton}
-                      </pre>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <EmptyState
-                  icon={<Brain className="size-10 text-amber-500" />}
-                  title="故事骨架"
-                  description="从小说中提取故事骨架：核心设定、关键删除决策、改编增强建议、分集决策"
-                  actionLabel={generatingSkeleton ? '生成中...' : '生成故事骨架'}
-                  onAction={handleGenerateSkeleton}
-                  disabled={!novel || isGenerating}
-                />
-              )}
-            </div>
-          )}
-
-          {/* ── Tab: 改编策略 ── */}
-          {activeTab === 'strategy' && (
-            <div className="space-y-4">
-              {!dataReady ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <Loader2 className="size-8 animate-spin text-amber-500 mb-3" />
-                  <p className="text-sm text-muted-foreground">正在加载数据...</p>
-                </div>
-              ) : parsedContent.strategy ? (
-                <Card className="border-border/50 py-0 gap-0">
-                  <CardHeader className="border-b border-border/50 py-3 px-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300 shrink-0">已生成</Badge>
-                        {parsedContent.strategyGeneratedAt && (
-                          <span className="text-[10px] text-muted-foreground truncate">
-                            {new Date(parsedContent.strategyGeneratedAt).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {editingStrategy ? (
-                          <>
-                            <Button variant="default" size="sm" className="h-7 text-xs gap-1" onClick={handleSaveStrategy} disabled={savingStrategy || isGenerating}>
-                              {savingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                              保存
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
-                              setStrategyEdit(parsedContent.strategy || '')
-                              setEditingStrategy(false)
-                            }}>
-                              <X className="size-3" />取消
-                            </Button>
-                          </>
-                        ) : (
-                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditingStrategy(true)}>
-                            <FileText className="size-3" />编辑
-                          </Button>
-                        )}
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleGenerateStrategy} disabled={isGenerating}>
-                          {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
-                          重新生成
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4">
-                    {editingStrategy ? (
-                      <Textarea value={strategyEdit} onChange={(e) => setStrategyEdit(e.target.value)} className="min-h-[500px] text-sm font-mono" placeholder="编辑改编策略内容..." />
-                    ) : (
-                      <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
-                        {parsedContent.strategy}
-                      </pre>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <EmptyState
-                  icon={<Sparkles className="size-10 text-amber-500" />}
-                  title="改编策略"
-                  description="基于故事骨架制定改编策略：核心原则、删除决策、世界观策略、角色处理策略"
-                  actionLabel={generatingStrategy ? '生成中...' : '生成改编策略'}
-                  onAction={handleGenerateStrategy}
-                  disabled={!parsedContent.skeleton || isGenerating}
-                />
+                        {isGenerating ? '生成中...' : '一键生成剧本'}
+                      </Button>
+                      <p className="text-[10px] text-muted-foreground text-center max-w-md">
+                        将自动生成故事骨架、改编策略，并按集数逐集生成剧本。每集约 20-30 秒，请耐心等待。
+                      </p>
+                    </CardContent>
+                  </Card>
+                </>
               )}
             </div>
           )}
@@ -1592,11 +1700,11 @@ export function ScriptWorkbench() {
               ) : (
                 <EmptyState
                   icon={<FileText className="size-10 text-amber-500" />}
-                  title="剧本输出"
-                  description="基于故事骨架和改编策略，批量生成每集剧本"
-                  actionLabel={generatingScripts ? '生成中...' : '批量生成剧本'}
-                  onAction={handleGenerateScripts}
-                  disabled={!parsedContent.strategy || isGenerating}
+                  title="剧本列表"
+                  description="尚未生成剧本，请回到「生成配置」步骤，点击「一键生成剧本」开始"
+                  actionLabel="前往生成配置"
+                  onAction={() => setActiveTab('config')}
+                  disabled={isGenerating}
                 />
               )}
             </div>

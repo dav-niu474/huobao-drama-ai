@@ -67,6 +67,9 @@ export function EpisodeWorkspace() {
 
   const [activeStage, setActiveStage] = useState<StageKey>('script')
   const [scriptStep, setScriptStep] = useState(0) // 0=raw, 1=rewrite, 2=extract, 3=voice, 4=storyboard
+  // ★ Auto-skip: when an episode has scriptContent already (generated via workshop),
+  //   we want to jump straight to extract (step 2) instead of forcing the user
+  //   through raw (0) and rewrite (1) again. Set below in fetchEpisode().
   const [prodTab, setProdTab] = useState<ProdTabKey>('chars')
   const [activePipelineStep, setActivePipelineStep] = useState<PipelineStepKey>('script:raw')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -211,6 +214,13 @@ export function EpisodeWorkspace() {
       // Sync local state from episode
       setRawContent(detail.rawContent ?? '')
       setScriptContent(detail.scriptContent ?? '')
+      // ★ Auto-skip raw/rewrite when script already exists (e.g. generated
+      //   from the Script Workshop). Jump straight to the extract step so
+      //   the user can immediately extract characters/scenes/props.
+      if (detail.scriptContent?.trim()) {
+        setScriptStep(2) // 0=raw, 1=rewrite, 2=extract
+        setActivePipelineStep('script:extract')
+      }
       // Fetch characters & scenes & props from drama
       if (selectedDramaId) {
         const dramaDetail = await api.dramas.get(selectedDramaId)
@@ -227,6 +237,22 @@ export function EpisodeWorkspace() {
   useEffect(() => {
     fetchEpisode()
   }, [fetchEpisode])
+
+  // ── Auto-extract: if scriptContent exists but no characters/scenes have
+  //    been extracted yet, kick off the extractor agent automatically so the
+  //    user doesn't have to click "提取" manually after the workshop hands off.
+  //    The existing "提取完成" toast inside handleExtract will surface the result.
+  const autoExtractTriggeredRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!currentEpisode?.scriptContent?.trim()) return
+    if (autoExtractTriggeredRef.current === currentEpisode.id) return // only once per episode
+    // Skip if extractor already running OR characters/scenes already present
+    if (characters.length > 0 || scenes.length > 0) return
+    if (aiLoading || agentExec.isRunning('extractor')) return
+    autoExtractTriggeredRef.current = currentEpisode.id
+    // Fire-and-forget — handleExtract has its own error handling/toast
+    void handleExtract()
+  }, [currentEpisode?.id, currentEpisode?.scriptContent])
 
   // ── Fetch pipeline status ────────────────────────────────────
 
