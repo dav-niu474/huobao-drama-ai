@@ -335,11 +335,11 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       provider: 'z-ai-sdk',
       name: 'Z.ai 内置视频生成（免 Key）',
       defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
-      defaultModel: 'cogvideox-2',
-      description: 'Z.ai 内置视频生成 — 免配置 API Key（注意：内置 SDK 暂未直接支持视频生成，请在设置中配置其他视频供应商）',
+      defaultModel: 'cogvideox',
+      description: 'Z.ai 内置视频生成 — 免配置 API Key，支持文生视频/图生视频',
       envKey: '',
       availableModels: [
-        { id: 'cogvideox-2', name: 'CogVideoX-2', tags: ['推荐', '免Key'] },
+        { id: 'cogvideox', name: 'CogVideoX', tags: ['推荐', '免Key'] },
       ],
     },
     {

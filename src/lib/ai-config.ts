@@ -667,8 +667,6 @@ export const aiClient = {
       try {
         const { default: ZAI } = await import('z-ai-web-dev-sdk')
         const zai = await ZAI.create()
-        // SDK supports a limited set of sizes; default to 1024x1024 and
-        // silently fall back if the requested size is not supported.
         const allowedSizes = ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'] as const
         type AllowedSize = typeof allowedSizes[number]
         const requestedSize = options?.size ?? '1024x1024'
@@ -680,11 +678,22 @@ export const aiClient = {
           prompt: prompt,
           size,
         })
-        // The SDK downloads image URLs and returns base64-encoded PNG data.
+        // SDK converts URLs to base64 — data[0].base64 contains the PNG data
         const imageBase64 = result.data?.[0]?.base64
-        if (!imageBase64) throw new Error('Z.ai 图片生成返回空结果')
+        if (!imageBase64) {
+          // Fallback: check if url field exists (older SDK versions)
+          const imageUrl = (result.data?.[0] as Record<string, unknown>)?.url as string | undefined
+          if (imageUrl) {
+            // Fetch and convert to base64
+            const imgRes = await fetch(imageUrl)
+            const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+            return imgBuf.toString('base64')
+          }
+          throw new Error('Z.ai 图片生成返回空结果')
+        }
         return imageBase64
       } catch (err: any) {
+        console.error('[z-ai-sdk] image generation failed:', err.message)
         throw new Error(`Z.ai 图片生成失败: ${err.message}`)
       }
     }
@@ -908,9 +917,75 @@ export const aiClient = {
       throw new Error('未配置视频生成供应商。请在设置中配置 API Key。')
     }
 
-    // z-ai-sdk: SDK does not currently support video generation
+    // z-ai-sdk: use z-ai-web-dev-sdk for video generation (async task)
     if (provider.provider === 'z-ai-sdk') {
-      throw new Error('Z.ai 内置视频生成暂不可用，请在设置中配置其他视频供应商')
+      try {
+        const { default: ZAI } = await import('z-ai-web-dev-sdk')
+        const zai = await ZAI.create()
+
+        // Submit video generation task
+        const videoResponse = await zai.video.generations.create({
+          model: provider.model,
+          prompt: prompt,
+          ...(firstFrameUrl ? { image_url: firstFrameUrl } : {}),
+          quality: 'quality',
+          with_audio: false,
+          watermark_enabled: false,
+        })
+
+        // Video generation is async — get the task ID
+        const taskId = videoResponse.id
+        if (!taskId) {
+          throw new Error('Z.ai 视频生成未返回任务 ID')
+        }
+
+        // Poll for result (max 5 minutes, 10s interval)
+        let videoUrl = ''
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 10_000))
+          const result = await zai.async.result.query(taskId)
+
+          if (result.task_status === 'SUCCESS') {
+            // Get video URL from response
+            videoUrl = result.video_result?.[0]?.url || result.video_url || result.url || ''
+            if (!videoUrl) {
+              throw new Error('Z.ai 视频生成完成但未返回视频 URL')
+            }
+            break
+          }
+          if (result.task_status === 'FAIL') {
+            throw new Error('Z.ai 视频生成失败')
+          }
+          // PROCESSING — continue polling
+        }
+
+        if (!videoUrl) {
+          throw new Error('Z.ai 视频生成超时（5 分钟）')
+        }
+
+        // Download video and save to file storage
+        const videoRes = await fetch(videoUrl)
+        const videoBuf = Buffer.from(await videoRes.arrayBuffer())
+        const { saveMediaFile } = await import('@/lib/file-storage')
+        const saveResult = await saveMediaFile(videoBuf, {
+          mimeType: 'video/mp4',
+          category: 'videos',
+          dramaId: (await db.storyboard.findUnique({ where: { id: storyboardId }, select: { episode: { select: { dramaId: true } } } }))?.episode?.dramaId,
+        })
+
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { videoUrl: saveResult.url, status: 'completed' },
+        })
+        return
+      } catch (err: any) {
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { status: 'failed' },
+        })
+        console.error('[z-ai-sdk] video generation failed:', err.message)
+        throw new Error(`Z.ai 视频生成失败: ${err.message}`)
+      }
     }
 
     // Update status
@@ -1010,23 +1085,29 @@ export const aiClient = {
       try {
         const { default: ZAI } = await import('z-ai-web-dev-sdk')
         const zai = await ZAI.create()
-        const response: Response = await zai.audio.tts.create({
-          model: provider.model,
+        // SDK's TTS accepts optional model, input, voice, speed
+        // If model is empty or 'cogtts', let the SDK use its default
+        const ttsBody: { input: string; voice?: string; speed?: number; model?: string } = {
           input: text,
-          voice: voiceId,
           speed: 1.0,
-        })
+        }
+        if (voiceId) ttsBody.voice = voiceId
+        // Only pass model if it's a real model name (not 'cogtts' placeholder)
+        if (provider.model && provider.model !== 'cogtts') {
+          ttsBody.model = provider.model
+        }
+
+        const response: Response = await zai.audio.tts.create(ttsBody as any)
         if (!response.ok) {
           const errText = await response.text().catch(() => 'Unknown error')
           throw new Error(`TTS API错误 (${response.status}): ${errText.slice(0, 300)}`)
         }
-        // The SDK returns the raw audio response — convert to a data URL
+        // The SDK returns the raw Response — convert to data URL
         const contentType = response.headers.get('content-type') || 'audio/mpeg'
         const ext = contentType.includes('wav') ? 'wav' : contentType.includes('ogg') ? 'ogg' : 'mp3'
         const buffer = Buffer.from(await response.arrayBuffer())
         const base64 = buffer.toString('base64')
         const audioDataUrl = `data:audio/${ext};base64,${base64}`
-        // Persist on storyboard record (mirror existing flow)
         await db.storyboard.update({
           where: { id: storyboardId },
           data: { ttsAudioUrl: audioDataUrl },
@@ -1037,6 +1118,7 @@ export const aiClient = {
           where: { id: storyboardId },
           data: { ttsAudioUrl: null },
         })
+        console.error('[z-ai-sdk] TTS failed:', err.message)
         throw new Error(`Z.ai 语音合成失败: ${err.message}`)
       }
     }
