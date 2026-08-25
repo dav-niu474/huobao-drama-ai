@@ -156,6 +156,8 @@ export interface ScriptPanelProps {
   aiLoading: boolean
   isRewriting: boolean
   episode: EpisodeDetail | null
+  // Used by the new raw step (novel import + chapter table + event extraction)
+  episodeId?: string
   agentExec: AgentExecState
   activeStep: 'raw' | 'rewrite'
   handleSaveRaw: () => Promise<void>

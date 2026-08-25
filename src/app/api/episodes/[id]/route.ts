@@ -56,12 +56,12 @@ export async function PATCH(
     const allowedFields = [
       'title', 'rawContent', 'scriptContent', 'scriptStatus',
       'extractStatus', 'storyboardStatus', 'status', 'videoUrl', 'duration',
-      'lockedConfig',
+      'lockedConfig', 'sourceChapterIds',
     ];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (field in body) {
-        if (field === 'lockedConfig') {
+        if (field === 'lockedConfig' || field === 'sourceChapterIds') {
           // Store as JSON string; accept object or string
           const val = body[field];
           data[field] = typeof val === 'string' ? val : JSON.stringify(val);
