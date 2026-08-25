@@ -37,10 +37,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Store, Layers } from 'lucide-react'
+import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Store, Layers, ArrowRight, ArrowLeft, Check, Smartphone, Monitor } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { ScriptUploadDialog } from '@/components/script-upload-dialog'
+import { ModelSelector } from '@/components/model-selector'
+import type { AiCategory } from '@/lib/api'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -53,6 +55,14 @@ const STYLE_ENTRIES: [string, string][] = [
   ['comic', 'styleComic'],
   ['watercolor', 'styleWatercolor'],
   ['3d', 'style3d'],
+]
+const DURATION_OPTIONS = ['90s', '120s', '180s', '300s'] as const
+const DURATION_KEYS = ['duration90s', 'duration120s', 'duration180s', 'duration300s'] as const
+const PLATFORM_ENTRIES: [string, string][] = [
+  ['douyin', 'platformDouyin'],
+  ['kuaishou', 'platformKuaishou'],
+  ['wechat', 'platformWechat'],
+  ['longvideo', 'platformLongvideo'],
 ]
 
 function relativeTime(dateStr: string, t: any): string {
@@ -193,18 +203,29 @@ function ProjectCard({
 // ── main component ───────────────────────────────────────────
 
 export function ProjectListView() {
-const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAssetLibrary, navigateToMarketplace, navigateToSeries, setLoading, loading } = useAppStore()
+const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAssetLibrary, navigateToMarketplace, navigateToSeries, navigateToEpisode, setLoading, loading } = useAppStore()
   const { toast } = useToast()
   const perms = usePermissions()
   const tc = useTranslations('common')
   const tp = useTranslations('project')
   const tn = useTranslations('nav')
 
-  // create dialog
+  // create dialog — 3-step wizard state
   const [createOpen, setCreateOpen] = useState(false)
-  const [newTitle, setNewTitle] = useState('')
+  const [createStep, setCreateStep] = useState(0) // 0=basics, 1=models, 2=style
+  const [newProjectName, setNewProjectName] = useState('')
+  const [contentMode, setContentMode] = useState<'drama' | 'narration' | 'ad'>('drama')
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16')
+  const [totalEpisodes, setTotalEpisodes] = useState(5)
+  const [episodeDuration, setEpisodeDuration] = useState('120s')
   const [newGenre, setNewGenre] = useState('都市')
   const [newStyle, setNewStyle] = useState('realistic')
+  const [targetPlatform, setTargetPlatform] = useState('douyin')
+  // model selections
+  const [modelLlm, setModelLlm] = useState('')
+  const [modelImage, setModelImage] = useState('')
+  const [modelVideo, setModelVideo] = useState('')
+  const [modelTts, setModelTts] = useState('')
   const [creating, setCreating] = useState(false)
 
   // upload dialog
@@ -233,9 +254,26 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
     fetchDramas()
   }, [fetchDramas])
 
+  // reset wizard fields to defaults
+  const resetWizard = useCallback(() => {
+    setCreateStep(0)
+    setNewProjectName('')
+    setContentMode('drama')
+    setAspectRatio('9:16')
+    setTotalEpisodes(5)
+    setEpisodeDuration('120s')
+    setNewGenre('都市')
+    setNewStyle('realistic')
+    setTargetPlatform('douyin')
+    setModelLlm('')
+    setModelImage('')
+    setModelVideo('')
+    setModelTts('')
+  }, [])
+
   // create project
   const handleCreate = async () => {
-    if (!newTitle.trim()) return
+    if (!newProjectName.trim()) return
     // Check project limit
     if (!perms.canCreateProject(dramas.length)) {
       toast({
@@ -247,17 +285,57 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
     }
     setCreating(true)
     try {
-      await api.dramas.create({
-        title: newTitle.trim(),
+      const result = await api.dramas.create({
+        title: newProjectName.trim(),
         genre: newGenre,
         style: newStyle,
+        totalEpisodes,
       })
+      const dramaId = result.id
+
+      // Persist project config — models + metadata are stored in defaultLockedConfig as JSON.
+      // Existing consumers only read llm/image/video/tts, so extra keys are forward-compatible.
+      const lockedConfig: Record<string, string> = {}
+      if (modelLlm) lockedConfig.llm = modelLlm
+      if (modelImage) lockedConfig.image = modelImage
+      if (modelVideo) lockedConfig.video = modelVideo
+      if (modelTts) lockedConfig.tts = modelTts
+      const projectMeta: Record<string, unknown> = {
+        ...lockedConfig,
+        contentMode,
+        aspectRatio,
+        episodeDuration,
+        targetPlatform,
+      }
+      try {
+        await api.dramas.update(dramaId, {
+          totalEpisodes,
+          defaultLockedConfig: JSON.stringify(projectMeta),
+        })
+      } catch {
+        // Non-fatal — the drama is already created; the user can configure later.
+      }
+
+      // Auto-create the first episode so the user lands directly in the pipeline.
+      let episodeId: string | undefined
+      try {
+        const ep = await api.episodes.create(dramaId, { title: tp('firstEpisodeTitle') })
+        episodeId = ep.id
+      } catch {
+        // If episode creation fails, fall back to existing project-detail view.
+      }
+
       toast({ title: tp('createSuccess') })
       setCreateOpen(false)
-      setNewTitle('')
-      setNewGenre('都市')
-      setNewStyle('realistic')
-      fetchDramas()
+      resetWizard()
+
+      // Navigate directly to the episode workspace if we have an episode,
+      // otherwise fall back to the project detail page.
+      if (episodeId) {
+        navigateToEpisode(dramaId, episodeId)
+      } else {
+        navigateToProject(dramaId)
+      }
     } catch (err) {
       toast({ title: tp('createFailed'), description: String(err), variant: 'destructive' })
     } finally {
@@ -324,7 +402,7 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
               <span className="hidden sm:inline">{tn('uploadScript')}</span>
             </Button>
             <Button
-              onClick={() => setCreateOpen(true)}
+              onClick={() => { resetWizard(); setCreateOpen(true) }}
               className="amber-glow"
               disabled={!perms.canCreateProject(dramas.length)}
             >
@@ -360,7 +438,7 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
           <div className="flex items-center justify-center py-24">
             <Card
               className="w-full max-w-sm border-dashed border-2 border-border/50 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
-              onClick={() => setCreateOpen(true)}
+              onClick={() => { resetWizard(); setCreateOpen(true) }}
             >
               <CardContent className="p-8 flex flex-col items-center gap-4 text-muted-foreground">
                 <div className="size-14 rounded-full bg-muted flex items-center justify-center">
@@ -388,7 +466,7 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
             {/* Add new card (subtle) */}
             <Card
               className="border-dashed border-2 border-border/30 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
-              onClick={() => setCreateOpen(true)}
+              onClick={() => { resetWizard(); setCreateOpen(true) }}
             >
               <CardContent className="p-6 flex flex-col items-center justify-center gap-3 text-muted-foreground min-h-[200px]">
                 <div className="size-12 rounded-full bg-muted/60 flex items-center justify-center">
@@ -404,67 +482,253 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
         )}
       </main>
 
-      {/* ── Create Dialog ──────────────────────────────────── */}
+      {/* ── Create Dialog — 3-step wizard ─────────────────── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{tp('newDramaProject')}</DialogTitle>
             <DialogDescription>{tp('newDramaDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {tp('projectName')} <span className="text-destructive">*</span>
-              </label>
-              <Input
-                placeholder={tp('enterDramaName')}
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{tp('genre')}</label>
-              <Select value={newGenre} onValueChange={setNewGenre}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GENRE_KEYS.map((key, i) => (
-                    <SelectItem key={GENRE_VALUES[i]} value={GENRE_VALUES[i]}>
-                      {tp(key)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{tp('visualStyle')}</label>
-              <Select value={newStyle} onValueChange={setNewStyle}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STYLE_ENTRIES.map(([value, key]) => (
-                    <SelectItem key={value} value={value}>
-                      {tp(key)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {/* Step indicator */}
+          <div className="flex items-center gap-3 mb-2">
+            {(['stepBasics', 'stepModels', 'stepStyle'] as const).map((key, idx) => (
+              <div key={key} className="flex items-center gap-2">
+                <div className={`size-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
+                  idx === createStep
+                    ? 'bg-primary text-primary-foreground'
+                    : idx < createStep
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-muted text-muted-foreground'
+                }`}>
+                  {idx < createStep ? <Check className="size-3.5" /> : idx + 1}
+                </div>
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {tp('stepIndicator', { number: String(idx + 1).padStart(2, '0') })}
+                  </span>
+                  <span className={`text-xs ${idx === createStep ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                    {tp(key)}
+                  </span>
+                </div>
+                {idx < 2 && <div className="w-8 h-px bg-border mx-1" />}
+              </div>
+            ))}
           </div>
 
-          <DialogFooter>
+          {/* Step content */}
+          <div className="min-h-[280px] py-2">
+            {createStep === 0 && (
+              <div className="space-y-4">
+                {/* Project Title */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    {tp('projectTitle')} <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    placeholder={tp('projectTitlePlaceholder')}
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newProjectName.trim()) setCreateStep(1)
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                {/* Content Mode */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{tp('contentMode')}</label>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-muted/60">
+                    {([
+                      ['drama', 'modeDrama'],
+                      ['narration', 'modeNarration'],
+                      ['ad', 'modeAd'],
+                    ] as const).map(([value, key]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setContentMode(value)}
+                        className={`text-xs py-2 rounded-md transition-colors ${
+                          contentMode === value
+                            ? 'bg-background text-foreground shadow-sm font-medium'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {tp(key)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Aspect Ratio */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{tp('aspectRatio')}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      ['9:16', 'portrait', Smartphone],
+                      ['16:9', 'landscape', Monitor],
+                    ] as const).map(([value, key, Icon]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setAspectRatio(value)}
+                        className={`flex items-center justify-center gap-2 py-2.5 rounded-md border text-sm transition-colors ${
+                          aspectRatio === value
+                            ? 'border-primary bg-primary/10 text-primary font-medium'
+                            : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                        }`}
+                      >
+                        <Icon className="size-4" />
+                        {tp(key)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Total Episodes + Episode Duration */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{tp('totalEpisodes')}</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={totalEpisodes}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10)
+                        setTotalEpisodes(Number.isFinite(v) && v > 0 ? v : 1)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{tp('episodeDuration')}</label>
+                    <Select value={episodeDuration} onValueChange={setEpisodeDuration}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DURATION_OPTIONS.map((value, i) => (
+                          <SelectItem key={value} value={value}>
+                            {tp(DURATION_KEYS[i])}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {createStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium">{tp('models')}</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">{tp('modelsDescription')}</p>
+                </div>
+                {([
+                  ['llm', modelLlm, setModelLlm],
+                  ['image', modelImage, setModelImage],
+                  ['video', modelVideo, setModelVideo],
+                  ['tts', modelTts, setModelTts],
+                ] as const).map(([category, value, setter]) => (
+                  <div key={category} className="flex items-center justify-between gap-3 py-2 border-b border-border/40 last:border-0">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium capitalize">{category}</span>
+                    </div>
+                    <ModelSelector
+                      category={category as AiCategory}
+                      value={value}
+                      onChange={setter}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {createStep === 2 && (
+              <div className="space-y-4">
+                {/* Genre */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{tp('genre')}</label>
+                  <Select value={newGenre} onValueChange={setNewGenre}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GENRE_KEYS.map((key, i) => (
+                        <SelectItem key={GENRE_VALUES[i]} value={GENRE_VALUES[i]}>
+                          {tp(key)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Visual Style */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{tp('visualStyle')}</label>
+                  <Select value={newStyle} onValueChange={setNewStyle}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STYLE_ENTRIES.map(([value, key]) => (
+                        <SelectItem key={value} value={value}>
+                          {tp(key)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Target Platform */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{tp('targetPlatform')}</label>
+                  <Select value={targetPlatform} onValueChange={setTargetPlatform}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLATFORM_ENTRIES.map(([value, key]) => (
+                        <SelectItem key={value} value={value}>
+                          {tp(key)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               {tc('cancel')}
             </Button>
-            <Button onClick={handleCreate} disabled={!newTitle.trim() || creating}>
-              {creating ? tc('creating') : tc('create')}
-            </Button>
+            {createStep > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => setCreateStep((s) => Math.max(0, s - 1))}
+                disabled={creating}
+              >
+                <ArrowLeft className="size-4" />
+                {tc('back')}
+              </Button>
+            )}
+            {createStep < 2 ? (
+              <Button
+                onClick={() => setCreateStep((s) => Math.min(2, s + 1))}
+                disabled={createStep === 0 ? !newProjectName.trim() : false}
+              >
+                {tc('next')}
+                <ArrowRight className="size-4" />
+              </Button>
+            ) : (
+              <Button onClick={handleCreate} disabled={!newProjectName.trim() || creating}>
+                {creating ? tc('creating') : tp('createProject')}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
