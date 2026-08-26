@@ -48,12 +48,13 @@ function userProviderToConfig(up: {
   const preset = PROVIDER_PRESETS[up.category as AiCategory]?.find(
     (p) => p.provider === up.provider
   )
+  // For custom providers (not in presets), use the provider slug as the name
+  // This ensures the provider is visible in the settings UI
   return {
     category: up.category as AiCategory,
     provider: up.provider,
     name: preset?.name ?? up.provider,
     // SECURITY: Only use the user's own apiKey, NEVER fall back to env vars
-    // which would expose the platform's API key to free users.
     apiKey: up.apiKey || '',
     baseUrl: up.baseUrl || preset?.defaultBaseUrl || '',
     model: up.model || preset?.defaultModel || '',
