@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
           typeLabel: typeInfo.label,
         }
       })
-      .filter((m): m is { id: string; name: string; type: string; typeLabel: string } => m !== null)
+      .filter((m): m is NonNullable<typeof m> => m !== null)
 
     return NextResponse.json({ models })
   } catch (err: any) {
