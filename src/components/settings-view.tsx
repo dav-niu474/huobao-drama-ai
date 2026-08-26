@@ -2028,7 +2028,8 @@ export function SettingsView() {
         editBaseUrl,
         editApiKey,
         editModel || undefined,
-        editProtocol
+        editProtocol,
+        discoveredModels.length > 0 ? discoveredModels : undefined
       )
       setCustomTestResult({
         success: result.success,

@@ -1254,14 +1254,15 @@ export const api = {
       baseUrl: string,
       apiKey: string,
       model?: string,
-      protocol?: string
+      protocol?: string,
+      models?: Array<{ id: string; type: string }>
     ) =>
       request<{ success: boolean; message?: string; model?: string; error?: string }>(
         '/api/settings/test-connection',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ baseUrl, apiKey, model, protocol }),
+          body: JSON.stringify({ baseUrl, apiKey, model, protocol, models }),
         }
       ),
   },
