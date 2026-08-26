@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { useAppStore } from '@/lib/store'
 import { api, type ProviderConfig, type AiCategory, type ProviderPreset, type ModelOption } from '@/lib/api'
 import { PROVIDER_PRESETS } from '@/lib/provider-presets'
+import { inferModelType, getTypeTagColor } from '@/lib/model-type-detection'
 import { useToast } from '@/hooks/use-toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -2475,7 +2476,10 @@ export function SettingsView() {
                           Models ({discoveredModels.length})
                         </Label>
                         <div className="rounded-md border border-border/40 bg-muted/20 divide-y divide-border/30 max-h-64 overflow-y-auto">
-                          {discoveredModels.map((m) => (
+                          {discoveredModels.map((m) => {
+                            const tagColor = getTypeTagColor(m.type as 'text' | 'image' | 'video' | 'audio')
+                            const typeLabel = (m as any).typeLabel || m.type.toUpperCase()
+                            return (
                             <div
                               key={m.id}
                               className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/40"
@@ -2495,20 +2499,13 @@ export function SettingsView() {
                               </button>
                               <Badge
                                 variant="outline"
-                                className={`text-[9px] px-1 py-0 ${
-                                  m.type === 'text'
-                                    ? 'bg-sky-500/10 text-sky-600 border-sky-500/20'
-                                    : m.type === 'image'
-                                      ? 'bg-violet-500/10 text-violet-600 border-violet-500/20'
-                                      : m.type === 'video'
-                                        ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                                        : 'bg-teal-500/10 text-teal-600 border-teal-500/20'
-                                }`}
+                                className={`text-[9px] px-1 py-0 ${tagColor.bg} ${tagColor.text} ${tagColor.border}`}
                               >
-                                {m.type.toUpperCase()}
+                                {typeLabel}
                               </Badge>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                         {editModel && (
                           <p className="text-[10px] text-muted-foreground">
@@ -2905,33 +2902,18 @@ function ProviderDetailView({
   const isMaskedKey = (platformProvider?.apiKey ?? '').startsWith('****')
   const status: 'connected' | 'unconfigured' = hasKey || isMaskedKey ? 'connected' : 'unconfigured'
 
-  // Build the model list from preset.availableModels (or just the single configured model)
-  const modelList: Array<{ id: string; name: string; type: 'text' | 'image' | 'video' | 'tts' }> = preset?.availableModels
-    ? preset.availableModels.map((m) => ({
-        id: m.id,
-        name: m.name,
-        type:
-          category === 'image'
-            ? 'image'
-            : category === 'video'
-              ? 'video'
-              : category === 'tts'
-                ? 'tts'
-                : 'text',
-      }))
-    : platformProvider?.model
-      ? [{
-          id: platformProvider.model,
-          name: platformProvider.model,
-          type:
-            category === 'image'
-              ? 'image'
-              : category === 'video'
-                ? 'video'
-                : category === 'tts'
-                  ? 'tts'
-                  : 'text',
-        }]
+  // Build the model list — use inferModelType for accurate type detection
+  const modelList: Array<{ id: string; name: string; type: string; typeLabel: string }> = preset?.availableModels
+    ? preset.availableModels.map((m) => {
+        const typeInfo = inferModelType(m.id)
+        return { id: m.id, name: m.name, type: typeInfo.mediaType, typeLabel: typeInfo.label }
+      })
+    : (userProvider?.model || platformProvider?.model)
+      ? (() => {
+          const model = userProvider?.model || platformProvider?.model
+          const typeInfo = inferModelType(model!)
+          return [{ id: model!, name: model!, type: typeInfo.mediaType, typeLabel: typeInfo.label }]
+        })()
       : []
 
   // Default model — either preset.defaultModel or the configured model
@@ -3059,6 +3041,7 @@ function ProviderDetailView({
             <div className="divide-y divide-border/30">
               {modelList.map((m) => {
                 const isDefault = m.id === defaultModel
+                const tagColor = getTypeTagColor(m.type as 'text' | 'image' | 'video' | 'audio')
                 return (
                   <div
                     key={m.id}
@@ -3072,17 +3055,9 @@ function ProviderDetailView({
                     <code className="font-mono flex-1 truncate">{m.id}</code>
                     <Badge
                       variant="outline"
-                      className={`text-[9px] px-1 py-0 ${
-                        m.type === 'text'
-                          ? 'bg-sky-500/10 text-sky-600 border-sky-500/20'
-                          : m.type === 'image'
-                            ? 'bg-violet-500/10 text-violet-600 border-violet-500/20'
-                            : m.type === 'video'
-                              ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                              : 'bg-teal-500/10 text-teal-600 border-teal-500/20'
-                      }`}
+                      className={`text-[9px] px-1 py-0 ${tagColor.bg} ${tagColor.text} ${tagColor.border}`}
                     >
-                      {m.type.toUpperCase()}
+                      {m.typeLabel}
                     </Badge>
                     {isDefault && (
                       <Badge className="text-[9px] px-1 py-0 bg-primary/10 text-primary border-primary/20">
