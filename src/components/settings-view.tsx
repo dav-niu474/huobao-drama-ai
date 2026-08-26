@@ -1608,8 +1608,9 @@ export function SettingsView() {
   // True when the right panel is showing the "Add Custom Provider" form
   const [addingCustom, setAddingCustom] = useState(false)
   // Models discovered from the provider's /models endpoint (edit mode)
+  // type is editable by the user — they can override the auto-detected type
   const [discoveredModels, setDiscoveredModels] = useState<
-    Array<{ id: string; name: string; type: string }>
+    Array<{ id: string; name: string; type: string; typeLabel: string }>
   >([])
   const [discovering, setDiscovering] = useState(false)
   const [discoverError, setDiscoverError] = useState<string | null>(null)
@@ -1951,18 +1952,15 @@ export function SettingsView() {
     setEditProtocol('openai')
     setEditModel(userProvider?.model || platformProvider?.model || preset?.defaultModel || '')
     setDiscoveredModels(
-      (preset?.availableModels ?? []).map((m) => ({
-        id: m.id,
-        name: m.name,
-        type:
-          category === 'image'
-            ? 'image'
-            : category === 'video'
-              ? 'video'
-              : category === 'tts'
-                ? 'tts'
-                : 'text',
-      }))
+      (preset?.availableModels ?? []).map((m) => {
+        const typeInfo = inferModelType(m.id)
+        return {
+          id: m.id,
+          name: m.name,
+          type: typeInfo.mediaType,
+          typeLabel: typeInfo.label,
+        }
+      })
     )
     setDiscoverError(null)
     setCustomTestResult(null)
@@ -2005,7 +2003,13 @@ export function SettingsView() {
     setDiscoverError(null)
     try {
       const result = await api.settings.discoverModels(editBaseUrl, editApiKey, editProtocol)
-      setDiscoveredModels(result.models)
+      // Ensure each model has typeLabel — fall back to inferModelType if API didn't return it
+      const modelsWithType: Array<{ id: string; name: string; type: string; typeLabel: string }> = result.models.map(m => {
+        if (m.typeLabel) return { id: m.id, name: m.name, type: m.type, typeLabel: m.typeLabel }
+        const typeInfo = inferModelType(m.id)
+        return { id: m.id, name: m.name, type: typeInfo.mediaType, typeLabel: typeInfo.label }
+      })
+      setDiscoveredModels(modelsWithType)
       if (result.models.length === 0) {
         setDiscoverError('未发现可用模型，请检查 Base URL 和 API Key')
       }
@@ -2014,6 +2018,17 @@ export function SettingsView() {
     } finally {
       setDiscovering(false)
     }
+  }
+
+  // Update a discovered model's type (user can override auto-detected type)
+  function handleModelTypeChange(modelId: string, newType: string) {
+    setDiscoveredModels(prev =>
+      prev.map(m =>
+        m.id === modelId
+          ? { ...m, type: newType, typeLabel: newType.toUpperCase() }
+          : m
+      )
+    )
   }
 
   // Test custom provider connection
@@ -2475,10 +2490,9 @@ export function SettingsView() {
                         <Label className="text-xs font-medium">
                           Models ({discoveredModels.length})
                         </Label>
-                        <div className="rounded-md border border-border/40 bg-muted/20 divide-y divide-border/30 max-h-64 overflow-y-auto">
+                        <div className="rounded-md border border-border/40 bg-muted/20 divide-y divide-border/30 max-h-80 overflow-y-auto">
                           {discoveredModels.map((m) => {
                             const tagColor = getTypeTagColor(m.type as 'text' | 'image' | 'video' | 'audio')
-                            const typeLabel = (m as any).typeLabel || m.type.toUpperCase()
                             return (
                             <div
                               key={m.id}
@@ -2492,17 +2506,30 @@ export function SettingsView() {
                               <button
                                 type="button"
                                 onClick={() => setEditModel(m.id)}
-                                className="flex-1 text-left text-xs"
+                                className="flex-1 text-left text-xs min-w-0"
                               >
-                                <span className="font-mono">{m.id}</span>
-                                <span className="text-muted-foreground ml-2">{m.name}</span>
+                                <span className="font-mono truncate">{m.id}</span>
                               </button>
-                              <Badge
-                                variant="outline"
-                                className={`text-[9px] px-1 py-0 ${tagColor.bg} ${tagColor.text} ${tagColor.border}`}
+                              {/* Type selector — user can override auto-detected type */}
+                              <Select
+                                value={m.type}
+                                onValueChange={(v) => handleModelTypeChange(m.id, v)}
                               >
-                                {typeLabel}
-                              </Badge>
+                                <SelectTrigger className={`h-6 w-24 text-[9px] px-1 ${tagColor.bg} ${tagColor.text} ${tagColor.border} border`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="text">TEXT</SelectItem>
+                                  <SelectItem value="image">IMAGE</SelectItem>
+                                  <SelectItem value="video">VIDEO</SelectItem>
+                                  <SelectItem value="audio">TTS</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {editModel === m.id && (
+                                <Badge className="text-[9px] px-1 py-0 bg-primary/10 text-primary border-primary/20 shrink-0">
+                                  DEFAULT
+                                </Badge>
+                              )}
                             </div>
                             )
                           })}
