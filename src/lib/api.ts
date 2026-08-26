@@ -1236,6 +1236,34 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+
+    // Discover available models from a provider's /models endpoint.
+    // Used by the Settings page Edit mode to populate the model list.
+    discoverModels: (baseUrl: string, apiKey: string, protocol?: string) =>
+      request<{
+        models: Array<{ id: string; name: string; type: string }>
+      }>('/api/settings/discover-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl, apiKey, protocol }),
+      }),
+
+    // Test connection to a custom provider by sending a minimal
+    // chat-completion request.
+    testConnection: (
+      baseUrl: string,
+      apiKey: string,
+      model?: string,
+      protocol?: string
+    ) =>
+      request<{ success: boolean; message?: string; model?: string; error?: string }>(
+        '/api/settings/test-connection',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ baseUrl, apiKey, model, protocol }),
+        }
+      ),
   },
 
   // ---- User Provider (per-user API key overrides) ----
