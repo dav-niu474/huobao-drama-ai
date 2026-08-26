@@ -41,6 +41,7 @@ import { AgentExecutionPanel, type AgentLogEntry } from '@/components/agent-exec
 import { statusBadge } from './helpers'
 import type { ScriptPanelProps } from './types'
 import { api } from '@/lib/api'
+import { splitChapters } from '@/lib/chapter-splitter'
 import { useToast } from '@/hooks/use-toast'
 
 // ============================================================
@@ -158,17 +159,32 @@ function RawNovelPanel({
     }
     setImporting(true)
     try {
+      // ★ Split chapters client-side using splitChapters — this matches the
+      //   backend's logic but applies it locally so the table updates
+      //   immediately with correctly-split chapters. Crucially,
+      //   splitChapters only treats explicit chapter markers (第X章, 第X回,
+      //   第X节, 一/二/三、, 1./1、, Chapter X, 【标题】) as chapter
+      //   boundaries; everything else collapses into a single chapter so
+      //   scene descriptions / dialogue lines won't be misread as chapters.
+      const localChapters: NovelChapter[] = splitChapters(pastedText)
+      // Persist the raw text + chapters on the backend.
       const res = await api.episodes.importNovel(
         episodeId,
         pastedText,
         fileName || 'pasted-text.txt'
       )
-      setChapters(res.chapters)
+      // Use locally-split chapters for the table.
+      setChapters(localChapters)
       onRawContentChange(pastedText)
       toast({
         title: '导入成功',
-        description: `已识别 ${res.chapterCount} 章（共 ${res.textLength} 字）`,
+        description: `已识别 ${localChapters.length} 章（共 ${res.textLength} 字）`,
       })
+      // Auto-trigger AI event extraction after a small delay so the UI
+      // has a chance to render the chapter table first.
+      if (localChapters.length > 0) {
+        setTimeout(() => void handleExtractEvents(), 500)
+      }
     } catch (err: any) {
       toast({
         title: '导入失败',
@@ -195,13 +211,36 @@ function RawNovelPanel({
     }
     setImporting(true)
     try {
-      const res = await api.episodes.importNovelFile(episodeId, file)
-      setChapters(res.chapters)
-      onRawContentChange(res.chapters.map((c) => c.content).join('\n\n'))
+      let localChapters: NovelChapter[] = []
+      let rawText = ''
+
+      if (file.name.toLowerCase().endsWith('.txt')) {
+        // .txt files: read text on the client and split locally so the
+        // table populates immediately with correct chapter boundaries.
+        rawText = await file.text()
+        // Strip BOM if present
+        rawText = rawText.replace(/^\uFEFF/, '')
+        localChapters = splitChapters(rawText)
+        // Persist the raw text + chapters on the backend.
+        await api.episodes.importNovel(episodeId, rawText, file.name)
+      } else {
+        // .docx files: requires mammoth (server-side) to extract text, so
+        // we delegate to the backend which uses the same splitChapters.
+        const res = await api.episodes.importNovelFile(episodeId, file)
+        localChapters = res.chapters
+        rawText = res.chapters.map((c) => c.content).join('\n\n')
+      }
+
+      setChapters(localChapters)
+      onRawContentChange(rawText)
       toast({
         title: '导入成功',
-        description: `${file.name} → ${res.chapterCount} 章（共 ${res.textLength} 字）`,
+        description: `${file.name} → ${localChapters.length} 章（共 ${rawText.length} 字）`,
       })
+      // Auto-trigger AI event extraction after a small delay.
+      if (localChapters.length > 0) {
+        setTimeout(() => void handleExtractEvents(), 500)
+      }
     } catch (err: any) {
       toast({
         title: '导入失败',

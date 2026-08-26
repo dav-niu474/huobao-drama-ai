@@ -7,7 +7,6 @@ import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useAgentExecution } from '@/components/agent-execution-panel'
-import { ModelSelector } from '@/components/model-selector'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -1993,33 +1992,9 @@ export function EpisodeWorkspace() {
             {episodeTitle}
           </Badge>
 
-          {/* Model selectors - desktop inline */}
+          {/* Model selectors removed — models are now globally configured in Settings.
+              Only the per-episode config lock toggle remains. */}
           <div className="hidden md:flex items-center gap-2 ml-auto">
-            <ModelSelector
-              category="llm"
-              value={workspaceModels.llm}
-              onChange={(m) => setWorkspaceModel('llm', m)}
-              disabled={isConfigLocked}
-            />
-            <ModelSelector
-              category="image"
-              value={workspaceModels.image}
-              onChange={(m) => setWorkspaceModel('image', m)}
-              disabled={isConfigLocked}
-            />
-            <ModelSelector
-              category="video"
-              value={workspaceModels.video}
-              onChange={(m) => setWorkspaceModel('video', m)}
-              disabled={isConfigLocked}
-            />
-            <ModelSelector
-              category="tts"
-              value={workspaceModels.tts}
-              onChange={(m) => setWorkspaceModel('tts', m)}
-              disabled={isConfigLocked}
-            />
-
             {/* Lock/Unlock toggle */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2108,33 +2083,8 @@ export function EpisodeWorkspace() {
           </div>
         </div>
 
-        {/* Mobile model selectors row */}
+        {/* Mobile config lock row — model selectors removed (models are global now) */}
         <div className="flex md:hidden items-center gap-2 px-4 pb-2 overflow-x-auto">
-          <ModelSelector
-            category="llm"
-            value={workspaceModels.llm}
-            onChange={(m) => setWorkspaceModel('llm', m)}
-            disabled={isConfigLocked}
-          />
-          <ModelSelector
-            category="image"
-            value={workspaceModels.image}
-            onChange={(m) => setWorkspaceModel('image', m)}
-            disabled={isConfigLocked}
-          />
-          <ModelSelector
-            category="video"
-            value={workspaceModels.video}
-            onChange={(m) => setWorkspaceModel('video', m)}
-            disabled={isConfigLocked}
-          />
-          <ModelSelector
-            category="tts"
-            value={workspaceModels.tts}
-            onChange={(m) => setWorkspaceModel('tts', m)}
-            disabled={isConfigLocked}
-          />
-
           {/* Lock/Unlock toggle - mobile */}
           <Tooltip>
             <TooltipTrigger asChild>

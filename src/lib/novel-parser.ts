@@ -6,7 +6,9 @@
 // ============================================================
 
 import { EventEmitter } from 'events'
-import { db } from '@/lib/db'
+// NOTE: previously imported `db` here, but it was never used. Removed so
+// this module can be safely imported from client-side code (splitChapters
+// is a pure text utility and shouldn't pull in Prisma / server-only deps).
 
 // ============================================================
 // Types
@@ -102,6 +104,11 @@ export function splitChapters(text: string): Chapter[] {
   }
 
   // ── Strategy 1: 用正则模式匹配章节标题 ──
+  // 只识别明确的章节标题模式（第X章/回/节、纯中文数字、阿拉伯数字编号、
+  // Chapter X、【标题】），其他情况一律作为单章处理。
+  // 不再使用"短行启发式"猜测 —— 那会把场景描述、对白等短行误识别为
+  // 章节标题（例如 "场景1：夜晚的村庄"、"(内景 - 村庄 - 夜)" 等），
+  // 产生大量虚假"章节"。
   for (const pattern of CHAPTER_PATTERNS) {
     const source = pattern.source
     const flags = pattern.flags
@@ -125,83 +132,9 @@ export function splitChapters(text: string): Chapter[] {
     }
   }
 
-  // ── Strategy 2: 按空行（双换行）分段 ──
-  // 空行是小说中最自然的段落/场景分界，比按字数切割好得多
-  const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim().length > 0)
-
-  if (paragraphs.length >= 2) {
-    // 进一步：如果段落太多（>50），可能只是普通段落不是章节
-    // 尝试合并为更合理的章节大小
-    if (paragraphs.length <= 100) {
-      // 段落数合理，每个段落（或相邻几个小段落）作为一个章节
-      const chapters: Chapter[] = []
-      let currentContent = ''
-      let currentTitle = ''
-
-      for (let i = 0; i < paragraphs.length; i++) {
-        const para = paragraphs[i].trim()
-        const firstLine = para.split('\n')[0].trim()
-
-        // 如果当前段落是一个短行（可能是章节标题）
-        if (firstLine.length <= 50 && firstLine.length >= 2 && !/[。，！？；：…""''）】》]$/.test(firstLine)) {
-          // 保存前一个章节
-          if (currentContent.trim().length > 0) {
-            const title = currentTitle || currentContent.split('\n')[0].trim().slice(0, 40)
-            chapters.push({
-              index: chapters.length,
-              title: title.length >= 2 ? title : `第${chapters.length + 1}章`,
-              content: currentContent.trim(),
-            })
-          }
-          currentTitle = firstLine
-          currentContent = para
-        } else {
-          // 正文段落，追加到当前章节
-          currentContent += '\n\n' + para
-        }
-      }
-
-      // 保存最后一个章节
-      if (currentContent.trim().length > 0) {
-        const title = currentTitle || currentContent.split('\n')[0].trim().slice(0, 40)
-        chapters.push({
-          index: chapters.length,
-          title: title.length >= 2 ? title : `第${chapters.length + 1}章`,
-          content: currentContent.trim(),
-        })
-      }
-
-      if (chapters.length >= 2) return chapters
-    }
-
-    // 段落太多，按段落分但限制最大章节数
-    const chapters: Chapter[] = []
-    // 每 N 个段落合并为一个章节
-    const PARAS_PER_CHAPTER = Math.max(1, Math.floor(paragraphs.length / 30))
-    let paraIdx = 0
-
-    while (paraIdx < paragraphs.length) {
-      const chunk = paragraphs.slice(paraIdx, paraIdx + PARAS_PER_CHAPTER).join('\n\n').trim()
-      if (chunk.length > 0) {
-        const firstLine = chunk.split('\n')[0].trim()
-        let title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : firstLine
-        if (title.length < 2) {
-          title = `第${chapters.length + 1}章`
-        }
-        chapters.push({
-          index: chapters.length,
-          title,
-          content: chunk,
-        })
-      }
-      paraIdx += PARAS_PER_CHAPTER
-    }
-
-    if (chapters.length >= 2) return chapters
-  }
-
-  // ── Strategy 3: 实在找不到任何分界，整体作为一个章节 ──
-  // 绝对不按固定字数切割成无意义的片段！
+  // ── Strategy 2: 找不到任何明确章节标记 → 整体作为一个章节 ──
+  // 绝对不按固定字数切割成无意义的片段，也不按"短行"启发式猜测章节标题。
+  // 对于剧本/分镜格式（没有章节标记）的输入，整个文本就应当是 1 章。
   const firstLine = text.split('\n')[0].trim()
   const title = firstLine.length > 40 ? firstLine.slice(0, 40) + '...' : (firstLine.length >= 2 ? firstLine : '全文')
 
