@@ -329,11 +329,12 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
       setCreateOpen(false)
       resetWizard()
 
-      // Navigate directly to the episode workspace if we have an episode,
-      // otherwise fall back to the project detail page.
+      // Always navigate directly to episode workspace (pipeline production)
+      // — skip project detail page entirely
       if (episodeId) {
         navigateToEpisode(dramaId, episodeId)
       } else {
+        // If episode creation failed, go to project detail as fallback
         navigateToProject(dramaId)
       }
     } catch (err) {
@@ -456,7 +457,23 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
               <ProjectCard
                 key={drama.id}
                 drama={drama}
-                onClick={() => navigateToProject(drama.id)}
+                onClick={async () => {
+                  // Navigate directly to pipeline production
+                  // Find or create the first episode for this drama
+                  try {
+                    const eps = await api.episodes.list(drama.id)
+                    if (eps && eps.length > 0) {
+                      navigateToEpisode(drama.id, eps[0].id)
+                    } else {
+                      // No episodes yet — create one and go to pipeline
+                      const ep = await api.episodes.create(drama.id, { title: '第1集' })
+                      navigateToEpisode(drama.id, ep.id)
+                    }
+                  } catch {
+                    // Fallback: go to project detail if episode creation fails
+                    navigateToProject(drama.id)
+                  }
+                }}
                 onDelete={() => setDeleteTarget(drama)}
                 tc={tc}
                 tp={tp}
