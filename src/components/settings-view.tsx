@@ -56,9 +56,51 @@ import {
   Check,
   Trash2,
   User,
-  Wallet,
   Globe,
+  Plug,
+  Grid3x3,
+  BarChart3,
+  Plus,
+  Pencil,
+  Server,
+  RefreshCw,
 } from 'lucide-react'
+
+// ============================================================
+// SidebarItem — left navigation entry
+// ============================================================
+
+function SidebarItem({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+  warning = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  active: boolean
+  onClick: () => void
+  warning?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors text-left ${
+        active
+          ? 'bg-primary/10 text-primary font-medium'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+      }`}
+    >
+      <Icon className="size-3.5 flex-shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {warning && (
+        <span className="inline-block size-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+      )}
+    </button>
+  )
+}
 
 // ============================================================
 // Category metadata
@@ -1547,6 +1589,42 @@ export function SettingsView() {
   // Active tab
   const [activeTab, setActiveTab] = useState<string>('llm')
 
+  // ============================================================
+  // 3-column layout state
+  // ============================================================
+  // Left-sidebar navigation entry — 'providers' uses the 3-column
+  // layout (sidebar + provider list + detail). Other entries
+  // (agents, models, usage, apikeys, about) reuse the legacy
+  // Tabs layout in the right column.
+  type SettingsTab = 'providers' | 'agents' | 'models' | 'usage' | 'apikeys' | 'about'
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('providers')
+  // Key of the currently selected provider in the middle column.
+  // Format: `${category}:${provider}` (e.g. "llm:openai").
+  const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(null)
+  // True when the right panel is showing the edit form for a provider
+  const [editingProvider, setEditingProvider] = useState(false)
+  // True when the right panel is showing the "Add Custom Provider" form
+  const [addingCustom, setAddingCustom] = useState(false)
+  // Models discovered from the provider's /models endpoint (edit mode)
+  const [discoveredModels, setDiscoveredModels] = useState<
+    Array<{ id: string; name: string; type: string }>
+  >([])
+  const [discovering, setDiscovering] = useState(false)
+  const [discoverError, setDiscoverError] = useState<string | null>(null)
+  // Edit form state
+  const [editName, setEditName] = useState('')
+  const [editBaseUrl, setEditBaseUrl] = useState('')
+  const [editApiKey, setEditApiKey] = useState('')
+  const [editShowKey, setEditShowKey] = useState(false)
+  const [editProtocol, setEditProtocol] = useState<'openai' | 'anthropic' | 'custom'>('openai')
+  const [editModel, setEditModel] = useState('')
+  const [testingCustom, setTestingCustom] = useState(false)
+  const [customTestResult, setCustomTestResult] = useState<{
+    success: boolean
+    message?: string
+    error?: string
+  } | null>(null)
+
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
@@ -1841,11 +1919,175 @@ export function SettingsView() {
     [toast, providersData, ts]
   )
 
+  // ============================================================
+  // 3-column layout handlers
+  // ============================================================
+
+  // Determine the status of a preset provider (for the middle column dot)
+  function getPresetStatus(category: AiCategory, provider: string): 'connected' | 'has-key' | 'unconfigured' {
+    const platformProvider = providersData[category]?.find((p) => p.provider === provider && p.isActive)
+    const platformHasAny = providersData[category]?.some((p) => p.provider === provider && p.apiKey)
+    const userProvider = userProvidersData[category]?.find((p) => p.provider === provider)
+    const userHasKey = Boolean(userProvider?.apiKey)
+    if (platformProvider?.apiKey || userHasKey) return 'connected'
+    if (platformHasAny) return 'has-key'
+    return 'unconfigured'
+  }
+
+  // Enter edit mode for the currently selected provider.
+  // Pre-fills the edit form with the provider's existing config.
+  function handleEditProvider() {
+    if (!selectedProviderKey) return
+    const [category, provider] = selectedProviderKey.split(':') as [AiCategory, string]
+    const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)
+    const platformProvider = providersData[category]?.find((p) => p.provider === provider)
+    const userProvider = userProvidersData[category]?.find((p) => p.provider === provider)
+
+    setEditName(preset?.name ?? platformProvider?.name ?? provider)
+    setEditBaseUrl(platformProvider?.baseUrl || userProvider?.baseUrl || preset?.defaultBaseUrl || '')
+    // Don't pre-fill API key — backend masks it. User can re-enter if needed.
+    setEditApiKey('')
+    setEditProtocol('openai')
+    setEditModel(platformProvider?.model || userProvider?.model || preset?.defaultModel || '')
+    setDiscoveredModels(
+      (preset?.availableModels ?? []).map((m) => ({
+        id: m.id,
+        name: m.name,
+        type:
+          category === 'image'
+            ? 'image'
+            : category === 'video'
+              ? 'video'
+              : category === 'tts'
+                ? 'tts'
+                : 'text',
+      }))
+    )
+    setDiscoverError(null)
+    setCustomTestResult(null)
+    setEditingProvider(true)
+    setAddingCustom(false)
+  }
+
+  // Enter "Add Custom Provider" mode
+  function handleAddCustom() {
+    setEditName('')
+    setEditBaseUrl('')
+    setEditApiKey('')
+    setEditShowKey(false)
+    setEditProtocol('openai')
+    setEditModel('')
+    setDiscoveredModels([])
+    setDiscoverError(null)
+    setCustomTestResult(null)
+    setAddingCustom(true)
+    setEditingProvider(false)
+    setSelectedProviderKey(null)
+  }
+
+  // Cancel edit / add mode
+  function handleCancelEdit() {
+    setEditingProvider(false)
+    setAddingCustom(false)
+    setDiscoveredModels([])
+    setDiscoverError(null)
+    setCustomTestResult(null)
+  }
+
+  // Discover models from the provider's /models endpoint
+  async function handleDiscoverModels() {
+    if (!editBaseUrl || !editApiKey) {
+      setDiscoverError('请填写 Base URL 和 API Key 后再发现模型')
+      return
+    }
+    setDiscovering(true)
+    setDiscoverError(null)
+    try {
+      const result = await api.settings.discoverModels(editBaseUrl, editApiKey, editProtocol)
+      setDiscoveredModels(result.models)
+      if (result.models.length === 0) {
+        setDiscoverError('未发现可用模型，请检查 Base URL 和 API Key')
+      }
+    } catch (err) {
+      setDiscoverError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDiscovering(false)
+    }
+  }
+
+  // Test custom provider connection
+  async function handleTestCustomConnection() {
+    if (!editBaseUrl || !editApiKey) {
+      setCustomTestResult({ success: false, error: '请填写 Base URL 和 API Key' })
+      return
+    }
+    setTestingCustom(true)
+    setCustomTestResult(null)
+    try {
+      const result = await api.settings.testConnection(
+        editBaseUrl,
+        editApiKey,
+        editModel || undefined,
+        editProtocol
+      )
+      setCustomTestResult({
+        success: result.success,
+        message: result.message,
+        error: result.error,
+      })
+    } catch (err) {
+      setCustomTestResult({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setTestingCustom(false)
+    }
+  }
+
+  // Save custom provider — saves as a user provider for the LLM category
+  // (custom providers are always LLM-compatible for now)
+  async function handleSaveCustom() {
+    if (!editName.trim() || !editApiKey.trim()) {
+      toast({
+        title: ts('saveFailed'),
+        description: '请填写名称和 API Key',
+        variant: 'destructive',
+      })
+      return
+    }
+    const category: AiCategory = 'llm'
+    const provider = editingProvider && selectedProviderKey
+      ? selectedProviderKey.split(':')[1]
+      : `custom-${Date.now()}`
+    try {
+      const result = await api.userProvider.save({
+        category,
+        provider,
+        name: editName,
+        apiKey: editApiKey,
+        baseUrl: editBaseUrl,
+        model: editModel,
+        isActive: false,
+      })
+      setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
+      toast({ title: ts('myConfigSaved') })
+      setSelectedProviderKey(`${category}:${provider}`)
+      handleCancelEdit()
+    } catch (err) {
+      toast({
+        title: ts('saveFailed'),
+        description: String(err),
+        variant: 'destructive',
+      })
+    }
+  }
+
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
+    <div className="flex-1 flex flex-col h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-border/50 bg-background/80 backdrop-blur-md">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+      <header className="shrink-0 border-b border-border/50 bg-background/80 backdrop-blur-md z-10">
+        <div className="px-4 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -1857,183 +2099,972 @@ export function SettingsView() {
               <span className="hidden sm:inline">{tc('back')}</span>
             </Button>
             <Separator orientation="vertical" className="h-5" />
-            <Settings className="size-5 text-primary" />
-            <h1 className="text-xl font-bold">{ts('platformSettings')}</h1>
+            <Settings className="size-4 text-primary" />
+            <h1 className="text-base font-bold">{ts('platformSettings')}</h1>
           </div>
           <UserMenu />
         </div>
       </header>
 
-      {/* Content */}
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
-        {/* Loading state */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center space-y-3">
-              <Loader2 className="size-8 animate-spin text-primary mx-auto" />
-              <p className="text-sm text-muted-foreground">{ts('loadingSettings')}</p>
+      {/* 3-column layout */}
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            <Loader2 className="size-8 animate-spin text-primary mx-auto" />
+            <p className="text-sm text-muted-foreground">{ts('loadingSettings')}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex min-h-0">
+          {/* ============================================================ */}
+          {/* Left Sidebar — Navigation                                    */}
+          {/* ============================================================ */}
+          <div className="w-56 border-r border-border/50 shrink-0 flex flex-col hidden md:flex">
+            <div className="p-3 border-b border-border/50">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+                Configuration
+              </p>
+            </div>
+            <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+              <SidebarItem
+                icon={Plug}
+                label="Providers"
+                active={settingsTab === 'providers'}
+                onClick={() => setSettingsTab('providers')}
+              />
+              {isAdmin && (
+                <SidebarItem
+                  icon={Bot}
+                  label="Agents"
+                  active={settingsTab === 'agents'}
+                  onClick={() => setSettingsTab('agents')}
+                />
+              )}
+              <SidebarItem
+                icon={Grid3x3}
+                label="Models"
+                active={settingsTab === 'models'}
+                onClick={() => setSettingsTab('models')}
+              />
+            </nav>
+            <div className="p-3 border-t border-border/50">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-2">
+                Access
+              </p>
+              <div className="space-y-0.5">
+                <SidebarItem
+                  icon={BarChart3}
+                  label="Usage"
+                  active={settingsTab === 'usage'}
+                  onClick={() => setSettingsTab('usage')}
+                />
+                <SidebarItem
+                  icon={Globe}
+                  label="API Keys"
+                  active={settingsTab === 'apikeys'}
+                  onClick={() => setSettingsTab('apikeys')}
+                />
+              </div>
+            </div>
+            <div className="p-3 border-t border-border/50">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-2">
+                System
+              </p>
+              <div className="space-y-0.5">
+                <SidebarItem
+                  icon={Info}
+                  label="About"
+                  active={settingsTab === 'about'}
+                  onClick={() => setSettingsTab('about')}
+                />
+              </div>
             </div>
           </div>
-        ) : (
-          <>
-            {/* Tabs for categories */}
-            <Tabs
-              value={activeTab}
-              onValueChange={setActiveTab}
-              className="w-full"
-            >
-              <TabsList className={`w-full sm:w-auto grid ${isAdmin ? 'grid-cols-7' : 'grid-cols-6'} sm:inline-flex h-auto p-1`}>
-                {(Object.keys(CATEGORY_META) as AiCategory[]).map((cat) => {
-                  const meta = CATEGORY_META[cat]
-                  const activeProvider = providersData[cat]?.find((p) => p.isActive)
-                  const hasAnyKey = providersData[cat]?.some((p) => p.apiKey)
-                  const hasUserKey = userProvidersData[cat]?.some((p) => p.apiKey)
+
+          {/* ============================================================ */}
+          {/* Middle Column — Provider List (only for "providers" tab)     */}
+          {/* ============================================================ */}
+          {settingsTab === 'providers' && (
+            <div className="w-72 border-r border-border/50 shrink-0 overflow-y-auto hidden lg:block">
+              {/* Preset Providers section */}
+              <div className="p-3 border-b border-border/50 sticky top-0 bg-background/80 backdrop-blur-md z-10">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Preset Providers
+                </h3>
+              </div>
+              <div className="p-2 space-y-3">
+                {(Object.keys(PROVIDER_PRESETS) as AiCategory[]).map((category) => {
+                  const meta = CATEGORY_META[category]
+                  const presets = PROVIDER_PRESETS[category]
                   return (
-                    <TabsTrigger
-                      key={cat}
-                      value={cat}
-                      className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
-                    >
-                      {meta.icon}
-                      <span className="hidden sm:inline">{ts(meta.labelKey)}</span>
-                      <span className="sm:hidden">
-                        {cat === 'llm' ? 'LLM' : cat === 'tts' ? 'TTS' : cat === 'image' ? ts('tabImage') : ts('tabVideo')}
-                      </span>
-                      {hasUserKey ? (
-                        <span className="inline-block size-1.5 rounded-full bg-amber-500" />
-                      ) : activeProvider ? (
-                        <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
-                      ) : hasAnyKey ? (
-                        <span className="inline-block size-1.5 rounded-full bg-amber-500" />
-                      ) : null}
-                    </TabsTrigger>
+                    <div key={category}>
+                      <div className="flex items-center gap-1.5 px-2 py-1">
+                        <span className="text-primary/80">{meta.icon}</span>
+                        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                          {ts(meta.labelKey)}
+                        </p>
+                      </div>
+                      <div className="space-y-0.5">
+                        {presets.map((preset) => {
+                          const key = `${category}:${preset.provider}`
+                          const isSelected = selectedProviderKey === key
+                          const status = getPresetStatus(category, preset.provider)
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedProviderKey(key)
+                                handleCancelEdit()
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors text-left ${
+                                isSelected
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'text-foreground hover:bg-muted/40'
+                              }`}
+                            >
+                              <span
+                                className={`inline-block size-1.5 rounded-full flex-shrink-0 ${
+                                  status === 'connected'
+                                    ? 'bg-emerald-500'
+                                    : status === 'has-key'
+                                      ? 'bg-amber-500'
+                                      : 'bg-muted-foreground/30'
+                                }`}
+                              />
+                              <span className="flex-1 truncate">
+                                {preset.name}
+                              </span>
+                              {isSelected && (
+                                <Check className="size-3 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
                   )
                 })}
-                {isAdmin && (
-                <TabsTrigger
-                  value="agent"
-                  className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
-                >
-                  <Bot className="size-4" />
-                  <span className="hidden sm:inline">{ts('agentConfig')}</span>
-                  <span className="sm:hidden">{ts('agentConfigShort')}</span>
-                  {agentsList.some((a) => a.config.isActive) && (
-                    <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
-                  )}
-                </TabsTrigger>
-                )}
-                <TabsTrigger
-                  value="budget"
-                  className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
-                >
-                  <Wallet className="size-4" />
-                  <span className="hidden sm:inline">{ts('budgetControl')}</span>
-                  <span className="sm:hidden">{ts('budgetShort')}</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="publish"
-                  className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
-                >
-                  <Globe className="size-4" />
-                  <span className="hidden sm:inline">{ts('publishPlatform')}</span>
-                  <span className="sm:hidden">{ts('publishShort')}</span>
-                </TabsTrigger>
-              </TabsList>
 
-              {(Object.keys(CATEGORY_META) as AiCategory[]).map((category) => (
-                <TabsContent key={category} value={category} className="mt-4">
-                  <CategoryPanel
-                    category={category}
-                    providers={providersData[category] ?? []}
-                    presets={presetsData[category] ?? []}
-                    userProviders={userProvidersData[category] ?? []}
-                    onSaveProvider={handleSaveProvider}
-                    onSetActive={handleSetActive}
-                    onTestConnection={(cat: AiCategory) => handleTestConnection(cat)}
-                    testResult={testResults[category]}
-                    testing={testingCategory === category}
-                    savingProvider={savingProvider}
-                    isAdmin={isAdmin}
-                    onSaveUserProvider={handleSaveUserProvider}
-                    onDeleteUserProvider={handleDeleteUserProvider}
-                    onSetActiveUserProvider={handleSetActiveUserProvider}
-                    savingUserProvider={savingUserProvider}
-                    hasPlatformDefault={hasDefaultData[category] ?? false}
-                  />
-                </TabsContent>
-              ))}
-
-              {/* Agent Configuration Tab — admin only */}
-              {isAdmin && (
-              <TabsContent value="agent" className="mt-4">
-                <div className="space-y-4">
-                  {/* Header */}
-                  <div className="flex items-center gap-2">
-                    <Bot className="size-4 text-primary" />
-                    <h2 className="text-base font-bold">{ts('agentConfig')}</h2>
-                    <Badge variant="secondary" className="text-[10px]">
-                      {ts('agentCount', { count: agentsList.length })}
-                    </Badge>
+                {/* Custom providers section */}
+                <div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 mt-2">
+                    <Server className="size-3 text-muted-foreground" />
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Custom
+                    </p>
                   </div>
+                  <div className="space-y-0.5">
+                    {/* Show user providers that are custom (don't match a preset) */}
+                    {(Object.keys(userProvidersData) as AiCategory[]).flatMap((category) => {
+                      const presets = PROVIDER_PRESETS[category]
+                      return (userProvidersData[category] ?? [])
+                        .filter((up) => !presets.some((p) => p.provider === up.provider))
+                        .map((up) => {
+                          const key = `${category}:${up.provider}`
+                          const isSelected = selectedProviderKey === key
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedProviderKey(key)
+                                handleCancelEdit()
+                              }}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors text-left ${
+                                isSelected
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'text-foreground hover:bg-muted/40'
+                              }`}
+                            >
+                              <span className="inline-block size-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                              <span className="flex-1 truncate">
+                                {up.name || up.provider}
+                              </span>
+                              {isSelected && (
+                                <Check className="size-3 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          )
+                        })
+                    })}
+                    {/* Add Custom Provider button */}
+                    <button
+                      type="button"
+                      onClick={handleAddCustom}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 mt-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-dashed border-border/60 transition-colors"
+                    >
+                      <Plus className="size-3 flex-shrink-0" />
+                      <span>Add Custom Provider</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-                  {/* Agent list */}
-                  <div className="space-y-3">
-                    {agentsList.map((agent) => (
-                      <AgentConfigCard
-                        key={agent.agentType}
-                        agent={agent}
-                        saving={agentSaving === agent.agentType}
-                        onSave={handleSaveAgent}
+          {/* ============================================================ */}
+          {/* Right Column — Detail Panel / Edit Form / Other tabs         */}
+          {/* ============================================================ */}
+          <div className="flex-1 overflow-y-auto min-w-0">
+            {/* ---- PROVIDERS TAB ---- */}
+            {settingsTab === 'providers' && (
+              <div className="p-6 max-w-3xl">
+                {addingCustom || editingProvider ? (
+                  /* ===== Edit / Add Custom Provider Form ===== */
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-semibold">
+                        {addingCustom ? 'Add Custom Provider' : 'Edit Provider'}
+                      </h2>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {tc('cancel')}
+                      </Button>
+                    </div>
+
+                    {/* Name */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium flex items-center gap-1.5">
+                        <Bot className="size-3" />
+                        Provider Name
+                      </Label>
+                      <Input
+                        placeholder="My Custom Provider"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="bg-muted/30 border-border/50"
                       />
-                    ))}
-                    {agentsList.length === 0 && (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="text-center">
-                          <Bot className="size-10 text-muted-foreground/30 mx-auto mb-3" />
-                          <p className="text-sm text-muted-foreground">{ts('loadingAgentConfig')}</p>
+                    </div>
+
+                    {/* Base URL */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium flex items-center gap-1.5">
+                        <Globe className="size-3" />
+                        Base URL
+                      </Label>
+                      <Input
+                        placeholder="https://api.example.com/v1"
+                        value={editBaseUrl}
+                        onChange={(e) => setEditBaseUrl(e.target.value)}
+                        className="bg-muted/30 border-border/50"
+                      />
+                      {editBaseUrl && (
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          Models endpoint: <code className="bg-muted/50 px-1 rounded">
+                            {editBaseUrl.endsWith('/models') ? editBaseUrl : `${editBaseUrl.replace(/\/$/, '')}/models`}
+                          </code>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* API Key */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium flex items-center gap-1.5">
+                        <Key className="size-3" />
+                        API Key
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          type={editShowKey ? 'text' : 'password'}
+                          placeholder="sk-..."
+                          value={editApiKey}
+                          onChange={(e) => setEditApiKey(e.target.value)}
+                          className="bg-muted/30 border-border/50 pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditShowKey(!editShowKey)}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                        >
+                          {editShowKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Model Discovery Protocol */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium flex items-center gap-1.5">
+                        <Cpu className="size-3" />
+                        Model Discovery Protocol
+                      </Label>
+                      <div className="flex gap-2">
+                        {(['openai', 'anthropic', 'custom'] as const).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setEditProtocol(p)}
+                            className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
+                              editProtocol === p
+                                ? 'border-primary/50 bg-primary/10 text-primary'
+                                : 'border-border/40 bg-muted/20 text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                            }`}
+                          >
+                            {p === 'openai'
+                              ? 'OpenAI Compatible'
+                              : p === 'anthropic'
+                                ? 'Anthropic'
+                                : 'Custom'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Discover Models button */}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDiscoverModels}
+                        disabled={discovering || !editBaseUrl || !editApiKey}
+                        className="gap-1.5"
+                      >
+                        {discovering ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-3.5" />
+                        )}
+                        Discover Models
+                      </Button>
+                      {discoverError && (
+                        <span className="text-[11px] text-destructive">{discoverError}</span>
+                      )}
+                    </div>
+
+                    {/* Model List */}
+                    {discoveredModels.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">
+                          Models ({discoveredModels.length})
+                        </Label>
+                        <div className="rounded-md border border-border/40 bg-muted/20 divide-y divide-border/30 max-h-64 overflow-y-auto">
+                          {discoveredModels.map((m) => (
+                            <div
+                              key={m.id}
+                              className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/40"
+                            >
+                              <Check
+                                className={`size-3 flex-shrink-0 ${
+                                  editModel === m.id ? 'text-emerald-500' : 'text-muted-foreground/40'
+                                }`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setEditModel(m.id)}
+                                className="flex-1 text-left text-xs"
+                              >
+                                <span className="font-mono">{m.id}</span>
+                                <span className="text-muted-foreground ml-2">{m.name}</span>
+                              </button>
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1 py-0 ${
+                                  m.type === 'text'
+                                    ? 'bg-sky-500/10 text-sky-600 border-sky-500/20'
+                                    : m.type === 'image'
+                                      ? 'bg-violet-500/10 text-violet-600 border-violet-500/20'
+                                      : m.type === 'video'
+                                        ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                        : 'bg-teal-500/10 text-teal-600 border-teal-500/20'
+                                }`}
+                              >
+                                {m.type.toUpperCase()}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                        {editModel && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Default model: <code className="bg-muted/50 px-1 rounded">{editModel}</code>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Test result */}
+                    {customTestResult && (
+                      <div
+                        className={`flex items-start gap-2 p-2.5 rounded-md border text-xs ${
+                          customTestResult.success
+                            ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+                            : 'border-destructive/30 bg-destructive/5 text-destructive'
+                        }`}
+                      >
+                        {customTestResult.success ? (
+                          <CheckCircle2 className="size-3.5 flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <XCircle className="size-3.5 flex-shrink-0 mt-0.5" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium">
+                            {customTestResult.success ? '连接成功' : '连接失败'}
+                          </span>
+                          {customTestResult.message && (
+                            <span className="text-muted-foreground ml-1">
+                              · {customTestResult.message}
+                            </span>
+                          )}
+                          {customTestResult.error && (
+                            <p className="break-all mt-0.5">{customTestResult.error}</p>
+                          )}
                         </div>
                       </div>
                     )}
+
+                    {/* Action buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/30">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleTestCustomConnection}
+                        disabled={testingCustom || !editBaseUrl || !editApiKey}
+                        className="gap-1.5"
+                      >
+                        {testingCustom ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Wifi className="size-3.5" />
+                        )}
+                        Test Connection
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleSaveCustom}
+                        disabled={!editName.trim() || !editApiKey.trim()}
+                        className="gap-1.5"
+                      >
+                        <Save className="size-3.5" />
+                        Save
+                      </Button>
+                    </div>
                   </div>
-
-                  {/* Info hint */}
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
-                    <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      {ts('agentDescription')}
-                    </p>
+                ) : selectedProviderKey ? (
+                  /* ===== Provider Detail View ===== */
+                  <ProviderDetailView
+                    providerKey={selectedProviderKey}
+                    providersData={providersData}
+                    userProvidersData={userProvidersData}
+                    presets={PROVIDER_PRESETS}
+                    isAdmin={isAdmin}
+                    onEdit={handleEditProvider}
+                    onTest={async () => {
+                      const [category, provider] = selectedProviderKey.split(':') as [AiCategory, string]
+                      return handleTestConnection(category, provider)
+                    }}
+                    onDelete={async () => {
+                      const [category, provider] = selectedProviderKey.split(':') as [AiCategory, string]
+                      await handleDeleteUserProvider({ category, provider })
+                    }}
+                    savingUserProvider={savingUserProvider}
+                  />
+                ) : (
+                  /* ===== Empty state — no provider selected ===== */
+                  <div className="flex items-center justify-center py-20">
+                    <div className="text-center space-y-3 max-w-sm">
+                      <div className="size-12 rounded-full bg-muted/40 flex items-center justify-center mx-auto">
+                        <Plug className="size-6 text-muted-foreground/50" />
+                      </div>
+                      <h3 className="text-sm font-medium">Select a Provider</h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Choose a provider from the list to view its connection details and models, or click "Add Custom Provider" to configure a new one.
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </TabsContent>
-              )}
-              {/* Budget Control Tab */}
-              <TabsContent value="budget" className="mt-4">
-                <BudgetPanel />
-              </TabsContent>
-
-              {/* Publish Platform Config Tab */}
-              <TabsContent value="publish" className="mt-4">
-                <PlatformConfig />
-              </TabsContent>
-            </Tabs>
-
-            {/* Bottom info */}
-            <div className="pt-4 pb-8 border-t border-border/30">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                  <Info className="size-3.5 mt-0.5 flex-shrink-0" />
-                  {isAdmin
-                    ? ts('adminKeyInfo')
-                    : ts('userKeyInfo')}
-                </p>
-                <p className="text-[10px] text-muted-foreground/60">
-                  {ts('configCompleteHint')}
-                </p>
+                )}
               </div>
+            )}
+
+            {/* ---- AGENTS TAB ---- */}
+            {settingsTab === 'agents' && isAdmin && (
+              <div className="p-6 max-w-3xl space-y-4">
+                <div className="flex items-center gap-2">
+                  <Bot className="size-4 text-primary" />
+                  <h2 className="text-base font-bold">{ts('agentConfig')}</h2>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {ts('agentCount', { count: agentsList.length })}
+                  </Badge>
+                </div>
+                <div className="space-y-3">
+                  {agentsList.map((agent) => (
+                    <AgentConfigCard
+                      key={agent.agentType}
+                      agent={agent}
+                      saving={agentSaving === agent.agentType}
+                      onSave={handleSaveAgent}
+                    />
+                  ))}
+                  {agentsList.length === 0 && (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <Bot className="size-10 text-muted-foreground/30 mx-auto mb-3" />
+                        <p className="text-sm text-muted-foreground">{ts('loadingAgentConfig')}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
+                  <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {ts('agentDescription')}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ---- MODELS TAB (legacy category tabs) ---- */}
+            {settingsTab === 'models' && (
+              <div className="p-6">
+                <Tabs
+                  value={activeTab}
+                  onValueChange={setActiveTab}
+                  className="w-full"
+                >
+                  <TabsList className="w-full sm:w-auto grid grid-cols-4 sm:inline-flex h-auto p-1">
+                    {(Object.keys(CATEGORY_META) as AiCategory[]).map((cat) => {
+                      const meta = CATEGORY_META[cat]
+                      const activeProvider = providersData[cat]?.find((p) => p.isActive)
+                      const hasAnyKey = providersData[cat]?.some((p) => p.apiKey)
+                      const hasUserKey = userProvidersData[cat]?.some((p) => p.apiKey)
+                      return (
+                        <TabsTrigger
+                          key={cat}
+                          value={cat}
+                          className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
+                        >
+                          {meta.icon}
+                          <span className="hidden sm:inline">{ts(meta.labelKey)}</span>
+                          <span className="sm:hidden">
+                            {cat === 'llm' ? 'LLM' : cat === 'tts' ? 'TTS' : cat === 'image' ? ts('tabImage') : ts('tabVideo')}
+                          </span>
+                          {hasUserKey ? (
+                            <span className="inline-block size-1.5 rounded-full bg-amber-500" />
+                          ) : activeProvider ? (
+                            <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
+                          ) : hasAnyKey ? (
+                            <span className="inline-block size-1.5 rounded-full bg-amber-500" />
+                          ) : null}
+                        </TabsTrigger>
+                      )
+                    })}
+                  </TabsList>
+
+                  {(Object.keys(CATEGORY_META) as AiCategory[]).map((category) => (
+                    <TabsContent key={category} value={category} className="mt-4">
+                      <CategoryPanel
+                        category={category}
+                        providers={providersData[category] ?? []}
+                        presets={presetsData[category] ?? []}
+                        userProviders={userProvidersData[category] ?? []}
+                        onSaveProvider={handleSaveProvider}
+                        onSetActive={handleSetActive}
+                        onTestConnection={(cat: AiCategory) => handleTestConnection(cat)}
+                        testResult={testResults[category]}
+                        testing={testingCategory === category}
+                        savingProvider={savingProvider}
+                        isAdmin={isAdmin}
+                        onSaveUserProvider={handleSaveUserProvider}
+                        onDeleteUserProvider={handleDeleteUserProvider}
+                        onSetActiveUserProvider={handleSetActiveUserProvider}
+                        savingUserProvider={savingUserProvider}
+                        hasPlatformDefault={hasDefaultData[category] ?? false}
+                      />
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </div>
+            )}
+
+            {/* ---- USAGE TAB ---- */}
+            {settingsTab === 'usage' && (
+              <div className="p-6">
+                <BudgetPanel />
+              </div>
+            )}
+
+            {/* ---- API KEYS TAB ---- */}
+            {settingsTab === 'apikeys' && (
+              <div className="p-6">
+                <PlatformConfig />
+              </div>
+            )}
+
+            {/* ---- ABOUT TAB ---- */}
+            {settingsTab === 'about' && (
+              <div className="p-6 max-w-2xl space-y-4">
+                <div className="flex items-center gap-2">
+                  <Info className="size-4 text-primary" />
+                  <h2 className="text-base font-bold">About</h2>
+                </div>
+                <Card className="border-border/50">
+                  <CardContent className="p-5 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="size-10 rounded bg-primary/10 flex items-center justify-center">
+                        <Settings className="size-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">huobao-drama-ai</p>
+                        <p className="text-xs text-muted-foreground">AI-powered drama production platform</p>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-start gap-2">
+                        <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        <p className="text-muted-foreground leading-relaxed">
+                          {isAdmin ? ts('adminKeyInfo') : ts('userKeyInfo')}
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        <p className="text-muted-foreground leading-relaxed">
+                          {ts('configCompleteHint')}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// ProviderDetailView — detail panel for the selected provider
+// Shows: provider name + status badge, connection info card,
+// model list with type tags, edit/test/delete buttons.
+// ============================================================
+
+function ProviderDetailView({
+  providerKey,
+  providersData,
+  userProvidersData,
+  presets,
+  isAdmin,
+  onEdit,
+  onTest,
+  onDelete,
+  savingUserProvider,
+}: {
+  providerKey: string
+  providersData: Record<AiCategory, ProviderConfig[]>
+  userProvidersData: Record<string, ProviderConfig[]>
+  presets: Record<AiCategory, ProviderPreset[]>
+  isAdmin: boolean
+  onEdit: () => void
+  onTest: () => Promise<{ success: boolean; model?: string; error?: string; responsePreview?: string } | null>
+  onDelete: () => Promise<void>
+  savingUserProvider: string | null
+}) {
+  const ts = useTranslations('settings')
+  const [category, provider] = providerKey.split(':') as [AiCategory, string]
+  const preset = presets[category]?.find((p) => p.provider === provider)
+  const platformProvider = providersData[category]?.find((p) => p.provider === provider)
+  const userProvider = userProvidersData[category]?.find((p) => p.provider === provider)
+  const isActive = platformProvider?.isActive || userProvider?.isActive
+  const isCustom = !preset || preset.provider === 'custom'
+  const displayName = preset?.name ?? platformProvider?.name ?? userProvider?.name ?? provider
+
+  // Status: connected (has key) / unconfigured
+  const hasKey = Boolean(
+    (platformProvider?.apiKey && !platformProvider.apiKey.startsWith('****')) ||
+      userProvider?.apiKey
+  )
+  const isMaskedKey = (platformProvider?.apiKey ?? '').startsWith('****')
+  const status: 'connected' | 'unconfigured' = hasKey || isMaskedKey ? 'connected' : 'unconfigured'
+
+  // Build the model list from preset.availableModels (or just the single configured model)
+  const modelList: Array<{ id: string; name: string; type: 'text' | 'image' | 'video' | 'tts' }> = preset?.availableModels
+    ? preset.availableModels.map((m) => ({
+        id: m.id,
+        name: m.name,
+        type:
+          category === 'image'
+            ? 'image'
+            : category === 'video'
+              ? 'video'
+              : category === 'tts'
+                ? 'tts'
+                : 'text',
+      }))
+    : platformProvider?.model
+      ? [{
+          id: platformProvider.model,
+          name: platformProvider.model,
+          type:
+            category === 'image'
+              ? 'image'
+              : category === 'video'
+                ? 'video'
+                : category === 'tts'
+                  ? 'tts'
+                  : 'text',
+        }]
+      : []
+
+  // Default model — either preset.defaultModel or the configured model
+  const defaultModel = platformProvider?.model || userProvider?.model || preset?.defaultModel
+
+  // Test result state
+  const [testResult, setTestResult] = useState<{
+    success: boolean
+    model?: string
+    error?: string
+    responsePreview?: string
+  } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleTest = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await onTest()
+      if (result) setTestResult(result)
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await onDelete()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const protocolLabel = preset?.provider === 'custom'
+    ? 'Custom'
+    : preset?.defaultBaseUrl?.includes('anthropic')
+      ? 'Anthropic'
+      : 'OpenAI'
+
+  const baseUrl = platformProvider?.baseUrl || userProvider?.baseUrl || preset?.defaultBaseUrl || '—'
+  const apiKeyDisplay = isMaskedKey
+    ? '••••••••' + (platformProvider?.apiKey?.slice(-4) ?? '')
+    : userProvider?.apiKey
+      ? '••••••••' + userProvider.apiKey.slice(-4)
+      : hasKey
+        ? '••••••••'
+        : '—'
+
+  return (
+    <div className="space-y-5">
+      {/* Provider info header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="size-9 rounded bg-primary/10 flex items-center justify-center">
+            <Plug className="size-4 text-primary" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold">{displayName}</h2>
+              <Badge
+                variant="outline"
+                className={`text-[9px] px-1.5 py-0 ${
+                  status === 'connected'
+                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                    : 'bg-muted/30 text-muted-foreground border-border/30'
+                }`}
+              >
+                {status === 'connected' ? 'CONNECTED' : 'UNCONFIGURED'}
+              </Badge>
+              {isActive && (
+                <Badge className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
+                  {ts('currentUsing')}
+                </Badge>
+              )}
             </div>
-          </>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {protocolLabel} · URL
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Connection info card */}
+      <Card className="border-border/50">
+        <CardContent className="p-0">
+          <div className="px-4 py-2.5 border-b border-border/30">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              Connection
+            </p>
+          </div>
+          <div className="divide-y divide-border/30">
+            <div className="px-4 py-2.5 grid grid-cols-3 gap-3 text-xs">
+              <span className="text-muted-foreground">Model Protocol</span>
+              <span className="col-span-2 font-mono">{protocolLabel}</span>
+            </div>
+            <div className="px-4 py-2.5 grid grid-cols-3 gap-3 text-xs">
+              <span className="text-muted-foreground">Base URL</span>
+              <span className="col-span-2 font-mono break-all">{baseUrl}</span>
+            </div>
+            <div className="px-4 py-2.5 grid grid-cols-3 gap-3 text-xs">
+              <span className="text-muted-foreground">API Key</span>
+              <span className="col-span-2 font-mono">{apiKeyDisplay}</span>
+            </div>
+            <div className="px-4 py-2.5 grid grid-cols-3 gap-3 text-xs">
+              <span className="text-muted-foreground">Env Variable</span>
+              <span className="col-span-2 font-mono text-muted-foreground">
+                {preset?.envKey || '—'}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Model list */}
+      {modelList.length > 0 && (
+        <Card className="border-border/50">
+          <CardContent className="p-0">
+            <div className="px-4 py-2.5 border-b border-border/30">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Model List
+              </p>
+            </div>
+            <div className="divide-y divide-border/30">
+              {modelList.map((m) => {
+                const isDefault = m.id === defaultModel
+                return (
+                  <div
+                    key={m.id}
+                    className="px-4 py-2 flex items-center gap-2 text-xs"
+                  >
+                    <Check
+                      className={`size-3 flex-shrink-0 ${
+                        isDefault ? 'text-emerald-500' : 'text-muted-foreground/40'
+                      }`}
+                    />
+                    <code className="font-mono flex-1 truncate">{m.id}</code>
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] px-1 py-0 ${
+                        m.type === 'text'
+                          ? 'bg-sky-500/10 text-sky-600 border-sky-500/20'
+                          : m.type === 'image'
+                            ? 'bg-violet-500/10 text-violet-600 border-violet-500/20'
+                            : m.type === 'video'
+                              ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                              : 'bg-teal-500/10 text-teal-600 border-teal-500/20'
+                      }`}
+                    >
+                      {m.type.toUpperCase()}
+                    </Badge>
+                    {isDefault && (
+                      <Badge className="text-[9px] px-1 py-0 bg-primary/10 text-primary border-primary/20">
+                        DEFAULT
+                      </Badge>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Test result */}
+      {testResult && (
+        <div
+          className={`flex items-start gap-2 p-2.5 rounded-md border text-xs ${
+            testResult.success
+              ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+              : 'border-destructive/30 bg-destructive/5 text-destructive'
+          }`}
+        >
+          {testResult.success ? (
+            <CheckCircle2 className="size-3.5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <XCircle className="size-3.5 flex-shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1 min-w-0">
+            <span className="font-medium">
+              {testResult.success ? ts('connectionSuccess') : ts('connectionFailed')}
+            </span>
+            {testResult.model && (
+              <span className="text-muted-foreground ml-1">· {testResult.model}</span>
+            )}
+            {testResult.responsePreview && (
+              <p className="text-muted-foreground truncate mt-0.5">
+                {ts('responseLabel')}: {testResult.responsePreview}
+              </p>
+            )}
+            {testResult.error && (
+              <p className="break-all mt-0.5">{testResult.error}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/30">
+        {!isCustom && isAdmin && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onEdit}
+            className="gap-1.5"
+          >
+            <Pencil className="size-3.5" />
+            Edit
+          </Button>
         )}
-      </main>
+        {isCustom && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onEdit}
+            className="gap-1.5"
+          >
+            <Pencil className="size-3.5" />
+            Edit
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleTest}
+          disabled={testing || status === 'unconfigured'}
+          className="gap-1.5"
+        >
+          {testing ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Wifi className="size-3.5" />
+          )}
+          {ts('testConnection')}
+        </Button>
+        {userProvider && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDelete}
+            disabled={deleting || savingUserProvider === `${category}-${provider}`}
+            className="gap-1.5 text-destructive hover:text-destructive"
+          >
+            {deleting ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="size-3.5" />
+            )}
+            Delete
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
