@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { api, type AiCategory, type ProviderPreset, type ModelOption } from '@/lib/api'
+import { api, type AiCategory, type ProviderPreset, type ProviderConfig, type ModelOption } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -43,6 +43,7 @@ interface GroupedModels {
 
 export function ModelSelector({ category, value, onChange, disabled }: ModelSelectorProps) {
   const [presets, setPresets] = useState<ProviderPreset[]>([])
+  const [configuredProviders, setConfiguredProviders] = useState<ProviderConfig[]>([])
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
@@ -53,14 +54,26 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
   useEffect(() => {
     api.settings.get().then((data) => {
       setPresets(data.presets[category] || [])
+      // Filter to only show providers that have been configured (have API key or are active)
+      const configured = (data.providers[category] || []).filter(
+        p => p.isActive || (p.apiKey && p.apiKey.trim() !== '' && !p.apiKey.includes('your-key'))
+      )
+      setConfiguredProviders(configured)
     }).catch(() => {})
   }, [category])
 
-  // Group models by provider
+  // Group models by provider — ONLY show models from configured providers
   const grouped = useMemo<GroupedModels[]>(() => {
     const groups: GroupedModels[] = []
     for (const preset of presets) {
-      if (preset.availableModels && preset.availableModels.length > 0) {
+      // Check if this provider is configured (has API key or is active)
+      const isConfigured = configuredProviders.some(
+        p => p.provider === preset.provider && (p.isActive || (p.apiKey && p.apiKey.trim() !== ''))
+      )
+      // z-ai-sdk is always "configured" (no key needed)
+      const isNoKeyProvider = preset.provider === 'z-ai-sdk'
+      
+      if ((isConfigured || isNoKeyProvider) && preset.availableModels && preset.availableModels.length > 0) {
         const models = preset.availableModels.map(m => ({
           ...m,
           providerName: preset.name,
@@ -73,7 +86,7 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
       }
     }
     return groups
-  }, [presets])
+  }, [presets, configuredProviders])
 
   // Flat list for name lookup
   const allModels = useMemo(() => {
