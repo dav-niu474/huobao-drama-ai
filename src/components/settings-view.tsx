@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -1535,7 +1536,7 @@ function AgentConfigCard({
 // ============================================================
 
 export function SettingsView() {
-  const { navigateToProjects } = useAppStore()
+  const { navigateToProjects, workspaceModels, setWorkspaceModel } = useAppStore()
   const { toast } = useToast()
   const ts = useTranslations('settings')
   const tc = useTranslations('common')
@@ -1941,12 +1942,13 @@ export function SettingsView() {
     const platformProvider = providersData[category]?.find((p) => p.provider === provider)
     const userProvider = userProvidersData[category]?.find((p) => p.provider === provider)
 
-    setEditName(preset?.name ?? platformProvider?.name ?? provider)
-    setEditBaseUrl(platformProvider?.baseUrl || userProvider?.baseUrl || preset?.defaultBaseUrl || '')
+    // Use userProvider's saved name, fall back to preset/platform name
+    setEditName(userProvider?.name || preset?.name || platformProvider?.name || provider)
+    setEditBaseUrl(userProvider?.baseUrl || platformProvider?.baseUrl || preset?.defaultBaseUrl || '')
     // Don't pre-fill API key — backend masks it. User can re-enter if needed.
     setEditApiKey('')
     setEditProtocol('openai')
-    setEditModel(platformProvider?.model || userProvider?.model || preset?.defaultModel || '')
+    setEditModel(userProvider?.model || platformProvider?.model || preset?.defaultModel || '')
     setDiscoveredModels(
       (preset?.availableModels ?? []).map((m) => ({
         id: m.id,
@@ -2650,64 +2652,154 @@ export function SettingsView() {
 
             {/* ---- MODELS TAB (legacy category tabs) ---- */}
             {settingsTab === 'models' && (
-              <div className="p-6">
-                <Tabs
-                  value={activeTab}
-                  onValueChange={setActiveTab}
-                  className="w-full"
-                >
-                  <TabsList className="w-full sm:w-auto grid grid-cols-4 sm:inline-flex h-auto p-1">
-                    {(Object.keys(CATEGORY_META) as AiCategory[]).map((cat) => {
-                      const meta = CATEGORY_META[cat]
-                      const activeProvider = providersData[cat]?.find((p) => p.isActive)
-                      const hasAnyKey = providersData[cat]?.some((p) => p.apiKey)
-                      const hasUserKey = userProvidersData[cat]?.some((p) => p.apiKey)
-                      return (
-                        <TabsTrigger
-                          key={cat}
-                          value={cat}
-                          className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
-                        >
-                          {meta.icon}
-                          <span className="hidden sm:inline">{ts(meta.labelKey)}</span>
-                          <span className="sm:hidden">
-                            {cat === 'llm' ? 'LLM' : cat === 'tts' ? 'TTS' : cat === 'image' ? ts('tabImage') : ts('tabVideo')}
-                          </span>
-                          {hasUserKey ? (
-                            <span className="inline-block size-1.5 rounded-full bg-amber-500" />
-                          ) : activeProvider ? (
-                            <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
-                          ) : hasAnyKey ? (
-                            <span className="inline-block size-1.5 rounded-full bg-amber-500" />
-                          ) : null}
-                        </TabsTrigger>
-                      )
-                    })}
-                  </TabsList>
+              <div className="p-6 max-w-3xl mx-auto">
+                {/* Header */}
+                <div className="mb-6">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Default Routing</p>
+                  <h2 className="text-2xl font-serif">Model Selection</h2>
+                  <p className="text-sm text-muted-foreground mt-1">设置全局默认生成模型，可按项目覆盖。</p>
+                </div>
 
-                  {(Object.keys(CATEGORY_META) as AiCategory[]).map((category) => (
-                    <TabsContent key={category} value={category} className="mt-4">
-                      <CategoryPanel
-                        category={category}
-                        providers={providersData[category] ?? []}
-                        presets={presetsData[category] ?? []}
-                        userProviders={userProvidersData[category] ?? []}
-                        onSaveProvider={handleSaveProvider}
-                        onSetActive={handleSetActive}
-                        onTestConnection={(cat: AiCategory) => handleTestConnection(cat)}
-                        testResult={testResults[category]}
-                        testing={testingCategory === category}
-                        savingProvider={savingProvider}
-                        isAdmin={isAdmin}
-                        onSaveUserProvider={handleSaveUserProvider}
-                        onDeleteUserProvider={handleDeleteUserProvider}
-                        onSetActiveUserProvider={handleSetActiveUserProvider}
-                        savingUserProvider={savingUserProvider}
-                        hasPlatformDefault={hasDefaultData[category] ?? false}
-                      />
-                    </TabsContent>
-                  ))}
-                </Tabs>
+                {/* Collect all configured models per category */}
+                {(() => {
+                  const getModels = (cat: AiCategory) => {
+                    const models: Array<{ id: string; name: string; providerName: string }> = []
+                    // From presets that are configured
+                    for (const preset of (presetsData[cat] || [])) {
+                      const isConfigured = (providersData[cat] || []).some(
+                        p => p.provider === preset.provider && (p.isActive || (p.apiKey && p.apiKey.trim()))
+                      )
+                      const isUserConfigured = (userProvidersData[cat] || []).some(
+                        p => p.provider === preset.provider && (p.isActive || (p.apiKey && p.apiKey.trim()))
+                      )
+                      if ((isConfigured || isUserConfigured || preset.provider === 'z-ai-sdk') && preset.availableModels) {
+                        for (const m of preset.availableModels) {
+                          models.push({ id: m.id, name: m.name, providerName: preset.name })
+                        }
+                      }
+                    }
+                    // From custom user providers (not in presets)
+                    for (const up of (userProvidersData[cat] || [])) {
+                      if (presetsData[cat]?.some(p => p.provider === up.provider)) continue
+                      if (up.provider === 'z-ai-sdk') continue
+                      if (!up.model) continue
+                      models.push({ id: up.model, name: up.model, providerName: up.name || up.provider })
+                    }
+                    return models
+                  }
+
+                  const videoModels = getModels('video')
+                  const imageModels = getModels('image')
+                  const textModels = getModels('llm')
+
+                  return (
+                    <>
+                      {/* Video Channel */}
+                      <div className="rounded-lg border border-border/50 bg-card/50 p-5 mb-4">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">Video Channel</p>
+                        <h3 className="text-sm font-medium mb-3">默认视频模型</h3>
+                        {videoModels.length > 0 ? (
+                          <Select
+                            value={workspaceModels?.video || ''}
+                            onValueChange={(v) => setWorkspaceModel('video', v)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="选择视频模型" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {videoModels.map(m => (
+                                <SelectItem key={m.id} value={m.id}>
+                                  {m.providerName} · {m.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">未配置视频供应商，请先在 Providers 中配置</p>
+                        )}
+                      </div>
+
+                      {/* Image Channel */}
+                      <div className="rounded-lg border border-border/50 bg-card/50 p-5 mb-4">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">Image Channel</p>
+                        <h3 className="text-sm font-medium mb-3">默认图片模型</h3>
+                        {imageModels.length > 0 ? (
+                          <Select
+                            value={workspaceModels?.image || ''}
+                            onValueChange={(v) => setWorkspaceModel('image', v)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="选择图片模型" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {imageModels.map(m => (
+                                <SelectItem key={m.id} value={m.id}>
+                                  {m.providerName} · {m.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">未配置图片供应商，请先在 Providers 中配置</p>
+                        )}
+                      </div>
+
+                      {/* Text Channel */}
+                      <div className="rounded-lg border border-border/50 bg-card/50 p-5">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">Text Channel</p>
+                        <h3 className="text-sm font-medium mb-1">文本模型</h3>
+                        <p className="text-xs text-muted-foreground mb-4">按任务类型配置文本模型，留空则自动选择。</p>
+
+                        <div className="space-y-4">
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1.5 block">剧本生成 (Script Generation)</label>
+                            <Select
+                              value={workspaceModels?.llm || ''}
+                              onValueChange={(v) => setWorkspaceModel('llm', v)}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="自动选择" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {textModels.map(m => (
+                                  <SelectItem key={m.id} value={m.id}>
+                                    {m.providerName} · {m.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1.5 block">配音合成 (TTS)</label>
+                            {(() => {
+                              const ttsModels = getModels('tts')
+                              return ttsModels.length > 0 ? (
+                                <Select
+                                  value={workspaceModels?.tts || ''}
+                                  onValueChange={(v) => setWorkspaceModel('tts', v)}
+                                >
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="自动选择" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ttsModels.map(m => (
+                                      <SelectItem key={m.id} value={m.id}>
+                                        {m.providerName} · {m.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">未配置 TTS 供应商</p>
+                              )
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             )}
 

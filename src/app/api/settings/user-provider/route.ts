@@ -40,6 +40,7 @@ async function isPlatformApiKey(category: string, provider: string, apiKey: stri
 function userProviderToConfig(up: {
   category: string
   provider: string
+  name: string
   apiKey: string
   baseUrl: string
   model: string
@@ -48,13 +49,11 @@ function userProviderToConfig(up: {
   const preset = PROVIDER_PRESETS[up.category as AiCategory]?.find(
     (p) => p.provider === up.provider
   )
-  // For custom providers (not in presets), use the provider slug as the name
-  // This ensures the provider is visible in the settings UI
+  // Use saved name, fall back to preset name, then provider slug
   return {
     category: up.category as AiCategory,
     provider: up.provider,
-    name: preset?.name ?? up.provider,
-    // SECURITY: Only use the user's own apiKey, NEVER fall back to env vars
+    name: up.name || preset?.name || up.provider,
     apiKey: up.apiKey || '',
     baseUrl: up.baseUrl || preset?.defaultBaseUrl || '',
     model: up.model || preset?.defaultModel || '',
@@ -188,12 +187,14 @@ export async function POST(request: NextRequest) {
         userId: auth.userId,
         category,
         provider,
+        name: name || provider,
         apiKey: apiKey ?? '',
         baseUrl: baseUrl || preset?.defaultBaseUrl || '',
         model: model || preset?.defaultModel || '',
         isActive: isActive ?? false,
       },
       update: {
+        name: name !== undefined ? (name || provider) : undefined,
         apiKey: apiKey !== undefined ? apiKey : undefined,
         baseUrl: baseUrl !== undefined ? baseUrl : undefined,
         model: model !== undefined ? model : undefined,

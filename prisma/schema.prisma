@@ -284,6 +284,7 @@ model UserProvider {
   userId    String
   category  String // "llm" | "image" | "video" | "tts"
   provider  String // "openai" | "siliconflow" | etc.
+  name      String   @default("") // Display name for custom providers
   apiKey    String   @default("")
   baseUrl   String   @default("")
   model     String   @default("")
