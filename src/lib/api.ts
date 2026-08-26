@@ -1241,7 +1241,7 @@ export const api = {
     // Used by the Settings page Edit mode to populate the model list.
     discoverModels: (baseUrl: string, apiKey: string, protocol?: string) =>
       request<{
-        models: Array<{ id: string; name: string; type: string }>
+        models: Array<{ id: string; name: string; type: string; typeLabel?: string }>
       }>('/api/settings/discover-models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
