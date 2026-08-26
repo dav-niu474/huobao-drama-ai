@@ -63,16 +63,18 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
   }, [category])
 
   // Group models by provider — ONLY show models from configured providers
+  // For preset providers: check if they have API key or are active
+  // For custom providers (not in presets): show their model if the provider is active
   const grouped = useMemo<GroupedModels[]>(() => {
     const groups: GroupedModels[] = []
+
+    // 1. Add preset providers that are configured
     for (const preset of presets) {
-      // Check if this provider is configured (has API key or is active)
       const isConfigured = configuredProviders.some(
         p => p.provider === preset.provider && (p.isActive || (p.apiKey && p.apiKey.trim() !== ''))
       )
-      // z-ai-sdk is always "configured" (no key needed)
       const isNoKeyProvider = preset.provider === 'z-ai-sdk'
-      
+
       if ((isConfigured || isNoKeyProvider) && preset.availableModels && preset.availableModels.length > 0) {
         const models = preset.availableModels.map(m => ({
           ...m,
@@ -85,6 +87,30 @@ export function ModelSelector({ category, value, onChange, disabled }: ModelSele
         })
       }
     }
+
+    // 2. Add custom providers (not in presets) that are configured
+    // These are user-added providers with their own model lists
+    for (const cp of configuredProviders) {
+      // Skip if this provider is already in presets (handled above)
+      if (presets.some(p => p.provider === cp.provider)) continue
+      // Skip z-ai-sdk (already handled in presets)
+      if (cp.provider === 'z-ai-sdk') continue
+      // Only show if it has a model and is active or has API key
+      if (!cp.model || !(cp.isActive || (cp.apiKey && cp.apiKey.trim() !== ''))) continue
+
+      // Create a single-model entry for this custom provider
+      groups.push({
+        provider: cp.provider,
+        providerName: cp.name || cp.provider,
+        models: [{
+          id: cp.model,
+          name: cp.model,
+          tags: [],
+          providerName: cp.name || cp.provider,
+        }],
+      })
+    }
+
     return groups
   }, [presets, configuredProviders])
 

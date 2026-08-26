@@ -1625,36 +1625,34 @@ export function SettingsView() {
     error?: string
   } | null>(null)
 
+  // Load settings from backend
+  const loadSettings = async () => {
+    setLoading(true)
+    try {
+      const data = await api.settings.get()
+      setProvidersData(data.providers as Record<AiCategory, ProviderConfig[]>)
+      setPresetsData(data.presets as Record<AiCategory, ProviderPreset[]>)
+      setIsAdmin((data as any).isAdmin === true)
+      if ((data as any).hasDefault) {
+        setHasDefaultData((data as any).hasDefault as Record<string, boolean>)
+      }
+      const agents = await api.agents.list()
+      setAgentsList(agents)
+      const userProviders = await api.userProvider.get()
+      setUserProvidersData(userProviders.providers as Record<string, ProviderConfig[]>)
+    } catch (err) {
+      toast({
+        title: ts('loadSettingsFailed'),
+        description: String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Load settings on mount
   useEffect(() => {
-    const loadSettings = async () => {
-      setLoading(true)
-      try {
-        const data = await api.settings.get()
-        setProvidersData(data.providers as Record<AiCategory, ProviderConfig[]>)
-        setPresetsData(data.presets as Record<AiCategory, ProviderPreset[]>)
-        // Track admin status from API response
-        setIsAdmin((data as any).isAdmin === true)
-        // Track whether platform default exists for each category
-        if ((data as any).hasDefault) {
-          setHasDefaultData((data as any).hasDefault as Record<string, boolean>)
-        }
-        // Load agent configs
-        const agents = await api.agents.list()
-        setAgentsList(agents)
-        // Load user provider configs
-        const userProviders = await api.userProvider.get()
-        setUserProvidersData(userProviders.providers as Record<string, ProviderConfig[]>)
-      } catch (err) {
-        toast({
-          title: ts('loadSettingsFailed'),
-          description: String(err),
-          variant: 'destructive',
-        })
-      } finally {
-        setLoading(false)
-      }
-    }
     loadSettings()
   }, [toast])
 
@@ -2046,8 +2044,8 @@ export function SettingsView() {
     }
   }
 
-  // Save custom provider — saves as a user provider for the LLM category
-  // (custom providers are always LLM-compatible for now)
+  // Save custom provider — saves as a user provider
+  // Determine category from the first discovered model's type, or default to 'llm'
   async function handleSaveCustom() {
     if (!editName.trim() || !editApiKey.trim()) {
       toast({
@@ -2057,10 +2055,35 @@ export function SettingsView() {
       })
       return
     }
-    const category: AiCategory = 'llm'
+
+    // Determine category from discovered models
+    // If any discovered model is image type → save as 'image'
+    // If any is video type → save as 'video'
+    // If any is tts type → save as 'tts'
+    // Default: 'llm'
+    let category: AiCategory = 'llm'
+    if (discoveredModels.length > 0) {
+      const hasImage = discoveredModels.some(m => m.type === 'image')
+      const hasVideo = discoveredModels.some(m => m.type === 'video')
+      const hasTts = discoveredModels.some(m => m.type === 'tts')
+      const hasText = discoveredModels.some(m => m.type === 'text')
+      if (hasImage && !hasText) category = 'image'
+      else if (hasVideo && !hasText) category = 'video'
+      else if (hasTts && !hasText) category = 'tts'
+      else category = 'llm' // text or mixed → llm
+    }
+
+    // Use the provider name as a slug for the provider field
+    // For custom providers, use the name directly as provider identifier
     const provider = editingProvider && selectedProviderKey
       ? selectedProviderKey.split(':')[1]
-      : `custom-${Date.now()}`
+      : editName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)
+
+    // Determine the model to save — use first discovered text model, or editModel, or first model
+    const firstTextModel = discoveredModels.find(m => m.type === 'text')
+    const firstAnyModel = discoveredModels[0]
+    const modelToSave = editModel || firstTextModel?.id || firstAnyModel?.id || ''
+
     try {
       const result = await api.userProvider.save({
         category,
@@ -2068,11 +2091,15 @@ export function SettingsView() {
         name: editName,
         apiKey: editApiKey,
         baseUrl: editBaseUrl,
-        model: editModel,
-        isActive: false,
+        model: modelToSave,
+        isActive: true, // Auto-activate so it's immediately usable
       })
       setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
-      toast({ title: ts('myConfigSaved') })
+
+      // Also reload full settings so presets/providers list is fresh
+      await loadSettings()
+
+      toast({ title: '保存成功', description: `供应商 ${editName} 已保存并激活（类别: ${category}）` })
       setSelectedProviderKey(`${category}:${provider}`)
       handleCancelEdit()
     } catch (err) {
