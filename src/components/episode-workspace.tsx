@@ -216,7 +216,12 @@ export function EpisodeWorkspace() {
       // ★ Auto-skip raw/rewrite when script already exists (e.g. generated
       //   from the Script Workshop). Jump straight to the extract step so
       //   the user can immediately extract characters/scenes/props.
-      if (detail.scriptContent?.trim()) {
+      // ★ When rawContent exists but scriptContent doesn't, go to rewrite step
+      // (not extract) so the user can generate the script from the raw content.
+      if (!detail.scriptContent?.trim() && detail.rawContent?.trim()) {
+        setScriptStep(1) // 0=raw, 1=rewrite, 2=extract
+        setActivePipelineStep('script:rewrite')
+      } else if (detail.scriptContent?.trim()) {
         setScriptStep(2) // 0=raw, 1=rewrite, 2=extract
         setActivePipelineStep('script:extract')
       }
@@ -480,31 +485,107 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Rewrite script (via Agent) ──────────────────────────
+  // ── AI: Create script from raw content + events ─────────────
+  // Instead of using the script_rewriter agent, we directly call the AI
+  // to generate a script based on raw novel content and extracted events.
+  // This mirrors the script workshop's approach but runs inline.
 
   const handleRewrite = async () => {
     if (!selectedEpisodeId || !selectedDramaId) return
+    if (!rawContent.trim()) {
+      toast({ title: '请先导入小说原文', variant: 'destructive' })
+      return
+    }
     setAiLoading(true)
+    setScriptStep(1)
+    setActivePipelineStep('script:rewrite')
     try {
-      await agentExec.startAgent(
-        'script_rewriter',
-        selectedEpisodeId,
-        selectedDramaId,
-        '请将原始内容改写为标准剧本格式，使用read_episode_script工具读取内容，改写后用save_script工具保存。',
-        { model: workspaceModels.llm || undefined }
-      )
-      // Check if agent reported an error
-      const rewriteError = agentExec.errors['script_rewriter']
-      if (rewriteError) {
-        toast({ title: '剧本改写失败', description: rewriteError, variant: 'destructive' })
-        return
+      // Fetch chapters with events
+      let eventsContext = ''
+      try {
+        const novelData = await api.episodes.getNovelChapters(selectedEpisodeId)
+        if (novelData.chapters && novelData.chapters.length > 0) {
+          const eventsTable = novelData.chapters
+            .filter((ch: any) => ch.event)
+            .map((ch: any) => `| ${ch.title || '第' + ch.index + '章'} | ${ch.characters || ''} | ${ch.event || ''} | ${ch.mainline || ''} | ${ch.density || ''} | ${ch.estimatedDuration || ''} | ${ch.emotion || ''} |`)
+            .join('\n')
+          if (eventsTable) {
+            eventsContext = `\n## 章节事件表\n| 章节 | 涉及角色 | 核心事件 | 主线关系 | 信息密度 | 预估时长 | 情绪强度 |\n| --- | --- | --- | --- | --- | --- | --- |\n${eventsTable}\n`
+          }
+        }
+      } catch {}
+
+      // Fetch drama info
+      let projectConfig = ''
+      try {
+        const drama = await api.dramas.get(selectedDramaId)
+        projectConfig = `## 项目配置\n- 项目名: ${drama.title}\n- 题材: ${drama.genre || '都市'}\n- 风格: ${drama.style || 'realistic'}\n- 目标集数: ${drama.totalEpisodes || 5}集`
+      } catch {}
+
+      const epNumber = currentEpisode?.episodeNumber || 1
+
+      const systemPrompt = `你是一位专业的短剧编剧，擅长根据小说原文和事件素材创作紧凑有力的短剧剧本。
+
+## 输出格式
+用 <scriptItem name="EP${String(epNumber).padStart(2, '0')}：核心事件"> XML标签包裹整集剧本。
+
+剧本内部格式：
+# 作品名 EP${String(epNumber).padStart(2, '0')}：核心事件
+# 目标时长：约2分钟（300-400字）
+# 风格：都市
+
+## 剧情梗概
+200-300字概括
+
+{场号} {场景名} {时间}/{光线}
+人物：{人物1} {人物2}
+
+△{场景环境描述}
+△{人物动作描写}
+{人物名}：{台词}
+
+OS（{人物名}，{情绪}）：{内心独白}
+
+---
+
+## 硬约束
+1. 每集 3-5 个场景，正文 ≤ 1000 字
+2. 单句台词 ≤ 20字
+3. △描述必须可直接用于 AI 视频生成
+4. 画面描述用 △ 标记
+5. 转场用 --- 分隔
+6. 结尾设置悬念钩子`
+
+      const userPrompt = `${projectConfig}
+
+## 小说原文（截取）
+${rawContent.slice(0, 6000)}
+${eventsContext}
+
+## 任务
+请为第${epNumber}集创作完整的短剧剧本。基于上面的小说原文和章节事件表，创作紧凑有力的剧本。
+请直接输出剧本，用 <scriptItem> 包裹。`
+
+      // Call AI directly via the rewrite-script API
+      const result = await api.ai.rewriteScript(selectedEpisodeId, systemPrompt + '\n\n' + userPrompt)
+      if (!result.scriptContent) {
+        throw new Error('AI 返回空结果')
       }
+
+      // Parse <scriptItem> wrapper if present
+      let scriptContent = result.scriptContent
+      const scriptItemMatch = scriptContent.match(/<scriptItem\s+name="([^"]+)">([\s\S]*?)<\/scriptItem>/)
+      if (scriptItemMatch) {
+        scriptContent = scriptItemMatch[2].trim()
+      }
+
+      setScriptContent(scriptContent)
       await fetchEpisode()
-      setScriptStep(1)
-      setActivePipelineStep('script:rewrite')
-      showResultDialog('success', '剧本改写完成', 'AI已将原始内容改写为标准剧本格式，结果已自动保存。')
+      setScriptStep(2)
+      setActivePipelineStep('script:extract')
+      showResultDialog('success', '剧本创作完成', 'AI 已根据小说原文和事件素材生成剧本，可以继续提取角色场景。')
     } catch (err) {
-      toast({ title: '改写失败', description: String(err), variant: 'destructive' })
+      toast({ title: '剧本创作失败', description: String(err), variant: 'destructive' })
     } finally {
       setAiLoading(false)
     }
