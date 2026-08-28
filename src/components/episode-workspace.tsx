@@ -568,18 +568,19 @@ ${eventsContext}
 
       // Call AI directly via the rewrite-script API
       const result = await api.ai.rewriteScript(selectedEpisodeId, systemPrompt + '\n\n' + userPrompt)
-      if (!result.scriptContent) {
+      const scriptContent = result.scriptContent || result.episode?.scriptContent || ''
+      if (!scriptContent) {
         throw new Error('AI 返回空结果')
       }
 
       // Parse <scriptItem> wrapper if present
-      let scriptContent = result.scriptContent
-      const scriptItemMatch = scriptContent.match(/<scriptItem\s+name="([^"]+)">([\s\S]*?)<\/scriptItem>/)
+      let finalScriptContent = scriptContent
+      const scriptItemMatch = finalScriptContent.match(/<scriptItem\s+name="([^"]+)">([\s\S]*?)<\/scriptItem>/)
       if (scriptItemMatch) {
-        scriptContent = scriptItemMatch[2].trim()
+        finalScriptContent = scriptItemMatch[2].trim()
       }
 
-      setScriptContent(scriptContent)
+      setScriptContent(finalScriptContent)
       await fetchEpisode()
       setScriptStep(2)
       setActivePipelineStep('script:extract')
