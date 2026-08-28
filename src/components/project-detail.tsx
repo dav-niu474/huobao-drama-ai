@@ -41,6 +41,7 @@ import { ProjectDashboard } from '@/components/project-dashboard'
 import { GenerationHistory } from '@/components/generation-history'
 import { PublishDialog } from '@/components/publish-dialog'
 import { PublishRecordsPanel } from '@/components/publish/publish-records-panel'
+import { EpisodeSplitDialog } from '@/components/episode/episode-split-dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 // ── helpers ──────────────────────────────────────────────────
@@ -373,6 +374,7 @@ export function ProjectDetailView() {
 
   // Add episode dialog
   const [addEpOpen, setAddEpOpen] = useState(false)
+  const [splitOpen, setSplitOpen] = useState(false)
   const [newEpTitle, setNewEpTitle] = useState('')
   const [adding, setAdding] = useState(false)
 
@@ -804,6 +806,10 @@ export function ProjectDetailView() {
                   <Upload className="size-3.5" />
                   <span className="hidden sm:inline">{tp('publish')}</span>
                 </Button>
+                <Button onClick={() => setSplitOpen(true)} size="sm" variant="outline" className="h-7 text-xs gap-1">
+                  <BookOpen className="size-3.5" />
+                  <span className="hidden sm:inline">从小说分集</span>
+                </Button>
                 <Button onClick={() => setAddEpOpen(true)} size="sm" className="h-7 amber-glow">
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">{tp('addEpisode')}</span>
@@ -1104,11 +1110,11 @@ export function ProjectDetailView() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    setAddEpOpen(true)
+                    setSplitOpen(true)
                   }}
                   className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline mt-2"
                 >
-                  {tp('orAddEpisodeManually')}
+                  或从小说分集 — 粘贴小说，按每集章节数自动拆分为多集
                 </button>
               </CardContent>
             </Card>
@@ -1154,6 +1160,24 @@ export function ProjectDetailView() {
       </div>
 
       {/* ── Add Episode Dialog ─────────────────────────────── */}
+      {/* 从小说分集对话框 */}
+      {drama && (
+        <EpisodeSplitDialog
+          open={splitOpen}
+          onOpenChange={setSplitOpen}
+          dramaId={drama.id}
+          dramaTitle={drama.title}
+          onDone={async (result) => {
+            await fetchDrama()
+            // 分集完成后直接进入第一集的剧本工作台
+            if (result.episodes.length > 0) {
+              const first = [...result.episodes].sort((a, b) => a.episodeNumber - b.episodeNumber)[0]
+              navigateToEpisode(drama.id, first.id)
+            }
+          }}
+        />
+      )}
+
       <Dialog open={addEpOpen} onOpenChange={setAddEpOpen}>
         <DialogContent>
           <DialogHeader>
