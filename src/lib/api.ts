@@ -343,6 +343,34 @@ export const api = {
 
     getDashboard: (dramaId: string) =>
       request<any>(`/api/dramas/${dramaId}/dashboard`),
+
+    // 小说 → 分集：按每集章节数把小说拆成多集
+    splitEpisodes: (
+      dramaId: string,
+      data: {
+        text?: string
+        fileName?: string
+        chaptersPerEpisode?: number // 0 = 自动
+        replace?: boolean
+        startNumber?: number
+      }
+    ) =>
+      request<{
+        success: boolean
+        chapterCount: number
+        chaptersPerEpisode: number
+        episodeCount: number
+        episodes: Array<{
+          id: string
+          episodeNumber: number
+          title: string
+          chapterCount: number
+        }>
+      }>(`/api/dramas/${dramaId}/split-episodes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
   },
 
   // ---- Episodes ----
@@ -382,6 +410,33 @@ export const api = {
         `/api/episodes/${id}/regenerate-script`,
         { method: 'POST' }
       ),
+
+    // Generate script from this episode's novel chapters (Toonflow format).
+    // duration: '90s' | '120s' | '180s' | '300s'
+    generateScript: (
+      id: string,
+      options?: { duration?: string; instruction?: string }
+    ) =>
+      request<{ success: boolean; scriptContent: string; duration: string }>(
+        `/api/episodes/${id}/generate-script`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(options ?? {}),
+        }
+      ),
+
+    // AI assistant Q&A about the current script / characters / storyboard.
+    scriptChat: (
+      id: string,
+      question: string,
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>
+    ) =>
+      request<{ answer: string }>(`/api/episodes/${id}/script-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, history }),
+      }),
 
     // Pipeline status - detailed progress for each production step (11-step format)
     // Backend returns { steps: { rawContent: {...} }, summary: {...} }

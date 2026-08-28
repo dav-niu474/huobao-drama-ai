@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAppStore, type EpisodeDetail, type Character, type Scene, type Prop, type Storyboard, type LockedConfig } from '@/lib/store'
+import { useAppStore, type EpisodeDetail, type Character, type Scene, type Prop, type Storyboard, type LockedConfig, type Episode } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -13,6 +13,12 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
+import {
   ArrowLeft,
   Loader2,
   FileText,
@@ -21,21 +27,25 @@ import {
   Check,
   ChevronRight,
   ChevronLeft,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronDown,
   Lock,
   LockOpen,
   Download,
   Globe,
+  BookOpenText,
+  Settings2,
+  LayoutGrid,
+  Clapperboard,
+  Plus,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ResultDialog, EMPTY_RESULT_DIALOG, type ResultDialogState } from '@/components/episode/result-dialog'
 
 // Sub-components
-import { ScriptPanel } from '@/components/episode/script-panel'
+import { ScriptStudio } from '@/components/episode/script-studio'
+import { StoryboardSeko } from '@/components/episode/storyboard-seko'
 import { ExtractPanel } from '@/components/episode/extract-panel'
 import { VoicePanel } from '@/components/episode/voice-panel'
-import { StoryboardPanel } from '@/components/episode/storyboard-panel'
 import { CharImagesPanel } from '@/components/episode/char-images-panel'
 import { SceneImagesPanel } from '@/components/episode/scene-images-panel'
 import { DubbingPanel } from '@/components/episode/dubbing-panel'
@@ -45,8 +55,21 @@ import { ComposePanel } from '@/components/episode/compose-panel'
 import { TimelineEditor } from '@/components/episode/timeline-editor'
 
 // Shared types & helpers
-import type { StageKey, ProdTabKey, UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
-import { STAGES, PIPELINE_STEPS, PROD_TABS, getStepsForStage, statusBadge, panelVariants } from '@/components/episode/helpers'
+import type { UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
+import { PIPELINE_STEPS, statusBadge, panelVariants } from '@/components/episode/helpers'
+
+// ── Main tab definition (剧本 / 设定 / 分镜 / 短片) ──────────
+
+type MainTab = 'script' | 'settings' | 'storyboard' | 'film'
+type SettingsTab = 'extract' | 'chars' | 'scenes' | 'voice'
+type FilmTab = 'dubbing' | 'shots' | 'videos' | 'compose' | 'timeline'
+
+const MAIN_TABS: Array<{ key: MainTab; label: string; icon: React.ReactNode }> = [
+  { key: 'script', label: '剧本', icon: <BookOpenText className="size-3.5" /> },
+  { key: 'settings', label: '设定', icon: <Settings2 className="size-3.5" /> },
+  { key: 'storyboard', label: '分镜', icon: <LayoutGrid className="size-3.5" /> },
+  { key: 'film', label: '短片', icon: <Clapperboard className="size-3.5" /> },
+]
 
 // ── Main component ───────────────────────────────────────────
 
@@ -64,14 +87,13 @@ export function EpisodeWorkspace() {
   const { toast } = useToast()
   const perms = usePermissions()
 
-  const [activeStage, setActiveStage] = useState<StageKey>('script')
-  const [scriptStep, setScriptStep] = useState(0) // 0=raw, 1=rewrite, 2=extract, 3=voice, 4=storyboard
-  // ★ Auto-skip: when an episode has scriptContent already (generated via workshop),
-  //   we want to jump straight to extract (step 2) instead of forcing the user
-  //   through raw (0) and rewrite (1) again. Set below in fetchEpisode().
-  const [prodTab, setProdTab] = useState<ProdTabKey>('chars')
-  const [activePipelineStep, setActivePipelineStep] = useState<PipelineStepKey>('script:raw')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // ★ 四大主 Tab：剧本 / 设定 / 分镜 / 短片（参考 seko 式工作台）
+  const [mainTab, setMainTab] = useState<MainTab>('script')
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('extract')
+  const [filmTab, setFilmTab] = useState<FilmTab>('dubbing')
+  const [scriptGenerating, setScriptGenerating] = useState(false)
+  const [dramaEpisodes, setDramaEpisodes] = useState<Episode[]>([])
+  const [switchingEpisode, setSwitchingEpisode] = useState(false)
   const [rawContent, setRawContent] = useState('')
   const [scriptContent, setScriptContent] = useState('')
   const [characters, setCharacters] = useState<Character[]>([])
@@ -213,24 +235,13 @@ export function EpisodeWorkspace() {
       // Sync local state from episode
       setRawContent(detail.rawContent ?? '')
       setScriptContent(detail.scriptContent ?? '')
-      // ★ Auto-skip raw/rewrite when script already exists (e.g. generated
-      //   from the Script Workshop). Jump straight to the extract step so
-      //   the user can immediately extract characters/scenes/props.
-      // ★ When rawContent exists but scriptContent doesn't, go to rewrite step
-      // (not extract) so the user can generate the script from the raw content.
-      if (!detail.scriptContent?.trim() && detail.rawContent?.trim()) {
-        setScriptStep(1) // 0=raw, 1=rewrite, 2=extract
-        setActivePipelineStep('script:rewrite')
-      } else if (detail.scriptContent?.trim()) {
-        setScriptStep(2) // 0=raw, 1=rewrite, 2=extract
-        setActivePipelineStep('script:extract')
-      }
-      // Fetch characters & scenes & props from drama
+      // Fetch characters & scenes & props + episodes list from drama
       if (selectedDramaId) {
         const dramaDetail = await api.dramas.get(selectedDramaId)
         setCharacters(dramaDetail.characters ?? [])
         setScenes(dramaDetail.scenes ?? [])
         setProps(dramaDetail.props ?? [])
+        setDramaEpisodes(dramaDetail.episodes ?? [])
       }
       setStoryboards(detail.storyboards ?? [])
     } catch (err) {
@@ -408,52 +419,9 @@ export function EpisodeWorkspace() {
   const pipelineCompletedCount = pipelineStatus?.completedSteps ?? 0
   const pipelineTotalCount = pipelineStatus?.totalSteps ?? 12
 
-  // ── Navigate to pipeline step (3-stage aware) ───────────────
+  // ── Pipeline step navigation — replaced by 4 main tabs ─────
 
-  const SCRIPT_STEP_MAP: Record<string, number> = {
-    'script:raw': 0, 'script:rewrite': 1, 'script:extract': 2, 'script:voice': 3, 'script:storyboard': 4,
-  }
-  const PROD_TAB_MAP: Record<string, ProdTabKey> = {
-    'prod:chars': 'chars', 'prod:scenes': 'scenes', 'prod:dubbing': 'dubbing',
-    'prod:shots': 'shots', 'prod:videos': 'videos', 'prod:compose': 'compose',
-    'prod:timeline': 'timeline',
-  }
-
-  const handlePipelineStepClick = useCallback(
-    (key: PipelineStepKey) => {
-      setActivePipelineStep(key)
-      if (key.startsWith('script:')) {
-        setActiveStage('script')
-        setScriptStep(SCRIPT_STEP_MAP[key] ?? 0)
-      } else if (key.startsWith('prod:')) {
-        setActiveStage('production')
-        setProdTab(PROD_TAB_MAP[key] ?? 'chars')
-      } else if (key === 'export:merge') {
-        setActiveStage('export')
-      }
-    },
-    []
-  )
-
-  // ── Pipeline step navigation (Prev/Next) ───────────────────
-
-  const currentPipelineIndex = PIPELINE_STEPS.findIndex((s) => s.key === activePipelineStep)
-
-  const handlePrevStep = useCallback(() => {
-    if (currentPipelineIndex > 0) {
-      const prevStep = PIPELINE_STEPS[currentPipelineIndex - 1]
-      handlePipelineStepClick(prevStep.key)
-    }
-  }, [currentPipelineIndex, handlePipelineStepClick])
-
-  const handleNextStep = useCallback(() => {
-    if (currentPipelineIndex < PIPELINE_STEPS.length - 1) {
-      const nextStep = PIPELINE_STEPS[currentPipelineIndex + 1]
-      handlePipelineStepClick(nextStep.key)
-    }
-  }, [currentPipelineIndex, handlePipelineStepClick])
-
-  // ── Save raw content ───────────────────────────────────────
+  // ── Save raw content ─────────────────────────────────────────
 
   const handleSaveRaw = async () => {
     if (!selectedEpisodeId) return
@@ -485,128 +453,40 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Create script from raw content + events ─────────────
-  // Instead of using the script_rewriter agent, we directly call the AI
-  // to generate a script based on raw novel content and extracted events.
-  // This mirrors the script workshop's approach but runs inline.
+  // ── AI: Generate / re-confirm script from this episode's novel chapters ──
+  // Calls the dedicated /generate-script endpoint which builds a Toonflow-style
+  // prompt from the episode's chapters (sourceChapterIds) on the server.
 
-  const handleRewrite = async () => {
-    if (!selectedEpisodeId || !selectedDramaId) return
-    if (!rawContent.trim()) {
-      toast({ title: '请先导入小说原文', variant: 'destructive' })
-      return
-    }
+  const handleGenerateScript = async (opts: { duration: string; instruction: string }) => {
+    if (!selectedEpisodeId) return
+    setScriptGenerating(true)
     setAiLoading(true)
-    setScriptStep(1)
-    setActivePipelineStep('script:rewrite')
     try {
-      // Fetch chapters with events
-      let eventsContext = ''
-      try {
-        const novelData = await api.episodes.getNovelChapters(selectedEpisodeId)
-        if (novelData.chapters && novelData.chapters.length > 0) {
-          const eventsTable = novelData.chapters
-            .filter((ch: any) => ch.event)
-            .map((ch: any) => `| ${ch.title || '第' + ch.index + '章'} | ${ch.characters || ''} | ${ch.event || ''} | ${ch.mainline || ''} | ${ch.density || ''} | ${ch.estimatedDuration || ''} | ${ch.emotion || ''} |`)
-            .join('\n')
-          if (eventsTable) {
-            eventsContext = `\n## 章节事件表\n| 章节 | 涉及角色 | 核心事件 | 主线关系 | 信息密度 | 预估时长 | 情绪强度 |\n| --- | --- | --- | --- | --- | --- | --- |\n${eventsTable}\n`
-          }
-        }
-      } catch {}
-
-      // Fetch drama info
-      let projectConfig = ''
-      try {
-        const drama = await api.dramas.get(selectedDramaId)
-        projectConfig = `## 项目配置\n- 项目名: ${drama.title}\n- 题材: ${drama.genre || '都市'}\n- 风格: ${drama.style || 'realistic'}\n- 目标集数: ${drama.totalEpisodes || 5}集`
-      } catch {}
-
-      const epNumber = currentEpisode?.episodeNumber || 1
-
-      const systemPrompt = `你是一位专业的短剧编剧，擅长根据小说原文和事件素材创作紧凑有力的短剧剧本。
-
-## 输出格式
-用 <scriptItem name="EP${String(epNumber).padStart(2, '0')}：核心事件"> XML标签包裹整集剧本。
-
-剧本内部格式：
-# 作品名 EP${String(epNumber).padStart(2, '0')}：核心事件
-# 目标时长：约2分钟（300-400字）
-# 风格：都市
-
-## 剧情梗概
-200-300字概括
-
-{场号} {场景名} {时间}/{光线}
-人物：{人物1} {人物2}
-
-△{场景环境描述}
-△{人物动作描写}
-{人物名}：{台词}
-
-OS（{人物名}，{情绪}）：{内心独白}
-
----
-
-## 硬约束
-1. 每集 3-5 个场景，正文 ≤ 1000 字
-2. 单句台词 ≤ 20字
-3. △描述必须可直接用于 AI 视频生成
-4. 画面描述用 △ 标记
-5. 转场用 --- 分隔
-6. 结尾设置悬念钩子`
-
-      const userPrompt = `${projectConfig}
-
-## 小说原文（截取）
-${rawContent.slice(0, 6000)}
-${eventsContext}
-
-## 任务
-请为第${epNumber}集创作完整的短剧剧本。基于上面的小说原文和章节事件表，创作紧凑有力的剧本。
-请直接输出剧本，用 <scriptItem> 包裹。`
-
-      // Call AI directly via the rewrite-script API
-      const result = await api.ai.rewriteScript(selectedEpisodeId, systemPrompt + '\n\n' + userPrompt)
-      const scriptContent = result.scriptContent || result.episode?.scriptContent || ''
-      if (!scriptContent) {
+      const result = await api.episodes.generateScript(selectedEpisodeId, opts)
+      if (!result.scriptContent) {
         throw new Error('AI 返回空结果')
       }
-
-      // Parse <scriptItem> wrapper if present
-      let finalScriptContent = scriptContent
-      const scriptItemMatch = finalScriptContent.match(/<scriptItem\s+name="([^"]+)">([\s\S]*?)<\/scriptItem>/)
-      if (scriptItemMatch) {
-        finalScriptContent = scriptItemMatch[2].trim()
-      }
-
-      setScriptContent(finalScriptContent)
+      setScriptContent(result.scriptContent)
       await fetchEpisode()
-      setScriptStep(2)
-      setActivePipelineStep('script:extract')
-      showResultDialog('success', '剧本创作完成', 'AI 已根据小说原文和事件素材生成剧本，可以继续提取角色场景。')
+      toast({ title: '剧本生成完成', description: '可在左侧分场大纲中查看场景结构，或直接编辑正文。' })
     } catch (err) {
-      toast({ title: '剧本创作失败', description: String(err), variant: 'destructive' })
+      toast({ title: '剧本生成失败', description: String(err), variant: 'destructive' })
     } finally {
+      setScriptGenerating(false)
       setAiLoading(false)
     }
   }
 
-  // ── AI: Skip rewrite (copy raw → script) ───────────────────
+  // ── Episode switching (header selector) ────────────────────
 
-  const handleSkipRewrite = async () => {
-    if (!selectedEpisodeId) return
-    setAiLoading(true)
+  const handleSwitchEpisode = async (episodeId: string) => {
+    if (!selectedDramaId || episodeId === selectedEpisodeId) return
+    setSwitchingEpisode(true)
     try {
-      await api.episodes.update(selectedEpisodeId, { scriptContent: rawContent })
-      toast({ title: '已使用原始内容作为剧本' })
-      await fetchEpisode()
-      setScriptStep(1)
-      setActivePipelineStep('script:rewrite')
-    } catch (err) {
-      toast({ title: '操作失败', description: String(err), variant: 'destructive' })
+      const { navigateToEpisode } = useAppStore.getState()
+      navigateToEpisode(selectedDramaId, episodeId)
     } finally {
-      setAiLoading(false)
+      setSwitchingEpisode(false)
     }
   }
 
@@ -1756,148 +1636,130 @@ ${eventsContext}
       setBatchProgress(null)
     }
   }
-
-  // ── Render active panel ────────────────────────────────────
+  // ── Render: main tab content ───────────────────────────────
 
   const episode = currentEpisode
 
-  const renderActivePanel = () => {
-    // ── Script stage ──
-    if (activeStage === 'script') {
-      switch (scriptStep) {
-        case 0: // raw
-        case 1: // rewrite
-          return (
-            <ScriptPanel
-              rawContent={rawContent}
-              setRawContent={setRawContent}
-              scriptContent={scriptContent}
-              setScriptContent={setScriptContent}
-              saving={saving}
-              aiLoading={aiLoading}
-              isRewriting={agentExec.isRunning('script_rewriter')}
-              episode={episode}
-              episodeId={selectedEpisodeId || undefined}
-              agentExec={agentExec}
-              activeStep={scriptStep === 0 ? 'raw' : 'rewrite'}
-              handleSaveRaw={handleSaveRaw}
-              handleSaveScript={handleSaveScript}
-              handleRewrite={handleRewrite}
-              handleSkipRewrite={handleSkipRewrite}
-              // PR-F: Global asset import props
-              hasGlobalAssets={(characters.length + scenes.length + props.length) > 0}
-              globalAssetsImported={episode?.globalAssetsImported ?? false}
-              importingAssets={importingAssets}
-              onImportGlobalAssets={handleImportGlobalAssets}
-              onImportFromScriptWorkbench={handleImportFromScriptWorkbench}
-            />
-          )
-        case 2: // extract
-          return (
-            <ExtractPanel
-              characters={characters}
-              scenes={scenes}
-              props={props}
-              aiLoading={aiLoading}
-              isExtracting={agentExec.isRunning('extractor')}
-              episode={episode}
-              agentExec={agentExec}
-              copiedField={copiedField}
-              handleExtract={handleExtract}
-              handleCopy={handleCopy}
-              onUpdateProp={async (id, field, value) => {
-                try {
-                  await api.props.update(id, { [field]: value })
-                  setProps((prev) =>
-                    prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
-                  )
-                } catch (err) {
-                  toast({ title: '更新道具失败', description: String(err), variant: 'destructive' })
-                }
-              }}
-              // PR-F: Global asset import props
-              globalAssetsImported={episode?.globalAssetsImported ?? false}
-              importingAssets={importingAssets}
-              onReimportGlobalAssets={handleImportGlobalAssets}
-              onRefresh={fetchEpisode}
-            />
-          )
-        case 3: // voice
-          return (
-            <VoicePanel
-              characters={characters}
-              aiLoading={aiLoading}
-              agentExec={agentExec}
-              activeStep={'voice'}
-              handleVoiceAssign={handleVoiceAssign}
-              handleAssignVoice={handleAssignVoice}
-              handleGenerateVoiceSample={handleGenerateVoiceSample}
-              voiceSamples={voiceSamples}
-              generatingSample={generatingSample}
-            />
-          )
-        case 4: // storyboard
-          return (
-            <StoryboardPanel
-              storyboards={storyboards}
-              aiLoading={aiLoading}
-              isStoryboarding={agentExec.isRunning('storyboard_breaker')}
-              episode={episode}
-              agentExec={agentExec}
-              generatingShotImg={generatingShotImg}
-              generatingVideo={generatingVideo}
-              generatingTts={generatingTts}
-              batchProgress={batchProgress}
-              uploadingField={uploadingField}
-              copiedField={copiedField}
-              gridState={gridState}
-              activePipelineStep={activePipelineStep}
-              handleGenerateStoryboard={handleGenerateStoryboard}
-              handleEnhanceShotPrompt={handleEnhanceShotPrompt}
-              handleGenerateAllImages={handleGenerateAllImages}
-              handleGenerateAllVideos={handleGenerateAllVideos}
-              handleGenerateShotImage={handleGenerateShotImage}
-              handleGenerateVideo={handleGenerateVideo}
-              handleGenerateTts={handleGenerateTts}
-              handleUpload={handleUpload}
-              handleCopy={handleCopy}
-              handleUpdateStoryboard={handleUpdateStoryboard}
-              handleGridGenerate={handleGridGenerate}
-              onRefresh={fetchEpisode}
-              workspaceModels={workspaceModels}
-            />
-          )
-      }
+  const storyboardProps = {
+    storyboards,
+    aiLoading,
+    isStoryboarding: agentExec.isRunning('storyboard_breaker'),
+    episode,
+    agentExec,
+    generatingShotImg,
+    generatingVideo,
+    generatingTts,
+    batchProgress,
+    uploadingField,
+    copiedField,
+    gridState,
+    activePipelineStep: 'script:storyboard' as PipelineStepKey,
+    handleGenerateStoryboard,
+    handleEnhanceShotPrompt,
+    handleGenerateAllImages,
+    handleGenerateAllVideos,
+    handleGenerateShotImage,
+    handleGenerateVideo,
+    handleGenerateTts,
+    handleUpload,
+    handleCopy,
+    handleUpdateStoryboard,
+    handleGridGenerate,
+    onRefresh: fetchEpisode,
+    workspaceModels,
+  }
+
+  const renderSubTabs = (
+    tabs: Array<{ key: string; label: string; icon?: React.ReactNode }>,
+    active: string,
+    onChange: (key: string) => void
+  ) => (
+    <div className="flex-shrink-0 flex items-center gap-1 px-4 py-2 border-b border-neutral-800/60 bg-neutral-950/80 overflow-x-auto">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => onChange(tab.key)}
+          className={`flex-shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium transition-colors ${
+            active === tab.key
+              ? 'bg-neutral-800 text-neutral-100'
+              : 'text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900'
+          }`}
+        >
+          {tab.icon}
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const SETTINGS_TABS = [
+    { key: 'extract', label: '角色场景', icon: <Users className="size-3.5" /> },
+    { key: 'chars', label: '角色形象', icon: <FileText className="size-3.5" /> },
+    { key: 'scenes', label: '场景图片', icon: <Film className="size-3.5" /> },
+    { key: 'voice', label: '音色分配', icon: <Globe className="size-3.5" /> },
+  ]
+
+  const FILM_TABS = [
+    { key: 'dubbing', label: '配音', icon: <Globe className="size-3.5" /> },
+    { key: 'videos', label: '镜头视频', icon: <Film className="size-3.5" /> },
+    { key: 'compose', label: '合成预览', icon: <Clapperboard className="size-3.5" /> },
+    { key: 'timeline', label: '时间线', icon: <LayoutGrid className="size-3.5" /> },
+  ]
+
+  const renderMainTab = () => {
+    // ── 剧本 ──
+    if (mainTab === 'script') {
+      return (
+        <ScriptStudio
+          key={episode?.id ?? 'no-episode'}
+          episode={episode}
+          scriptContent={scriptContent}
+          onScriptContentChange={setScriptContent}
+          onSaveDraft={handleSaveScript}
+          onGenerate={handleGenerateScript}
+          generating={scriptGenerating}
+          saving={saving}
+          rawContent={rawContent}
+          onGoSettings={() => setMainTab('settings')}
+        />
+      )
     }
 
-    // ── Production stage ──
-    if (activeStage === 'production') {
+    // ── 设定 ──
+    if (mainTab === 'settings') {
       return (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Production tab bar */}
-          <div className="flex items-center border-b border-border/50 px-4">
-            {PROD_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => {
-                  setProdTab(tab.key)
-                  setActivePipelineStep(`prod:${tab.key}` as PipelineStepKey)
+        <div className="flex-1 flex flex-col overflow-hidden dark">
+          {renderSubTabs(SETTINGS_TABS, settingsTab, (k) => setSettingsTab(k as SettingsTab))}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {settingsTab === 'extract' && (
+              <ExtractPanel
+                characters={characters}
+                scenes={scenes}
+                props={props}
+                aiLoading={aiLoading}
+                isExtracting={agentExec.isRunning('extractor')}
+                episode={episode}
+                agentExec={agentExec}
+                copiedField={copiedField}
+                handleExtract={handleExtract}
+                handleCopy={handleCopy}
+                onUpdateProp={async (id, field, value) => {
+                  try {
+                    await api.props.update(id, { [field]: value })
+                    setProps((prev) =>
+                      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+                    )
+                  } catch (err) {
+                    toast({ title: '更新道具失败', description: String(err), variant: 'destructive' })
+                  }
                 }}
-                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-                  prodTab === tab.key
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab content */}
-          <div className="flex-1 overflow-hidden">
-            {prodTab === 'chars' && (
+                globalAssetsImported={episode?.globalAssetsImported ?? false}
+                importingAssets={importingAssets}
+                onReimportGlobalAssets={handleImportGlobalAssets}
+                onRefresh={fetchEpisode}
+              />
+            )}
+            {settingsTab === 'chars' && (
               <CharImagesPanel
                 characters={characters}
                 aiLoading={aiLoading}
@@ -1911,7 +1773,7 @@ ${eventsContext}
                 handleCopy={handleCopy}
               />
             )}
-            {prodTab === 'scenes' && (
+            {settingsTab === 'scenes' && (
               <SceneImagesPanel
                 scenes={scenes}
                 aiLoading={aiLoading}
@@ -1924,89 +1786,17 @@ ${eventsContext}
                 handleCopy={handleCopy}
               />
             )}
-            {prodTab === 'dubbing' && (
-              <DubbingPanel
-                storyboards={storyboards}
+            {settingsTab === 'voice' && (
+              <VoicePanel
                 characters={characters}
                 aiLoading={aiLoading}
-                generatingTts={generatingTts}
-                generatingAllTts={generatingAllTts}
-                batchProgress={batchProgress}
-                uploadingField={uploadingField}
-                handleGenerateTts={handleGenerateTts}
-                handleGenerateAllTts={handleGenerateAllTts}
-                handleUpload={handleUpload}
-              />
-            )}
-            {prodTab === 'shots' && (
-              <ShotFramesPanel
-                storyboards={storyboards}
-                characters={characters}
-                scenes={scenes}
-                aiLoading={aiLoading}
-                generatingShotImg={generatingShotImg}
-                batchProgress={batchProgress}
-                uploadingField={uploadingField}
-                copiedField={copiedField}
-                handleGenerateShotImage={handleGenerateShotImage}
-                handleGenerateAllImages={handleGenerateAllImages}
-                handleUpload={handleUpload}
-                handleCopy={handleCopy}
-              />
-            )}
-            {prodTab === 'videos' && (
-              <VideoPanel
-                storyboards={storyboards}
-                aiLoading={aiLoading}
-                generatingVideo={generatingVideo}
-                batchProgress={batchProgress}
-                uploadingField={uploadingField}
-                copiedField={copiedField}
-                handleGenerateVideo={handleGenerateVideo}
-                handleGenerateAllVideos={handleGenerateAllVideos}
-                handleUpload={handleUpload}
-                handleCopy={handleCopy}
-              />
-            )}
-            {prodTab === 'compose' && (
-              <ComposePanel
-                storyboards={storyboards}
-                aiLoading={aiLoading}
-                composing={composing}
-                composingAll={composingAll}
-                batchProgress={batchProgress}
-                previewMode={previewMode}
-                currentPreviewShot={currentPreviewShot}
-                exporting={exporting}
-                previewVideoRef={previewVideoRef}
-                previewAudioRef={previewAudioRef}
-                perms={perms}
-                handleComposeShot={handleComposeShot}
-                handleComposeAll={handleComposeAll}
-                handleStartPreview={handleStartPreview}
-                handlePreviewEnded={handlePreviewEnded}
-                handleExport={handleExport}
-                setPreviewMode={setPreviewMode}
-                setCurrentPreviewShot={setCurrentPreviewShot}
-              />
-            )}
-            {prodTab === 'timeline' && (
-              <TimelineEditor
-                storyboards={storyboards}
-                episodeId={selectedEpisodeId || ''}
-                dramaId={selectedDramaId || ''}
-                onSelectStoryboard={(sb) => {
-                  // Could navigate to storyboard detail or select in list
-                }}
-                onUpdateStoryboard={handleUpdateStoryboard}
-                onReorderStoryboards={async (orderedIds) => {
-                  try {
-                    await api.storyboards.reorder(selectedEpisodeId!, orderedIds)
-                    await fetchEpisode()
-                  } catch (err) {
-                    throw err
-                  }
-                }}
+                agentExec={agentExec}
+                activeStep={'voice'}
+                handleVoiceAssign={handleVoiceAssign}
+                handleAssignVoice={handleAssignVoice}
+                handleGenerateVoiceSample={handleGenerateVoiceSample}
+                voiceSamples={voiceSamples}
+                generatingSample={generatingSample}
               />
             )}
           </div>
@@ -2014,366 +1804,298 @@ ${eventsContext}
       )
     }
 
-    // ── Export stage ──
-    if (activeStage === 'export') {
-      return (
-        <ComposePanel
-          storyboards={storyboards}
-          aiLoading={aiLoading}
-          composing={composing}
-          composingAll={composingAll}
-          batchProgress={batchProgress}
-          previewMode={previewMode}
-          currentPreviewShot={currentPreviewShot}
-          exporting={exporting}
-          previewVideoRef={previewVideoRef}
-          previewAudioRef={previewAudioRef}
-          perms={perms}
-          handleComposeShot={handleComposeShot}
-          handleComposeAll={handleComposeAll}
-          handleStartPreview={handleStartPreview}
-          handlePreviewEnded={handlePreviewEnded}
-          handleExport={handleExport}
-          setPreviewMode={setPreviewMode}
-          setCurrentPreviewShot={setCurrentPreviewShot}
-        />
-      )
+    // ── 分镜 ──
+    if (mainTab === 'storyboard') {
+      return <StoryboardSeko {...storyboardProps} />
     }
 
+    // ── 短片 ──
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden dark">
+        {renderSubTabs(FILM_TABS, filmTab, (k) => setFilmTab(k as FilmTab))}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {filmTab === 'dubbing' && (
+            <DubbingPanel
+              storyboards={storyboards}
+              characters={characters}
+              aiLoading={aiLoading}
+              generatingTts={generatingTts}
+              generatingAllTts={generatingAllTts}
+              batchProgress={batchProgress}
+              uploadingField={uploadingField}
+              handleGenerateTts={handleGenerateTts}
+              handleGenerateAllTts={handleGenerateAllTts}
+              handleUpload={handleUpload}
+            />
+          )}
+          {filmTab === 'videos' && (
+            <VideoPanel
+              storyboards={storyboards}
+              aiLoading={aiLoading}
+              generatingVideo={generatingVideo}
+              batchProgress={batchProgress}
+              uploadingField={uploadingField}
+              copiedField={copiedField}
+              handleGenerateVideo={handleGenerateVideo}
+              handleGenerateAllVideos={handleGenerateAllVideos}
+              handleUpload={handleUpload}
+              handleCopy={handleCopy}
+            />
+          )}
+          {filmTab === 'compose' && (
+            <ComposePanel
+              storyboards={storyboards}
+              aiLoading={aiLoading}
+              composing={composing}
+              composingAll={composingAll}
+              batchProgress={batchProgress}
+              previewMode={previewMode}
+              currentPreviewShot={currentPreviewShot}
+              exporting={exporting}
+              previewVideoRef={previewVideoRef}
+              previewAudioRef={previewAudioRef}
+              perms={perms}
+              handleComposeShot={handleComposeShot}
+              handleComposeAll={handleComposeAll}
+              handleStartPreview={handleStartPreview}
+              handlePreviewEnded={handlePreviewEnded}
+              handleExport={handleExport}
+              setPreviewMode={setPreviewMode}
+              setCurrentPreviewShot={setCurrentPreviewShot}
+            />
+          )}
+          {filmTab === 'timeline' && (
+            <TimelineEditor
+              storyboards={storyboards}
+              episodeId={selectedEpisodeId || ''}
+              dramaId={selectedDramaId || ''}
+              onSelectStoryboard={(sb) => {
+                setMainTab('storyboard')
+              }}
+              onUpdateStoryboard={handleUpdateStoryboard}
+              onReorderStoryboards={async (orderedIds) => {
+                try {
+                  await api.storyboards.reorder(selectedEpisodeId!, orderedIds)
+                  await fetchEpisode()
+                } catch (err) {
+                  throw err
+                }
+              }}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Pipeline next-action hint (畅通管线引导) ────────────────
+
+  const nextAction = useMemo(() => {
+    if (!scriptContent.trim()) return { tab: 'script' as MainTab, label: '生成剧本' }
+    if (characters.length === 0 && scenes.length === 0)
+      return { tab: 'settings' as MainTab, label: '提取角色与场景' }
+    if (storyboards.length === 0) return { tab: 'storyboard' as MainTab, label: '生成分镜' }
+    if (!storyboards.some((s) => s.videoUrl))
+      return { tab: 'film' as MainTab, label: '生成镜头视频' }
     return null
+  }, [scriptContent, characters, scenes, storyboards])
+
+  const tabDone = (key: MainTab): boolean => {
+    switch (key) {
+      case 'script':
+        return scriptContent.trim().length > 0
+      case 'settings':
+        return characters.length > 0 || scenes.length > 0
+      case 'storyboard':
+        return storyboards.length > 0
+      case 'film':
+        return storyboards.some((s) => s.videoUrl)
+    }
   }
 
   // ── Episode info for top bar ───────────────────────────────
 
   const dramaTitle = currentDrama?.title ?? '项目'
   const episodeTitle = episode?.title || (episode ? `第${episode.episodeNumber}集` : '集')
+  const sortedEpisodes = [...dramaEpisodes].sort((a, b) => a.episodeNumber - b.episodeNumber)
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950 text-neutral-200">
       {/* ── Top Bar ────────────────────────────────────────── */}
-      <header className="flex-shrink-0 border-b border-border/50 bg-background/80 backdrop-blur-md z-10">
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          {/* Breadcrumb: 返回项目 > 项目名 > 管线生产 > 第N集 */}
+      <header className="flex-shrink-0 border-b border-neutral-800/70 bg-neutral-950/90 backdrop-blur-md z-10">
+        <div className="flex items-center gap-3 px-4 py-2.5 flex-wrap sm:flex-nowrap">
+          {/* 返回 + 项目名 */}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
-            className="text-muted-foreground hover:text-foreground -ml-2 gap-1"
+            className="text-neutral-400 hover:text-neutral-100 hover:bg-neutral-900 -ml-2 gap-1"
           >
             <ArrowLeft className="size-4" />
-            <span className="hidden sm:inline">返回项目</span>
+            <span className="hidden md:inline max-w-32 truncate">{dramaTitle}</span>
           </Button>
-          <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
-          <span className="text-sm text-muted-foreground truncate max-w-28">
-            {dramaTitle}
-          </span>
-          <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
-          <span className="text-sm text-muted-foreground">管线生产</span>
-          <ChevronRight className="size-3.5 text-muted-foreground/50 shrink-0" />
-          <Badge variant="secondary" className="text-xs flex-shrink-0">
-            {episodeTitle}
-          </Badge>
 
-          {/* Model selectors removed — models are now globally configured in Settings.
-              Only the per-episode config lock toggle remains. */}
-          <div className="hidden md:flex items-center gap-2 ml-auto">
-            {/* Lock/Unlock toggle */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={isConfigLocked ? 'default' : 'outline'}
-                  size="sm"
-                  className={`h-8 px-2.5 gap-1.5 text-xs font-medium ${
-                    isConfigLocked
-                      ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600'
-                      : 'hover:bg-muted/80'
-                  }`}
-                  onClick={isConfigLocked ? handleUnlockConfig : handleLockConfig}
-                >
-                  {isConfigLocked ? (
-                    <Lock className="size-3.5" />
-                  ) : (
-                    <LockOpen className="size-3.5" />
-                  )}
-                  {isConfigLocked && (
-                    <Badge className="bg-amber-500/30 text-amber-100 text-[10px] px-1 py-0 h-4 border-0 font-medium">
-                      已锁定
-                    </Badge>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" sideOffset={6}>
-                {isConfigLocked
-                  ? '点击解锁 — 解锁后将使用全局默认模型'
-                  : '点击锁定 — 将当前模型配置锁定到本集'}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-
-          {/* Status badges - desktop */}
-          <div className="hidden md:flex items-center gap-2">
-            {episode?.scriptStatus && episode.scriptStatus !== 'pending' && (
-              <div className="flex items-center gap-1">
-                <FileText className="size-3 text-muted-foreground" />
-                {statusBadge(episode.scriptStatus)}
-              </div>
-            )}
-            {episode?.extractStatus && episode.extractStatus !== 'pending' && (
-              <div className="flex items-center gap-1">
-                <Users className="size-3 text-muted-foreground" />
-                {statusBadge(episode.extractStatus)}
-              </div>
-            )}
-            {episode?.storyboardStatus && episode.storyboardStatus !== 'pending' && (
-              <div className="flex items-center gap-1">
-                <Film className="size-3 text-muted-foreground" />
-                {statusBadge(episode.storyboardStatus)}
-              </div>
-            )}
-          </div>
-
-          <div className="ml-auto flex items-center gap-1">
-            {/* PR-F: Import Global Assets button in header */}
-            {(characters.length + scenes.length + props.length) > 0 && !episode?.globalAssetsImported && selectedEpisodeId && (
+          {/* 剧集选择器 */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
                 size="sm"
-                className="hidden sm:flex items-center gap-1.5 text-xs h-7 px-2.5 text-primary border-primary/30 hover:bg-primary/5"
-                onClick={handleImportGlobalAssets}
-                disabled={importingAssets}
+                disabled={switchingEpisode || sortedEpisodes.length === 0}
+                className="h-8 gap-1.5 border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 hover:text-neutral-100 text-xs max-w-44"
               >
-                {importingAssets ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                导入全局素材
+                {switchingEpisode ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Badge className="bg-lime-300/15 text-lime-300 border-0 text-[10px] px-1.5 h-4 shrink-0">
+                    第{episode?.episodeNumber ?? '-'}集
+                  </Badge>
+                )}
+                <span className="truncate">{episodeTitle}</span>
+                <ChevronDown className="size-3.5 text-neutral-500 shrink-0" />
               </Button>
-            )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto bg-neutral-900 border-neutral-800">
+              {sortedEpisodes.map((ep) => (
+                <DropdownMenuItem
+                  key={ep.id}
+                  onClick={() => handleSwitchEpisode(ep.id)}
+                  className={`gap-2 text-xs cursor-pointer ${
+                    ep.id === selectedEpisodeId ? 'text-lime-300' : 'text-neutral-300'
+                  }`}
+                >
+                  <span className="font-mono text-[10px] text-neutral-500 w-10 shrink-0">
+                    EP{String(ep.episodeNumber).padStart(2, '0')}
+                  </span>
+                  <span className="truncate max-w-48">{ep.title || `第${ep.episodeNumber}集`}</span>
+                  {ep.scriptStatus === 'completed' && (
+                    <Check className="size-3 text-emerald-400 ml-auto shrink-0" />
+                  )}
+                  {ep.id === selectedEpisodeId && (
+                    <span className="ml-auto size-1.5 rounded-full bg-lime-300 shrink-0" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+              {sortedEpisodes.length === 0 && (
+                <div className="px-3 py-4 text-xs text-neutral-500 text-center">暂无剧集</div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* 中央 Tab 组：剧本 — 设定 — 分镜 — 短片（移动端换行居中） */}
+          <div className="order-last w-full basis-full sm:order-none sm:w-auto sm:basis-auto sm:flex-1 flex items-center justify-center min-w-0 overflow-x-auto">
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              {MAIN_TABS.map((tab, idx) => {
+                const isActive = mainTab === tab.key
+                const done = tabDone(tab.key)
+                return (
+                  <div key={tab.key} className="flex items-center whitespace-nowrap">
+                    {idx > 0 && <span className="w-3 h-px bg-neutral-700 mx-0.5 shrink-0" />}
+                    <button
+                      onClick={() => setMainTab(tab.key)}
+                      className={`flex items-center gap-1.5 h-8 px-3 sm:px-3.5 rounded-lg text-xs font-medium transition-all ${
+                        isActive
+                          ? 'bg-neutral-800 text-neutral-100 shadow-sm ring-1 ring-neutral-700'
+                          : 'text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/70'
+                      }`}
+                    >
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                      <span
+                        className={`size-1.5 rounded-full ${
+                          done
+                            ? 'bg-lime-300'
+                            : isActive
+                              ? 'bg-neutral-600'
+                              : 'bg-neutral-800'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 右侧：锁定 + 用户 */}
+          <div className="flex items-center gap-1.5 ml-auto shrink-0">
             {episode?.globalAssetsImported && (
-              <Badge variant="secondary" className="hidden sm:flex text-[10px] gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              <Badge variant="secondary" className="hidden lg:flex text-[10px] gap-1 bg-emerald-500/10 text-emerald-400 border-0">
                 <Globe className="size-3" />
                 全局素材已导入
               </Badge>
             )}
-            {/* Mobile sidebar toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden size-8"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-8 px-2 gap-1.5 text-xs ${
+                    isConfigLocked
+                      ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                      : 'text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900'
+                  }`}
+                  onClick={isConfigLocked ? handleUnlockConfig : handleLockConfig}
+                >
+                  {isConfigLocked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
+                  <span className="hidden md:inline">{isConfigLocked ? '已锁定' : '锁定模型'}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={6}>
+                {isConfigLocked ? '解锁后将使用全局默认模型' : '将当前模型配置锁定到本集'}
+              </TooltipContent>
+            </Tooltip>
             <UserMenu />
           </div>
         </div>
-
-        {/* Mobile config lock row — model selectors removed (models are global now) */}
-        <div className="flex md:hidden items-center gap-2 px-4 pb-2 overflow-x-auto">
-          {/* Lock/Unlock toggle - mobile */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={isConfigLocked ? 'default' : 'outline'}
-                size="sm"
-                className={`h-8 px-2.5 gap-1.5 text-xs font-medium flex-shrink-0 ${
-                  isConfigLocked
-                    ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600'
-                    : 'hover:bg-muted/80'
-                }`}
-                onClick={isConfigLocked ? handleUnlockConfig : handleLockConfig}
-              >
-                {isConfigLocked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
-                {isConfigLocked && (
-                  <Badge className="bg-amber-500/30 text-amber-100 text-[10px] px-1 py-0 h-4 border-0 font-medium">
-                    已锁定
-                  </Badge>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={6}>
-              {isConfigLocked
-                ? '点击解锁 — 解锁后将使用全局默认模型'
-                : '点击锁定 — 将当前模型配置锁定到本集'}
-            </TooltipContent>
-          </Tooltip>
-        </div>
       </header>
 
-      {/* ── Body: Sidebar + Main + Bottom Nav ──────────────── */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 3-Stage Pipeline Sidebar */}
-        <AnimatePresence>
-          {sidebarOpen && (
-            <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 240, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-shrink-0 border-r border-border/50 bg-card/50 overflow-hidden"
-            >
-              <div className="w-[240px] h-full flex flex-col">
-                {/* Pipeline steps grouped by stage */}
-                <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-3">
-                    {STAGES.map((stage) => {
-                      const stageSteps = getStepsForStage(stage.key)
-                      const isStageActive = activeStage === stage.key
-                      return (
-                        <div key={stage.key}>
-                          {/* Stage header */}
-                          <button
-                            onClick={() => setActiveStage(stage.key)}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
-                              isStageActive
-                                ? 'bg-primary/10 text-primary'
-                                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                            }`}
-                          >
-                            <span className="text-sm">{stage.icon}</span>
-                            <span className="text-xs font-semibold">{stage.label}</span>
-                          </button>
-
-                          {/* Stage sub-steps */}
-                          <div className="ml-2 pl-0.5 space-y-1 mt-1">
-                            {stageSteps.map((step) => {
-                              const stepStatus = getPipelineStepStatus(step.key)
-                              const isActive = activePipelineStep === step.key
-                              const isCompleted = stepStatus === 'completed'
-                              const isProcessing = stepStatus === 'active'
-                              return (
-                                <button
-                                  key={step.key}
-                                  onClick={() => handlePipelineStepClick(step.key)}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-all duration-150 ${
-                                    isActive
-                                      ? 'bg-blue-500/6 border-l-2 border-l-blue-500'
-                                      : isCompleted
-                                        ? 'bg-muted/40 hover:bg-muted/60'
-                                        : 'hover:bg-muted/30'
-                                  }`}
-                                >
-                                  {/* Status indicator */}
-                                  <div className="flex-shrink-0 w-4 text-center">
-                                    {isCompleted ? (
-                                      <Check className="size-3.5 text-green-500 mx-auto" />
-                                    ) : isProcessing ? (
-                                      <Loader2 className="size-3.5 text-blue-500 animate-spin mx-auto" />
-                                    ) : (
-                                      <span className="text-[9px] font-bold text-muted-foreground/60">{step.stepNumber}</span>
-                                    )}
-                                  </div>
-
-                                  <span className={`flex-1 min-w-0 text-[11px] font-medium truncate ${
-                                    isActive
-                                      ? 'text-foreground'
-                                      : isCompleted
-                                        ? 'text-foreground'
-                                        : 'text-muted-foreground'
-                                  }`}>
-                                    {step.label}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-
-                {/* Progress */}
-                <div className="p-3 border-t border-border/50">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                    <span>管线进度</span>
-                    <span className="font-medium">{pipelineCompletedCount}/{pipelineTotalCount} 步完成</span>
-                  </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-emerald-500 rounded-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
-                      transition={{ duration: 0.5 }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </motion.aside>
-          )}
+      {/* ── Body ───────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={mainTab}
+            variants={panelVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={{ duration: 0.15 }}
+            className="flex-1 flex flex-col overflow-hidden"
+          >
+            {renderMainTab()}
+          </motion.div>
         </AnimatePresence>
+      </div>
 
-        {/* Main panel area */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`${activeStage}-${scriptStep}-${prodTab}`}
-              variants={panelVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              transition={{ duration: 0.15 }}
-              className="flex-1 flex flex-col overflow-hidden"
-            >
-              {renderActivePanel()}
-            </motion.div>
-          </AnimatePresence>
-
-          {/* ── Bottom Navigation Bar ─────────────────────────── */}
-          <div className="flex-shrink-0 border-t border-border/50 bg-card/50 px-4 py-2">
-            <div className="flex items-center justify-between">
-              {/* Previous button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handlePrevStep}
-                disabled={currentPipelineIndex <= 0}
-                className="gap-1 text-xs"
-              >
-                <ChevronLeft className="size-3.5" />
-                <span className="hidden sm:inline">上一步</span>
-              </Button>
-
-              {/* Step dots */}
-              <div className="flex items-center gap-1.5 overflow-x-auto px-2">
-                {PIPELINE_STEPS.map((step) => {
-                  const stepStatus = getPipelineStepStatus(step.key)
-                  const isActive = activePipelineStep === step.key
-                  return (
-                    <button
-                      key={step.key}
-                      onClick={() => handlePipelineStepClick(step.key)}
-                      title={step.label}
-                      className={`flex-shrink-0 transition-all duration-150 rounded-full ${
-                        isActive
-                          ? 'size-3 bg-primary'
-                          : stepStatus === 'completed'
-                            ? 'size-2 bg-emerald-500 hover:bg-emerald-400'
-                            : 'size-2 bg-muted-foreground/30 hover:bg-muted-foreground/60'
-                      }`}
-                    />
-                  )
-                })}
-              </div>
-
-              {/* Next button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleNextStep}
-                disabled={currentPipelineIndex >= PIPELINE_STEPS.length - 1}
-                className="gap-1 text-xs"
-              >
-                <span className="hidden sm:inline">下一步</span>
-                <ChevronRight className="size-3.5" />
-              </Button>
+      {/* ── Bottom: 管线进度 + 下一步引导 ──────────────────── */}
+      <div className="flex-shrink-0 border-t border-neutral-800/70 bg-neutral-950 px-4 py-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] text-neutral-500 shrink-0">管线进度</span>
+            <div className="w-24 sm:w-40 h-1 bg-neutral-800 rounded-full overflow-hidden shrink-0">
+              <motion.div
+                className="h-full bg-lime-300 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
+                transition={{ duration: 0.5 }}
+              />
             </div>
-
-            {/* Current step label */}
-            <div className="text-center mt-1">
-              <span className="text-[10px] text-muted-foreground">
-                {PIPELINE_STEPS[currentPipelineIndex]?.stepNumber}/12 — {PIPELINE_STEPS[currentPipelineIndex]?.label}
-              </span>
-            </div>
+            <span className="text-[10px] text-neutral-600 shrink-0">
+              {pipelineCompletedCount}/{pipelineTotalCount}
+            </span>
           </div>
-        </main>
+          {nextAction && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setMainTab(nextAction.tab)}
+              className="h-6 px-2 text-[10px] gap-1 text-lime-300 hover:text-lime-200 hover:bg-lime-300/10"
+            >
+              下一步：{nextAction.label}
+              <ChevronRight className="size-3" />
+            </Button>
+          )}
+        </div>
       </div>
 
       <ResultDialog state={resultDialog} onClose={() => setResultDialog(EMPTY_RESULT_DIALOG)} />
