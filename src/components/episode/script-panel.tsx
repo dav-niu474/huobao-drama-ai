@@ -855,9 +855,9 @@ export function ScriptPanel({
           <div className="mx-auto size-16 rounded-full bg-primary/10 flex items-center justify-center mb-5">
             <Sparkles className="size-8 text-primary" />
           </div>
-          <h2 className="text-lg font-semibold mb-2">AI改写剧本</h2>
+          <h2 className="text-lg font-semibold mb-2">AI 剧本创作</h2>
           <p className="text-sm text-muted-foreground mb-6">
-            AI将把原始内容改写为标准剧本格式，包含场景描述、对白和动作指示
+            AI 将根据小说原文和章节事件素材，自动创作完整的短剧剧本
           </p>
           <div className="flex gap-3 justify-center">
             <Button
@@ -866,14 +866,14 @@ export function ScriptPanel({
               className="amber-glow"
             >
               <Sparkles className="size-4" />
-              开始改写
+              开始创作
             </Button>
             <Button variant="outline" onClick={handleSkipRewrite} disabled={!rawContent.trim()}>
-              跳过改写
+              跳过（使用原文）
             </Button>
           </div>
           {!rawContent.trim() && (
-            <p className="text-xs text-muted-foreground mt-4">请先在「原始内容」中填写内容</p>
+            <p className="text-xs text-muted-foreground mt-4">请先在「原始内容」中导入小说原文</p>
           )}
         </motion.div>
       </div>

@@ -719,11 +719,11 @@ export const api = {
 
   // ---- AI endpoints ----
   ai: {
-    rewriteScript: (episodeId: string) =>
-      request<{ episode: Episode }>('/api/ai/rewrite-script', {
+    rewriteScript: (episodeId: string, prompt?: string) =>
+      request<{ episode: Episode; scriptContent?: string }>(`/api/ai/rewrite-script`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ episodeId }),
+        body: JSON.stringify({ episodeId, prompt }),
       }),
 
     extract: (episodeId: string, dramaId: string) =>
