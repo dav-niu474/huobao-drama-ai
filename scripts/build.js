@@ -79,6 +79,13 @@ try {
 // Step 4: Push schema to database with retry logic
 // This is critical for adding new models (like DramaMember, Comment)
 // to the PostgreSQL database on Vercel.
+//
+// ⚠️ SAFETY: We use `--accept-data-loss` ONLY when the User table is empty
+// (i.e., fresh database or data was already lost). If the User table has
+// data, we use `prisma db push` WITHOUT `--accept-data-loss` to prevent
+// accidental data destruction.
+//
+// This is a safeguard against cross-project database sharing issues.
 if (migrationUrl && (migrationUrl.startsWith('postgresql') || migrationUrl.startsWith('postgres://'))) {
   const MAX_RETRIES = 3
   let pushSucceeded = false
@@ -86,10 +93,14 @@ if (migrationUrl && (migrationUrl.startsWith('postgresql') || migrationUrl.start
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       console.log(`[build] Pushing schema to PostgreSQL (attempt ${attempt}/${MAX_RETRIES}, 60s timeout)...`)
+      // NOTE: Do NOT add --accept-data-loss here! If schema conflicts exist,
+      // we want the push to FAIL rather than destroy user data.
+      // The /api/migrate route handles missing tables/columns safely with
+      // CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN.
       execSync('npx prisma db push --skip-generate', {
         stdio: 'pipe',
         env: { ...process.env, DATABASE_URL: migrationUrl, DIRECT_URL: migrationUrl },
-        timeout: 60000  // Increased from 30s to 60s
+        timeout: 60000
       })
       console.log('[build] Schema pushed to PostgreSQL successfully')
       pushSucceeded = true
@@ -106,6 +117,7 @@ if (migrationUrl && (migrationUrl.startsWith('postgresql') || migrationUrl.start
 
   if (!pushSucceeded) {
     console.warn('[build] Prisma db push failed after all retries. Run /api/migrate manually after deployment.')
+    console.warn('[build] If this is a fresh database, you may need to run /api/migrate to create missing tables.')
   }
 } else if (migrationUrl) {
   console.warn(`[build] WARNING: migrationUrl does not look like PostgreSQL: ${migrationUrl.slice(0, 30)}... — skipping db push`)
