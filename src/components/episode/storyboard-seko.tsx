@@ -721,6 +721,7 @@ export function StoryboardSeko({
   generatingShotImg,
   generatingVideo,
   generatingTts,
+  generatingAllTts,
   batchProgress,
   uploadingField,
   copiedField,
@@ -730,6 +731,7 @@ export function StoryboardSeko({
   handleGenerateShotImage,
   handleGenerateVideo,
   handleGenerateTts,
+  handleGenerateAllTts,
   handleUpload,
   handleCopy,
   handleUpdateStoryboard,
@@ -849,6 +851,23 @@ export function StoryboardSeko({
             <Film className="size-3.5" />
             生成全部视频
           </Button>
+
+          {handleGenerateAllTts && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleGenerateAllTts()}
+              disabled={storyboards.length === 0 || !!generatingAllTts}
+              className="hidden border-neutral-700 bg-transparent text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 md:inline-flex"
+            >
+              {generatingAllTts ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <AudioLines className="size-3.5" />
+              )}
+              生成全部配音
+            </Button>
+          )}
         </div>
       </div>
 

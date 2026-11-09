@@ -6,6 +6,7 @@
 
 import { db } from '@/lib/db'
 import { executeAgent } from '@/lib/agents/factory'
+import { generateEpisodeScript } from '@/lib/script-generation'
 
 // ── Helper: Resolve base URL for internal API calls ───────────
 
@@ -502,7 +503,25 @@ class BatchPipelineManager {
       return
     }
 
-    // Use script_rewriter agent
+    // ── 优先使用统一的 Toonflow 剧本生成（与单集工作台同一实现，保证格式一致）──
+    try {
+      const drama = await db.drama.findUnique({
+        where: { id: dramaId },
+        select: { userId: true },
+      })
+      await generateEpisodeScript(episode.id, {
+        duration: '120s',
+        userId: drama?.userId ?? undefined,
+      })
+      return
+    } catch (err) {
+      console.warn(
+        `[BatchPipeline] Toonflow script generation failed, falling back to script_rewriter agent:`,
+        err instanceof Error ? err.message : err
+      )
+    }
+
+    // ── Fallback: 旧 script_rewriter agent 改写 ──
     try {
       await executeAgent(
         'script_rewriter',
@@ -512,6 +531,17 @@ class BatchPipelineManager {
         undefined,
         { modelOverride: undefined }
       )
+      // 兜底成功后同步剧本状态（Toonflow 失败时可能遗留 failed）
+      const updated = await db.episode.findUnique({
+        where: { id: episode.id },
+        select: { scriptContent: true },
+      })
+      if (updated?.scriptContent?.trim()) {
+        await db.episode.update({
+          where: { id: episode.id },
+          data: { scriptStatus: 'completed' },
+        })
+      }
     } catch (err) {
       console.error(`[BatchPipeline] Script rewrite failed:`, err)
       throw err

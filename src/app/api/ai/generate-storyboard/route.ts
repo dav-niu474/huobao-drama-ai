@@ -129,7 +129,7 @@ ${charactersInfo ? `角色列表：\n${charactersInfo}\n` : ''}${scenesInfo ? `�
       })
       throw aiError
     }
-    })
+    }, { maxWait: 10000, timeout: 60000 })
   } catch (error) {
     console.error('Failed to generate storyboard:', error)
     return NextResponse.json(
