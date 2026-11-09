@@ -199,6 +199,12 @@ export async function POST(
       })
 
       return created
+    }, {
+      // 大部头小说：全量章节 JSON 写入 + 逐集 create（含大段 rawContent）
+      // 可能远超 Prisma 交互式事务默认 5s 超时；超时后事务被关闭，
+      // 后续操作会报 "Transaction not found"。这里放宽到 120s。
+      maxWait: 10000,
+      timeout: 120000,
     })
 
     return NextResponse.json({

@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
               detail: { currentShot: i + 1, totalShots: shots.length, shotTitle: shot.title },
             })))
           }
-        })
+        }, { maxWait: 10000, timeout: 60000 })
 
         // Step 7: Complete
         await db.episode.update({
