@@ -506,6 +506,53 @@ export async function autoInitProviders(): Promise<string[]> {
 // AI Client — unified interface with multi-provider support
 // ============================================================
 
+// ── AI 调用自动重试（429/5xx/网络抖动 → 指数退避 2s→8s→20s）──
+
+const AI_RETRY_DELAYS_MS = [2000, 8000, 20000]
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 判定是否为值得重试的瞬态错误（限流/服务端异常/网络抖动） */
+function isTransientAiError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message || ''
+  // 限流：含友好文案 “(HTTP 429)” 或 SDK 原始报错中的 429/限流关键词
+  if (/\b429\b/.test(msg)) return true
+  if (/rate[\s_-]?limit|限流|超限|请求过于频繁|请求频率/i.test(msg)) return true
+  // 服务端异常：含友好文案 “(HTTP 5xx)”
+  if (/HTTP 5\d{2}\b/.test(msg)) return true
+  // 网络层瞬态错误
+  if (
+    /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|network|timeout|timed?\s?out|aborted/i.test(
+      msg
+    )
+  )
+    return true
+  return false
+}
+
+/** 带指数退避的重试包装：仅重试瞬态错误，认证/模型不存在等永久错误直接抛出 */
+async function withAiRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= AI_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (attempt >= AI_RETRY_DELAYS_MS.length || !isTransientAiError(err)) throw err
+      const delay = AI_RETRY_DELAYS_MS[attempt]
+      console.warn(
+        `[aiClient.${label}] 第 ${attempt + 1} 次调用遇到瞬态错误，${delay / 1000}s 后自动重试:`,
+        err instanceof Error ? err.message : err
+      )
+      await sleep(delay)
+    }
+  }
+  throw lastError
+}
+
 export const aiClient = {
   // ---- Chat / LLM ----
 
@@ -527,12 +574,16 @@ export const aiClient = {
       try {
         const { default: ZAI } = await import('z-ai-web-dev-sdk')
         const zai = await ZAI.create()
-        const completion = await zai.chat.completions.create({
-          model: options?.model || provider.model,
-          messages,
-          temperature: options?.temperature ?? 0.7,
-          max_tokens: options?.max_tokens ?? 4096,
-        })
+        const completion = await withAiRetry(
+          () =>
+            zai.chat.completions.create({
+              model: options?.model || provider.model,
+              messages,
+              temperature: options?.temperature ?? 0.7,
+              max_tokens: options?.max_tokens ?? 4096,
+            }),
+          'chatCompletion(z-ai-sdk)'
+        )
         return completion
       } catch (err: any) {
         console.error('[z-ai-sdk] chat failed:', err.message)
@@ -566,40 +617,42 @@ export const aiClient = {
       headers['X-Title'] = 'AI Drama Creator'
     }
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    })
+    return withAiRetry(async () => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      })
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => 'Unknown error')
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
 
-      // Provide user-friendly error messages based on status code
-      let friendlyError: string
-      if (res.status === 401 || res.status === 403) {
-        friendlyError = `AI 供应商认证失败 (HTTP ${res.status})：请检查 API Key 是否正确配置`
-      } else if (res.status === 404) {
-        const modelMatch = text.match(/model[^"]*"?([^"]+)"?/i)
-        const modelName = modelMatch ? modelMatch[1] : '当前模型'
-        friendlyError = `模型不可用 (HTTP 404)：${modelName} 可能已下线，请在设置中切换其他模型`
-      } else if (res.status === 410) {
-        const eolMatch = text.match(/model['"]?\s*['"]?([^'"]+)['"]?.*?(\d{4}-\d{2}-\d{2})/i)
-        const modelName = eolMatch ? eolMatch[1] : '当前模型'
-        friendlyError = `模型已下线 (HTTP 410)：${modelName} 已停止服务，请在设置中切换其他模型`
-      } else if (res.status === 429) {
-        friendlyError = `请求频率超限 (HTTP 429)：请稍后重试或联系供应商提升配额`
-      } else if (res.status >= 500) {
-        friendlyError = `AI 供应商服务异常 (HTTP ${res.status})：请稍后重试`
-      } else {
-        friendlyError = `AI 调用失败 (HTTP ${res.status})：${text.slice(0, 200)}`
+        // Provide user-friendly error messages based on status code
+        let friendlyError: string
+        if (res.status === 401 || res.status === 403) {
+          friendlyError = `AI 供应商认证失败 (HTTP ${res.status})：请检查 API Key 是否正确配置`
+        } else if (res.status === 404) {
+          const modelMatch = text.match(/model[^"]*"?([^"]+)"?/i)
+          const modelName = modelMatch ? modelMatch[1] : '当前模型'
+          friendlyError = `模型不可用 (HTTP 404)：${modelName} 可能已下线，请在设置中切换其他模型`
+        } else if (res.status === 410) {
+          const eolMatch = text.match(/model['"]?\s*['"]?([^'"]+)['"]?.*?(\d{4}-\d{2}-\d{2})/i)
+          const modelName = eolMatch ? eolMatch[1] : '当前模型'
+          friendlyError = `模型已下线 (HTTP 410)：${modelName} 已停止服务，请在设置中切换其他模型`
+        } else if (res.status === 429) {
+          friendlyError = `请求频率超限 (HTTP 429)：请稍后重试或联系供应商提升配额`
+        } else if (res.status >= 500) {
+          friendlyError = `AI 供应商服务异常 (HTTP ${res.status})：请稍后重试`
+        } else {
+          friendlyError = `AI 调用失败 (HTTP ${res.status})：${text.slice(0, 200)}`
+        }
+
+        console.error(`[aiClient.chatCompletion] ${friendlyError}`, { status: res.status, url: provider.baseUrl, model: options?.model || provider.model })
+        throw new Error(friendlyError)
       }
 
-      console.error(`[aiClient.chatCompletion] ${friendlyError}`, { status: res.status, url: provider.baseUrl, model: options?.model || provider.model })
-      throw new Error(friendlyError)
-    }
-
-    return res.json()
+      return res
+    }, 'chatCompletion').then((res) => res.json())
   },
 
   async chat(

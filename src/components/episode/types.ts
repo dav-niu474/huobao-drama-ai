@@ -215,6 +215,8 @@ export interface StoryboardPanelProps {
   generatingShotImg: string | null
   generatingVideo: string | null
   generatingTts: string | null
+  /** 批量配音进行中（可选，由父级传入；配合 handleGenerateAllTts 使用） */
+  generatingAllTts?: boolean
   batchProgress: BatchProgress | null
   uploadingField: string | null
   copiedField: string | null
@@ -227,6 +229,8 @@ export interface StoryboardPanelProps {
   handleGenerateShotImage: (storyboard: Storyboard) => Promise<void>
   handleGenerateVideo: (storyboard: Storyboard) => Promise<void>
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>
+  /** 批量生成全部配音（可选；未传入时工具栏不展示该按钮） */
+  handleGenerateAllTts?: () => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
   handleUpdateStoryboard: (id: string, data: Partial<Storyboard>) => Promise<void>
