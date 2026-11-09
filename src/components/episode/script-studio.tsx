@@ -34,6 +34,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import type { EpisodeDetail } from '@/lib/store'
+import { NovelImportCard, type NovelImportResult } from '@/components/episode/novel-import-card'
 
 // ============================================================
 // Script parser — pure functions
@@ -219,6 +220,10 @@ export interface ScriptStudioProps {
   saving: boolean
   rawContent: string
   onGoSettings: () => void
+  /** 所属项目 ID；与 onNovelSplitDone 同时提供时，空态内嵌「导入小说」卡片 */
+  dramaId?: string
+  /** 小说分集完成回调（父级负责刷新剧集并切到新第一集） */
+  onNovelSplitDone?: (result: NovelImportResult) => void | Promise<void>
 }
 
 export function ScriptStudio({
@@ -231,6 +236,8 @@ export function ScriptStudio({
   saving,
   rawContent,
   onGoSettings,
+  dramaId,
+  onNovelSplitDone,
 }: ScriptStudioProps) {
   const { toast } = useToast()
 
@@ -463,6 +470,30 @@ export function ScriptStudio({
               <Loader2 className="size-7 animate-spin text-lime-300" />
               <div className="text-sm text-neutral-200">AI 正在生成本集剧本…</div>
               <div className="text-xs text-neutral-500">通常需要 30-90 秒</div>
+            </div>
+          ) : !hasScript && !rawContent.trim() && dramaId && onNovelSplitDone ? (
+            // ── 新流程：本集无小说内容时，先内嵌导入小说（无需跳回项目页），
+            //    分集完成后父级切到新第一集，rawContent 就绪即出现下方生成表单 ──
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4 [scrollbar-width:thin]">
+              <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 py-8 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-lime-300/10 text-lime-300">
+                  <BookOpenText className="size-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-semibold text-neutral-100">导入小说，开始创作</h3>
+                  <p className="text-sm leading-6 text-neutral-400">
+                    粘贴或上传小说，按章节自动拆分为多集；导入后本页即可一键生成剧本
+                  </p>
+                </div>
+                <NovelImportCard dramaId={dramaId} onDone={onNovelSplitDone} />
+                <button
+                  type="button"
+                  onClick={onGoSettings}
+                  className="text-xs text-neutral-500 underline-offset-4 transition-colors hover:text-lime-300 hover:underline"
+                >
+                  前往设置检查 AI 模型配置 →
+                </button>
+              </div>
             </div>
           ) : !hasScript ? (
             <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4 [scrollbar-width:thin]">

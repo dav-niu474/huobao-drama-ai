@@ -44,6 +44,8 @@ import { ResultDialog, EMPTY_RESULT_DIALOG, type ResultDialogState } from '@/com
 // Sub-components
 import { ScriptStudio } from '@/components/episode/script-studio'
 import { StoryboardSeko } from '@/components/episode/storyboard-seko'
+import { EpisodeSplitDialog } from '@/components/episode/episode-split-dialog'
+import type { NovelImportResult } from '@/components/episode/novel-import-card'
 import { ExtractPanel } from '@/components/episode/extract-panel'
 import { VoicePanel } from '@/components/episode/voice-panel'
 import { CharImagesPanel } from '@/components/episode/char-images-panel'
@@ -80,6 +82,7 @@ export function EpisodeWorkspace() {
     currentEpisode,
     setCurrentEpisode,
     currentDrama,
+    setCurrentDrama,
     navigateToProject,
     aiLoading,
     setAiLoading,
@@ -94,6 +97,8 @@ export function EpisodeWorkspace() {
   const [scriptGenerating, setScriptGenerating] = useState(false)
   const [dramaEpisodes, setDramaEpisodes] = useState<Episode[]>([])
   const [switchingEpisode, setSwitchingEpisode] = useState(false)
+  // 「从小说分集」弹窗（顶栏入口；剧本页空态另有内嵌导入卡片）
+  const [splitOpen, setSplitOpen] = useState(false)
   const [rawContent, setRawContent] = useState('')
   const [scriptContent, setScriptContent] = useState('')
   const [characters, setCharacters] = useState<Character[]>([])
@@ -238,6 +243,7 @@ export function EpisodeWorkspace() {
       // Fetch characters & scenes & props + episodes list from drama
       if (selectedDramaId) {
         const dramaDetail = await api.dramas.get(selectedDramaId)
+        setCurrentDrama(dramaDetail)
         setCharacters(dramaDetail.characters ?? [])
         setScenes(dramaDetail.scenes ?? [])
         setProps(dramaDetail.props ?? [])
@@ -247,7 +253,7 @@ export function EpisodeWorkspace() {
     } catch (err) {
       toast({ title: '加载集数据失败', description: String(err), variant: 'destructive' })
     }
-  }, [selectedEpisodeId, selectedDramaId, setCurrentEpisode, toast])
+  }, [selectedEpisodeId, selectedDramaId, setCurrentEpisode, setCurrentDrama, toast])
 
   useEffect(() => {
     fetchEpisode()
@@ -488,6 +494,25 @@ export function EpisodeWorkspace() {
     } finally {
       setSwitchingEpisode(false)
     }
+  }
+
+  // ── 小说分集完成：刷新剧集并切到新第一集（顶栏弹窗与剧本页内嵌卡片共用）──
+  // replace 语义下旧空集已被删除，必须切到新集避免 fetch 旧 id 404
+
+  const handleNovelSplitDone = async (result: NovelImportResult) => {
+    if (!selectedDramaId) return
+    const first = [...result.episodes].sort((a, b) => a.episodeNumber - b.episodeNumber)[0]
+    if (first) {
+      setSwitchingEpisode(true)
+      try {
+        const { navigateToEpisode } = useAppStore.getState()
+        navigateToEpisode(selectedDramaId, first.id)
+      } finally {
+        setSwitchingEpisode(false)
+      }
+    }
+    // 幂等刷新：覆盖 id 未变化导致 fetchEpisode 不触发的情况
+    await fetchEpisode()
   }
 
   // ── AI: Extract (via Agent) ─────────────────────────────────
@@ -1649,6 +1674,7 @@ export function EpisodeWorkspace() {
     generatingShotImg,
     generatingVideo,
     generatingTts,
+    generatingAllTts,
     batchProgress,
     uploadingField,
     copiedField,
@@ -1661,6 +1687,7 @@ export function EpisodeWorkspace() {
     handleGenerateShotImage,
     handleGenerateVideo,
     handleGenerateTts,
+    handleGenerateAllTts,
     handleUpload,
     handleCopy,
     handleUpdateStoryboard,
@@ -1721,6 +1748,8 @@ export function EpisodeWorkspace() {
           saving={saving}
           rawContent={rawContent}
           onGoSettings={() => setMainTab('settings')}
+          dramaId={selectedDramaId ?? undefined}
+          onNovelSplitDone={handleNovelSplitDone}
         />
       )
     }
@@ -1935,6 +1964,19 @@ export function EpisodeWorkspace() {
             <span className="hidden md:inline max-w-32 truncate">{dramaTitle}</span>
           </Button>
 
+          {/* 从小说分集（顶栏快捷入口，任何 Tab 可用） */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSplitOpen(true)}
+            disabled={!selectedDramaId}
+            className="h-8 gap-1.5 text-neutral-400 hover:bg-neutral-900 hover:text-lime-300 -ml-1 shrink-0 px-2"
+            title="从小说分集导入"
+          >
+            <BookOpenText className="size-3.5" />
+            <span className="hidden lg:inline text-xs">从小说分集</span>
+          </Button>
+
           {/* 剧集选择器 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1977,7 +2019,19 @@ export function EpisodeWorkspace() {
                 </DropdownMenuItem>
               ))}
               {sortedEpisodes.length === 0 && (
-                <div className="px-3 py-4 text-xs text-neutral-500 text-center">暂无剧集</div>
+                <div className="px-3 py-3 text-center">
+                  <p className="mb-2 text-xs text-neutral-500">暂无剧集，从小说导入创建</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSplitOpen(true)}
+                    disabled={!selectedDramaId}
+                    className="h-7 gap-1 border-neutral-800 bg-transparent text-xs text-lime-300 hover:bg-neutral-800 hover:text-lime-200"
+                  >
+                    <BookOpenText className="size-3" />
+                    从小说导入
+                  </Button>
+                </div>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -2099,6 +2153,17 @@ export function EpisodeWorkspace() {
       </div>
 
       <ResultDialog state={resultDialog} onClose={() => setResultDialog(EMPTY_RESULT_DIALOG)} />
+
+      {/* ── 从小说分集弹窗（顶栏入口 / 下拉空态入口） ─────────── */}
+      {selectedDramaId && (
+        <EpisodeSplitDialog
+          open={splitOpen}
+          onOpenChange={setSplitOpen}
+          dramaId={selectedDramaId}
+          dramaTitle={currentDrama?.title}
+          onDone={handleNovelSplitDone}
+        />
+      )}
     </div>
   )
 }
