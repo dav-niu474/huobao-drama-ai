@@ -8,7 +8,7 @@
 // 用户随后可直接在同一页面点击「生成剧本」，无需跳转项目详情页。
 // ============================================================
 
-import { useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import {
   BookOpen,
   FileText,
@@ -83,12 +83,19 @@ export function NovelImportCard({ dramaId, onDone }: NovelImportCardProps) {
   const [cpe, setCpe] = useState('0') // 0 = 自动
   const [submitting, setSubmitting] = useState(false)
 
-  // 客户端章节识别（实时预览）
+  // 客户端章节识别（300ms 防抖：大文本逐字输入时避免每次按键全量重算）
+  const [debouncedText, setDebouncedText] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedText(novelText), 300)
+    return () => clearTimeout(timer)
+  }, [novelText])
   const chapters = useMemo(
-    () => (novelText.trim() ? splitChapters(novelText) : []),
-    [novelText]
+    () => (debouncedText.trim() ? splitChapters(debouncedText) : []),
+    [debouncedText]
   )
   const chapterCount = chapters.length
+  const analyzing =
+    novelText.trim() !== debouncedText.trim() && novelText.trim().length > 0
 
   const isAuto = cpe === '0'
   // 自动模式：默认按每集 3 章；超过 72 章按每集 24 章估算
@@ -294,31 +301,42 @@ export function NovelImportCard({ dramaId, onDone }: NovelImportCardProps) {
       </Tabs>
 
       {/* 章节识别预览 */}
-      {novelText.trim() && chapterCount > 0 && (
+      {novelText.trim() && (chapterCount > 0 || analyzing) && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2">
-          <BookOpen className="size-4 shrink-0 text-lime-300" />
-          <span className="text-sm font-medium text-neutral-200">
-            识别到 {chapterCount} 个章节
-          </span>
-          <div className="flex min-w-0 flex-wrap items-center gap-1">
-            {chapters.slice(0, 3).map((ch) => (
-              <Badge
-                key={ch.index}
-                variant="secondary"
-                className="max-w-[130px] border border-neutral-800 bg-neutral-800 text-xs font-normal text-neutral-400"
-              >
-                <span className="truncate">{ch.title}</span>
-              </Badge>
-            ))}
-            {chapterCount > 3 && (
-              <Badge
-                variant="outline"
-                className="border border-neutral-800 text-xs font-normal text-neutral-500"
-              >
-                +{chapterCount - 3}
-              </Badge>
-            )}
-          </div>
+          {analyzing && chapterCount === 0 ? (
+            <>
+              <Loader2 className="size-4 shrink-0 animate-spin text-lime-300" />
+              <span className="text-sm font-medium text-neutral-200">
+                章节识别中…
+              </span>
+            </>
+          ) : (
+            <>
+              <BookOpen className="size-4 shrink-0 text-lime-300" />
+              <span className="text-sm font-medium text-neutral-200">
+                识别到 {chapterCount} 个章节
+              </span>
+              <div className="flex min-w-0 flex-wrap items-center gap-1">
+                {chapters.slice(0, 3).map((ch) => (
+                  <Badge
+                    key={ch.index}
+                    variant="secondary"
+                    className="max-w-[130px] border border-neutral-800 bg-neutral-800 text-xs font-normal text-neutral-400"
+                  >
+                    <span className="truncate">{ch.title}</span>
+                  </Badge>
+                ))}
+                {chapterCount > 3 && (
+                  <Badge
+                    variant="outline"
+                    className="border border-neutral-800 text-xs font-normal text-neutral-500"
+                  >
+                    +{chapterCount - 3}
+                  </Badge>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

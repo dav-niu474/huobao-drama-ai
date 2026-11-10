@@ -380,6 +380,16 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+
+    // 整理集号：把所有剧集按当前顺序重排为连续的 1..N（不改动内容）
+    renumberEpisodes: (dramaId: string) =>
+      request<{
+        success: boolean
+        total: number
+        changed: number
+      }>(`/api/dramas/${dramaId}/renumber-episodes`, {
+        method: 'POST',
+      }),
   },
 
   // ---- Episodes ----
