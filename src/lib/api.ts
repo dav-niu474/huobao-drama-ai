@@ -327,6 +327,8 @@ export const api = {
           completedSteps: number
           totalSteps: number
           currentStep: string | null
+          /** 软失败步骤的错误明细（供前端展示与重试失败集） */
+          stepErrors?: string[]
           error?: string
         }>
       }>(`/api/dramas/${dramaId}/batch-status`),

@@ -20,10 +20,15 @@ export async function POST(
       // No body — use defaults
     }
 
+    // 转发发起者的会话 Cookie：批次在后台执行，原始请求上下文已丢失，
+    // 内部生成 API（requireAuth）需要该 Cookie 才能通过鉴权（修复制作步骤 401）
+    const authCookie = request.cookies.toString()
+
     const batchState = await batchPipelineManager.startBatch(
       dramaId,
       body.episodeIds,
-      body.steps
+      body.steps,
+      { authCookie: authCookie || undefined }
     )
 
     return NextResponse.json({

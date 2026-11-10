@@ -59,6 +59,17 @@ import { TimelineEditor } from '@/components/episode/timeline-editor'
 // Shared types & helpers
 import type { UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
 import { PIPELINE_STEPS, statusBadge, panelVariants } from '@/components/episode/helpers'
+import { runBatch } from '@/lib/batch-runner'
+
+// ── 批量失败记录（供“重试失败项”使用）─────────────────
+
+interface FailedBatchItem {
+  id: string
+  label: string
+  error: string
+}
+
+type BatchKind = 'images' | 'videos' | 'tts' | 'compose' | 'charImages' | 'sceneImages'
 
 // ── Main tab definition (剧本 / 设定 / 分镜 / 短片) ──────────
 
@@ -119,8 +130,68 @@ export function EpisodeWorkspace() {
   const [importingAssets, setImportingAssets] = useState(false)
 
   // Helper to show result dialog for major AI flow completions
-  const showResultDialog = (status: ResultDialogState['status'], title: string, description: string, details?: string[]) => {
-    setResultDialog({ open: true, status, title, description, details })
+  const showResultDialog = (
+    status: ResultDialogState['status'],
+    title: string,
+    description: string,
+    details?: string[],
+    secondary?: { label: string; onClick: () => void }
+  ) => {
+    setResultDialog({
+      open: true,
+      status,
+      title,
+      description,
+      details,
+      secondaryLabel: secondary?.label,
+      onSecondary: secondary?.onClick,
+    })
+  }
+
+  // ── 批量结果汇总：全部成功 toast；部分失败 → 警告弹窗 + 重试失败项 ──
+  const showBatchResult = (
+    kind: BatchKind,
+    noun: string,
+    failed: FailedBatchItem[],
+    succeeded: number,
+    total: number,
+    aborted: boolean
+  ) => {
+    if (aborted) {
+      toast({ title: `已取消${noun}生成`, description: `本次已完成 ${succeeded}/${total} 个，可随时重新开始` })
+      return
+    }
+    if (failed.length === 0) {
+      toast({ title: `${total}个${noun}全部生成完毕` })
+      return
+    }
+    setLastBatchFailed({ kind, items: failed })
+    showResultDialog(
+      'warning',
+      `${succeeded}/${total} 个${noun}生成完毕，${failed.length} 个失败`,
+      '失败原因已列出。可能是限流或网络抖动，可一键重试失败项。',
+      failed.slice(0, 8).map((f) => `${f.label}：${f.error.slice(0, 100)}`),
+      { label: `重试失败项（${failed.length} 个）`, onClick: () => void handleRetryFailedBatch() }
+    )
+    if (failed.length > 8) {
+      // 详情太多时只弹窗展示前 8 条，完整明细输出到控制台
+      console.warn('[批量生成] 失败明细:', failed)
+    }
+  }
+
+  // ── 一键重试最近一次批量的失败项 ──
+  const handleRetryFailedBatch = async () => {
+    if (!lastBatchFailed) return
+    const ids = lastBatchFailed.items.map((f) => f.id)
+    const kind = lastBatchFailed.kind
+    setLastBatchFailed(null)
+    setResultDialog(EMPTY_RESULT_DIALOG)
+    if (kind === 'images') await handleGenerateAllImages(ids)
+    else if (kind === 'videos') await handleGenerateAllVideos(ids)
+    else if (kind === 'tts') await handleGenerateAllTts(ids)
+    else if (kind === 'compose') await handleComposeAll(ids)
+    else if (kind === 'charImages') await handleGenerateAllCharImages(ids)
+    else if (kind === 'sceneImages') await handleGenerateAllSceneImages(ids)
   }
 
   // Pipeline status state
@@ -135,6 +206,9 @@ export function EpisodeWorkspace() {
   // Agent execution hook — manages SSE streaming with rich log rendering
   const agentExec = useAgentExecution()
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null)
+  // 批量取消 + 最近一次批量失败记录（用于失败详情弹窗的一键重试）
+  const batchAbortRef = useRef<AbortController | null>(null)
+  const [lastBatchFailed, setLastBatchFailed] = useState<{ kind: BatchKind; items: FailedBatchItem[] } | null>(null)
   const [generatingAllTts, setGeneratingAllTts] = useState(false)
   const [composing, setComposing] = useState<string | null>(null)
   const [composingAll, setComposingAll] = useState(false)
@@ -232,10 +306,13 @@ export function EpisodeWorkspace() {
 
   // ── Fetch episode data ─────────────────────────────────────
 
-  const fetchEpisode = useCallback(async () => {
-    if (!selectedEpisodeId) return
+  // 可传入 override id：场景如“分集后切到新第一集”——此时闭包里
+  // 捕获的 selectedEpisodeId 还是旧值，直接调用会 fetch 旧 id 报 404
+  const fetchEpisode = useCallback(async (episodeIdOverride?: string) => {
+    const targetId = episodeIdOverride ?? selectedEpisodeId
+    if (!targetId) return
     try {
-      const detail = await api.episodes.get(selectedEpisodeId)
+      const detail = await api.episodes.get(targetId)
       setCurrentEpisode(detail)
       // Sync local state from episode
       setRawContent(detail.rawContent ?? '')
@@ -511,8 +588,8 @@ export function EpisodeWorkspace() {
         setSwitchingEpisode(false)
       }
     }
-    // 幂等刷新：覆盖 id 未变化导致 fetchEpisode 不触发的情况
-    await fetchEpisode()
+    // 幂等刷新：显式传入新集 id，避免闭包捕获旧 selectedEpisodeId 导致 404
+    await fetchEpisode(first?.id)
   }
 
   // ── AI: Extract (via Agent) ─────────────────────────────────
@@ -892,49 +969,76 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Generate all shot images ───────────────────────────
+  // ── AI: Generate all shot images（统一批量执行器：并发2 / 可取消 / 失败收集）──
 
-  const handleGenerateAllImages = async () => {
-    const pending = storyboards.filter((s) => !s.firstFrameUrl && s.imagePrompt)
+  const handleGenerateAllImages = async (onlyIds?: string[]) => {
+    const pending = storyboards.filter(
+      (s) => !s.firstFrameUrl && s.imagePrompt && (!onlyIds || onlyIds.includes(s.id))
+    )
     if (pending.length === 0) {
-      toast({ title: '没有可生成的镜头图片' })
+      toast({ title: onlyIds ? '失败项已全部生成成功' : '没有可生成的镜头图片' })
       return
     }
-    setBatchProgress({ current: 0, total: pending.length, message: '生成图片中...' })
-    let successCount = 0
-    for (let i = 0; i < pending.length; i++) {
-      const sb = pending[i]
-      setGeneratingShotImg(sb.id)
-      setBatchProgress({ current: i + 1, total: pending.length, message: `生成图片 ${i + 1}/${pending.length}...` })
-      try {
-        const result = await api.ai.generateImage(
-          sb.imagePrompt!,
-          '1024x576',
-          selectedEpisodeId || undefined,
-          sb.dialogueChar || undefined,
-        ) as Record<string, unknown>
-        if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: i + 1, total: pending.length, message: `图片 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
-          pollAbortRef.current?.abort()
-          const controller = new AbortController()
-          pollAbortRef.current = controller
-          const pollResult = await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
-          if (pollResult?.imageBase64) {
-            await api.storyboards.update(sb.id, { firstFrameUrl: `data:image/png;base64,${pollResult.imageBase64}` })
+    const controller = new AbortController()
+    batchAbortRef.current = controller
+    setBatchProgress({ current: 0, total: pending.length, message: '生成图片中...', failed: 0, onCancel: () => controller.abort() })
+    try {
+      const result = await runBatch(
+        pending,
+        async (sb) => {
+          setGeneratingShotImg(sb.id)
+          try {
+            const r = await api.ai.generateImage(
+              sb.imagePrompt!,
+              '1024x576',
+              selectedEpisodeId || undefined,
+              sb.dialogueChar || undefined,
+            ) as Record<string, unknown>
+            if (r.status === 'processing' && r.taskId) {
+              const pollResult = await pollAsyncTask('image', r.taskId as string, undefined, undefined, controller.signal)
+              if (controller.signal.aborted) throw new Error('已取消')
+              if (pollResult?.imageBase64) {
+                await api.storyboards.update(sb.id, { firstFrameUrl: `data:image/png;base64,${pollResult.imageBase64}` })
+              } else {
+                throw new Error('异步图片未返回数据')
+              }
+            } else {
+              await api.storyboards.update(sb.id, { firstFrameUrl: r.imageUrl as string })
+            }
+          } finally {
+            setGeneratingShotImg(null)
           }
-          successCount++
-        } else {
-          await api.storyboards.update(sb.id, { firstFrameUrl: result.imageUrl as string })
-          successCount++
+        },
+        {
+          concurrency: 2,
+          signal: controller.signal,
+          onItemDone: (_ok, failed, processed, total) => {
+            setBatchProgress({
+              current: processed,
+              total,
+              message: failed.length > 0
+                ? `生成图片 ${processed}/${total}（失败 ${failed.length}）...`
+                : `生成图片 ${processed}/${total}...`,
+              failed: failed.length,
+              onCancel: () => controller.abort(),
+            })
+          },
         }
-      } catch {
-        // Continue
-      }
+      )
+      showBatchResult(
+        'images',
+        '镜头图片',
+        result.failed.map((f) => ({ id: f.item.id, label: `镜头 ${f.item.shotNumber}`, error: f.error })),
+        result.succeeded.length,
+        pending.length,
+        result.aborted
+      )
+      if (result.processed > 0) await fetchEpisode()
+    } finally {
+      batchAbortRef.current = null
+      setGeneratingShotImg(null)
+      setBatchProgress(null)
     }
-    setGeneratingShotImg(null)
-    setBatchProgress(null)
-    toast({ title: `${successCount}/${pending.length}个镜头图片生成完毕` })
-    await fetchEpisode()
   }
 
   // ── AI: Grid image generation ──────────────────────────────
@@ -1091,107 +1195,182 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Generate all videos ─────────────────────────────────
+  // ── AI: Generate all videos（串行执行 / 可取消 / 失败收集）──
 
-  const handleGenerateAllVideos = async () => {
-    const pending = storyboards.filter((s) => !s.videoUrl && (s.videoPrompt || s.imagePrompt))
+  const handleGenerateAllVideos = async (onlyIds?: string[]) => {
+    const pending = storyboards.filter(
+      (s) => !s.videoUrl && (s.videoPrompt || s.imagePrompt) && (!onlyIds || onlyIds.includes(s.id))
+    )
     if (pending.length === 0) {
-      toast({ title: '没有可生成的镜头视频（需要镜头有视频提示词）' })
+      toast({ title: onlyIds ? '失败项已全部生成成功' : '没有可生成的镜头视频（需要镜头有视频提示词）' })
       return
     }
-    setBatchProgress({ current: 0, total: pending.length, message: '生成视频中...' })
-    let successCount = 0
-    for (let i = 0; i < pending.length; i++) {
-      const sb = pending[i]
-      setGeneratingVideo(sb.id)
-      setBatchProgress({ current: i + 1, total: pending.length, message: `生成视频 ${i + 1}/${pending.length}（${sb.firstFrameUrl ? '图生视频' : '文生视频'}）...` })
-      try {
-        const prompt = sb.videoPrompt ?? sb.imagePrompt ?? ''
-        const result = await api.ai.generateVideo(sb.id, prompt, sb.firstFrameUrl ?? undefined) as Record<string, unknown>
-        if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: i + 1, total: pending.length, message: `视频 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
-          pollAbortRef.current?.abort()
-          const controller = new AbortController()
-          pollAbortRef.current = controller
-          await pollAsyncTask('video', result.taskId as string, 10000, 60, controller.signal)
+    const controller = new AbortController()
+    batchAbortRef.current = controller
+    setBatchProgress({ current: 0, total: pending.length, message: '生成视频中...', failed: 0, onCancel: () => controller.abort() })
+    try {
+      const result = await runBatch(
+        pending,
+        async (sb) => {
+          setGeneratingVideo(sb.id)
+          try {
+            const prompt = sb.videoPrompt ?? sb.imagePrompt ?? ''
+            const r = await api.ai.generateVideo(sb.id, prompt, sb.firstFrameUrl ?? undefined) as Record<string, unknown>
+            if (r.status === 'processing' && r.taskId) {
+              await pollAsyncTask('video', r.taskId as string, 10000, 60, controller.signal)
+              if (controller.signal.aborted) throw new Error('已取消')
+            }
+          } finally {
+            setGeneratingVideo(null)
+          }
+        },
+        {
+          // 视频单价高且供应商限流严格，保持串行
+          concurrency: 1,
+          signal: controller.signal,
+          onItemDone: (_ok, failed, processed, total) => {
+            setBatchProgress({
+              current: processed,
+              total,
+              message: failed.length > 0
+                ? `生成视频 ${processed}/${total}（失败 ${failed.length}）...`
+                : `生成视频 ${processed}/${total}...`,
+              failed: failed.length,
+              onCancel: () => controller.abort(),
+            })
+          },
         }
-        successCount++
-      } catch {
-        // Continue
-      }
+      )
+      showBatchResult(
+        'videos',
+        '镜头视频',
+        result.failed.map((f) => ({ id: f.item.id, label: `镜头 ${f.item.shotNumber}`, error: f.error })),
+        result.succeeded.length,
+        pending.length,
+        result.aborted
+      )
+      if (result.processed > 0) await fetchEpisode()
+    } finally {
+      batchAbortRef.current = null
+      setGeneratingVideo(null)
+      setBatchProgress(null)
     }
-    setGeneratingVideo(null)
-    setBatchProgress(null)
-    toast({ title: `${successCount}/${pending.length}个镜头视频生成完毕` })
-    await fetchEpisode()
   }
 
-  // ── AI: Batch generate all character images ──────────────
+  // ── AI: Batch generate all character images（修复旧版无控制并发 forEach 竞态）──
 
-  const handleGenerateAllCharImages = async () => {
-    const charsPending = characters.filter((c) => !c.imageUrl)
+  const handleGenerateAllCharImages = async (onlyIds?: string[]) => {
+    const charsPending = characters.filter((c) => !c.imageUrl && (!onlyIds || onlyIds.includes(c.id)))
     if (charsPending.length === 0) {
-      toast({ title: '所有角色都已有图片' })
+      toast({ title: onlyIds ? '失败项已全部生成成功' : '所有角色都已有图片' })
       return
     }
-    setBatchProgress({ current: 0, total: charsPending.length, message: '生成角色图片中...' })
-    let successCount = 0
-    for (let i = 0; i < charsPending.length; i++) {
-      const char = charsPending[i]
-      setGeneratingCharImg(char.id)
-      setBatchProgress({ current: i + 1, total: charsPending.length, message: `生成角色头像 ${i + 1}/${charsPending.length}...` })
-      try {
-        const result = await api.ai.generateCharacterImage(char.id) as Record<string, unknown>
-        if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: i + 1, total: charsPending.length, message: `角色头像 ${i + 1}/${charsPending.length} 异步生成中...` })
-          pollAbortRef.current?.abort()
-          const controller = new AbortController()
-          pollAbortRef.current = controller
-          await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
+    const controller = new AbortController()
+    batchAbortRef.current = controller
+    setBatchProgress({ current: 0, total: charsPending.length, message: '生成角色图片中...', failed: 0, onCancel: () => controller.abort() })
+    try {
+      const result = await runBatch(
+        charsPending,
+        async (char) => {
+          setGeneratingCharImg(char.id)
+          try {
+            const r = await api.ai.generateCharacterImage(char.id) as Record<string, unknown>
+            if (r.status === 'processing' && r.taskId) {
+              await pollAsyncTask('image', r.taskId as string, undefined, undefined, controller.signal)
+              if (controller.signal.aborted) throw new Error('已取消')
+            }
+          } finally {
+            setGeneratingCharImg(null)
+          }
+        },
+        {
+          concurrency: 2,
+          signal: controller.signal,
+          onItemDone: (_ok, failed, processed, total) => {
+            setBatchProgress({
+              current: processed,
+              total,
+              message: failed.length > 0
+                ? `生成角色头像 ${processed}/${total}（失败 ${failed.length}）...`
+                : `生成角色头像 ${processed}/${total}...`,
+              failed: failed.length,
+              onCancel: () => controller.abort(),
+            })
+          },
         }
-        successCount++
-      } catch {
-        // continue
-      }
+      )
+      showBatchResult(
+        'charImages',
+        '角色图片',
+        result.failed.map((f) => ({ id: f.item.id, label: `角色「${f.item.name}」`, error: f.error })),
+        result.succeeded.length,
+        charsPending.length,
+        result.aborted
+      )
+      if (result.processed > 0) await fetchEpisode()
+    } finally {
+      batchAbortRef.current = null
+      setGeneratingCharImg(null)
+      setBatchProgress(null)
     }
-    setGeneratingCharImg(null)
-    setBatchProgress(null)
-    toast({ title: `${successCount}/${charsPending.length}个角色图片生成完毕` })
-    await fetchEpisode()
   }
 
-  // ── AI: Batch generate all scene images ───────────────────
+  // ── AI: Batch generate all scene images（修复旧版无控制并发 forEach 竞态）──
 
-  const handleGenerateAllSceneImages = async () => {
-    const scenesPending = scenes.filter((s) => !s.imageUrl)
+  const handleGenerateAllSceneImages = async (onlyIds?: string[]) => {
+    const scenesPending = scenes.filter((s) => !s.imageUrl && (!onlyIds || onlyIds.includes(s.id)))
     if (scenesPending.length === 0) {
-      toast({ title: '所有场景都已有图片' })
+      toast({ title: onlyIds ? '失败项已全部生成成功' : '所有场景都已有图片' })
       return
     }
-    setBatchProgress({ current: 0, total: scenesPending.length, message: '生成场景图片中...' })
-    let successCount = 0
-    for (let i = 0; i < scenesPending.length; i++) {
-      const scene = scenesPending[i]
-      setGeneratingSceneImg(scene.id)
-      setBatchProgress({ current: i + 1, total: scenesPending.length, message: `生成场景图 ${i + 1}/${scenesPending.length}...` })
-      try {
-        const result = await api.ai.generateSceneImage(scene.id) as Record<string, unknown>
-        if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: i + 1, total: scenesPending.length, message: `场景图 ${i + 1}/${scenesPending.length} 异步生成中...` })
-          pollAbortRef.current?.abort()
-          const controller = new AbortController()
-          pollAbortRef.current = controller
-          await pollAsyncTask('image', result.taskId as string, undefined, undefined, controller.signal)
+    const controller = new AbortController()
+    batchAbortRef.current = controller
+    setBatchProgress({ current: 0, total: scenesPending.length, message: '生成场景图片中...', failed: 0, onCancel: () => controller.abort() })
+    try {
+      const result = await runBatch(
+        scenesPending,
+        async (scene) => {
+          setGeneratingSceneImg(scene.id)
+          try {
+            const r = await api.ai.generateSceneImage(scene.id) as Record<string, unknown>
+            if (r.status === 'processing' && r.taskId) {
+              await pollAsyncTask('image', r.taskId as string, undefined, undefined, controller.signal)
+              if (controller.signal.aborted) throw new Error('已取消')
+            }
+          } finally {
+            setGeneratingSceneImg(null)
+          }
+        },
+        {
+          concurrency: 2,
+          signal: controller.signal,
+          onItemDone: (_ok, failed, processed, total) => {
+            setBatchProgress({
+              current: processed,
+              total,
+              message: failed.length > 0
+                ? `生成场景图 ${processed}/${total}（失败 ${failed.length}）...`
+                : `生成场景图 ${processed}/${total}...`,
+              failed: failed.length,
+              onCancel: () => controller.abort(),
+            })
+          },
         }
-        successCount++
-      } catch {
-        // continue
-      }
+      )
+      showBatchResult(
+        'sceneImages',
+        '场景图片',
+        result.failed.map((f) => ({ id: f.item.id, label: `场景「${f.item.location}」`, error: f.error })),
+        result.succeeded.length,
+        scenesPending.length,
+        result.aborted
+      )
+      if (result.processed > 0) await fetchEpisode()
+    } finally {
+      batchAbortRef.current = null
+      setGeneratingSceneImg(null)
+      setBatchProgress(null)
     }
-    setGeneratingSceneImg(null)
-    setBatchProgress(null)
-    toast({ title: `${successCount}/${scenesPending.length}个场景图片生成完毕` })
-    await fetchEpisode()
   }
 
   // ── Copy to clipboard ──────────────────────────────────────
@@ -1263,43 +1442,72 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── Generate all TTS ─────────────────────────────────────────
+  // ── Generate all TTS（并发3 / 可取消 / 失败收集）────────────
 
-  const handleGenerateAllTts = async () => {
-    const pending = storyboards.filter((s) => s.dialogue && !s.ttsAudioUrl)
+  const handleGenerateAllTts = async (onlyIds?: string[]) => {
+    const pending = storyboards.filter(
+      (s) => s.dialogue && !s.ttsAudioUrl && (!onlyIds || onlyIds.includes(s.id))
+    )
     if (pending.length === 0) {
-      toast({ title: '没有可生成的配音（需要镜头有对白）' })
+      toast({ title: onlyIds ? '失败项已全部生成成功' : '没有可生成的配音（需要镜头有对白）' })
       return
     }
+    const controller = new AbortController()
+    batchAbortRef.current = controller
     setGeneratingAllTts(true)
-    setBatchProgress({ current: 0, total: pending.length, message: '生成配音中...' })
-    let successCount = 0
-    for (let i = 0; i < pending.length; i++) {
-      const sb = pending[i]
-      setGeneratingTts(sb.id)
-      setBatchProgress({ current: i + 1, total: pending.length, message: `生成配音 ${i + 1}/${pending.length}...` })
-      try {
-        // Resolve voiceId from character lookup (same as single-shot handler)
-        let voiceId: string | undefined
-        if (sb.dialogueChar) {
-          const character = characters.find(
-            (c) => c.name.toLowerCase() === sb.dialogueChar!.toLowerCase()
-          )
-          if (character?.voiceId) {
-            voiceId = character.voiceId
+    setBatchProgress({ current: 0, total: pending.length, message: '生成配音中...', failed: 0, onCancel: () => controller.abort() })
+    try {
+      const result = await runBatch(
+        pending,
+        async (sb) => {
+          setGeneratingTts(sb.id)
+          try {
+            // Resolve voiceId from character lookup (same as single-shot handler)
+            let voiceId: string | undefined
+            if (sb.dialogueChar) {
+              const character = characters.find(
+                (c) => c.name.toLowerCase() === sb.dialogueChar!.toLowerCase()
+              )
+              if (character?.voiceId) {
+                voiceId = character.voiceId
+              }
+            }
+            await api.ai.generateTts(sb.id, sb.dialogue!, voiceId)
+          } finally {
+            setGeneratingTts(null)
           }
+        },
+        {
+          concurrency: 3,
+          signal: controller.signal,
+          onItemDone: (_ok, failed, processed, total) => {
+            setBatchProgress({
+              current: processed,
+              total,
+              message: failed.length > 0
+                ? `生成配音 ${processed}/${total}（失败 ${failed.length}）...`
+                : `生成配音 ${processed}/${total}...`,
+              failed: failed.length,
+              onCancel: () => controller.abort(),
+            })
+          },
         }
-        await api.ai.generateTts(sb.id, sb.dialogue!, voiceId)
-        successCount++
-      } catch {
-        // Continue
-      }
+      )
+      showBatchResult(
+        'tts',
+        '镜头配音',
+        result.failed.map((f) => ({ id: f.item.id, label: `镜头 ${f.item.shotNumber}`, error: f.error })),
+        result.succeeded.length,
+        pending.length,
+        result.aborted
+      )
+      if (result.processed > 0) await fetchEpisode()
+    } finally {
+      batchAbortRef.current = null
+      setGeneratingTts(null)
+      setBatchProgress(null)
+      setGeneratingAllTts(false)
     }
-    setGeneratingTts(null)
-    setBatchProgress(null)
-    setGeneratingAllTts(false)
-    toast({ title: `${successCount}/${pending.length}个镜头配音生成完毕` })
-    await fetchEpisode()
   }
 
   // ── Server-side FFmpeg compose (single shot) ────────────────
@@ -1338,9 +1546,10 @@ export function EpisodeWorkspace() {
 
   // ── Compose a single shot (server FFmpeg first, client fallback) ──
 
-  const handleComposeShot = async (storyboard: Storyboard) => {
+  const handleComposeShot = async (storyboard: Storyboard, opts?: { throwOnError?: boolean }) => {
     if (!storyboard.videoUrl) {
       toast({ title: '该镜头没有视频，无法合成', variant: 'destructive' })
+      if (opts?.throwOnError) throw new Error('该镜头没有视频')
       return
     }
     setComposing(storyboard.id)
@@ -1475,40 +1684,76 @@ export function EpisodeWorkspace() {
       toast({ title: `镜头 ${storyboard.shotNumber} 已合成（WebM 客户端）` })
       await fetchEpisode()
     } catch (err) {
+      if (opts?.throwOnError) throw err
       toast({ title: '合成失败', description: String(err), variant: 'destructive' })
     } finally {
       setComposing(null)
     }
   }
 
-  // ── Compose all shots ───────────────────────────────────────
+  // ── Compose all shots（可取消 / 失败收集 / FFmpeg 可用时并发2）──
 
-  const handleComposeAll = async () => {
-    const composable = storyboards.filter((s) => s.videoUrl && !s.composedUrl)
+  const handleComposeAll = async (onlyIds?: string[]) => {
+    const composable = storyboards.filter(
+      (s) => s.videoUrl && !s.composedUrl && (!onlyIds || onlyIds.includes(s.id))
+    )
     if (composable.length === 0) {
-      toast({ title: '没有可合成的镜头（需要有视频）' })
+      toast({ title: onlyIds ? '失败项已全部合成成功' : '没有可合成的镜头（需要有视频）' })
       return
     }
     setComposingAll(true)
     const mode = ffmpegAvailable ? 'FFmpeg' : 'WebM'
-    setBatchProgress({ current: 0, total: composable.length, message: `合成中（${mode}）...` })
-    let successCount = 0
-    for (let i = 0; i < composable.length; i++) {
-      const sb = composable[i]
-      setComposing(sb.id)
-      setBatchProgress({ current: i + 1, total: composable.length, message: `合成镜头 ${i + 1}/${composable.length}（${mode} 字幕+配音）...` })
-      try {
-        await handleComposeShot(sb)
-        successCount++
-      } catch {
-        // Continue
-      }
+    const controller = new AbortController()
+    batchAbortRef.current = controller
+    setBatchProgress({ current: 0, total: composable.length, message: `合成中（${mode}）...`, failed: 0, onCancel: () => controller.abort() })
+    try {
+      const result = await runBatch(
+        composable,
+        async (sb) => {
+          setComposing(sb.id)
+          try {
+            if (ffmpegAvailable) {
+              const ok = await handleServerCompose(sb)
+              if (!ok) throw new Error('服务端 FFmpeg 合成失败')
+            } else {
+              // 客户端 Canvas 合成依赖 MediaRecorder/音频上下文，保持串行且错误上抛
+              await handleComposeShot(sb, { throwOnError: true })
+            }
+          } finally {
+            setComposing(null)
+          }
+        },
+        {
+          concurrency: ffmpegAvailable ? 2 : 1,
+          signal: controller.signal,
+          onItemDone: (_ok, failed, processed, total) => {
+            setBatchProgress({
+              current: processed,
+              total,
+              message: failed.length > 0
+                ? `合成镜头 ${processed}/${total}（失败 ${failed.length}）...`
+                : `合成镜头 ${processed}/${total}（${mode} 字幕+配音）...`,
+              failed: failed.length,
+              onCancel: () => controller.abort(),
+            })
+          },
+        }
+      )
+      showBatchResult(
+        'compose',
+        '镜头合成',
+        result.failed.map((f) => ({ id: f.item.id, label: `镜头 ${f.item.shotNumber}`, error: f.error })),
+        result.succeeded.length,
+        composable.length,
+        result.aborted
+      )
+      if (result.processed > 0) await fetchEpisode()
+    } finally {
+      batchAbortRef.current = null
+      setComposing(null)
+      setBatchProgress(null)
+      setComposingAll(false)
     }
-    setComposing(null)
-    setBatchProgress(null)
-    setComposingAll(false)
-    toast({ title: `${successCount}/${composable.length}个镜头合成完毕（${mode}）` })
-    await fetchEpisode()
   }
 
   // ── Server-side merge all composed shots ────────────────────
@@ -1798,6 +2043,7 @@ export function EpisodeWorkspace() {
                 copiedField={copiedField}
                 handleGenerateCharSheet={handleGenerateCharSheet}
                 handleGenerateCharImage={handleGenerateCharImage}
+                handleGenerateAllCharImages={handleGenerateAllCharImages}
                 handleUpload={handleUpload}
                 handleCopy={handleCopy}
               />
@@ -1811,6 +2057,7 @@ export function EpisodeWorkspace() {
                 uploadingField={uploadingField}
                 copiedField={copiedField}
                 handleGenerateSceneImage={handleGenerateSceneImage}
+                handleGenerateAllSceneImages={handleGenerateAllSceneImages}
                 handleUpload={handleUpload}
                 handleCopy={handleCopy}
               />
