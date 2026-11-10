@@ -328,6 +328,53 @@ export function EpisodeWorkspace() {
       }
       setStoryboards(detail.storyboards ?? [])
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const status = (err as Error & { status?: number })?.status
+      const isNotFound = status === 404 || /not found/i.test(msg)
+
+      // ── 404 自愈：目标集已被删除（重新分集 replace / 其他端操作）──
+      // 不再弹出死胡同报错，而是刷新剧集列表并自动切到第一个有效集；
+      // 若项目下已无任何集，则清空状态回到「导入小说」空态。
+      if (isNotFound && selectedDramaId) {
+        try {
+          const dramaDetail = await api.dramas.get(selectedDramaId)
+          setCurrentDrama(dramaDetail)
+          const eps = [...(dramaDetail.episodes ?? [])].sort(
+            (a, b) => a.episodeNumber - b.episodeNumber
+          )
+          setDramaEpisodes(eps)
+          setCharacters(dramaDetail.characters ?? [])
+          setScenes(dramaDetail.scenes ?? [])
+          setProps(dramaDetail.props ?? [])
+
+          const fallback = eps[0]
+          if (fallback && fallback.id !== targetId) {
+            // 切到第一个有效集（selectedEpisodeId 变化会触发 effect 重新拉取）
+            useAppStore.getState().navigateToEpisode(selectedDramaId, fallback.id)
+            toast({
+              title: `原集已不存在，已自动切换到第 ${fallback.episodeNumber} 集`,
+              description: '该集可能已被重新分集替换，未保存的内容无法恢复',
+            })
+          } else if (!fallback) {
+            // 项目下已无任何剧集 → 清空进入空态（剧本页显示导入小说卡片）
+            setCurrentEpisode(null)
+            setRawContent('')
+            setScriptContent('')
+            setStoryboards([])
+            toast({
+              title: '项目暂无剧集',
+              description: '原集已被删除，可在「剧本」页导入小说重新开始',
+            })
+          } else {
+            // fallback 与目标相同仍 404 → 异常状态，按原错误处理
+            throw err
+          }
+        } catch {
+          toast({ title: '加载集数据失败', description: String(err), variant: 'destructive' })
+        }
+        return
+      }
+
       toast({ title: '加载集数据失败', description: String(err), variant: 'destructive' })
     }
   }, [selectedEpisodeId, selectedDramaId, setCurrentEpisode, setCurrentDrama, toast])
@@ -587,9 +634,13 @@ export function EpisodeWorkspace() {
       } finally {
         setSwitchingEpisode(false)
       }
+      // 幂等刷新：显式传入新集 id，避免闭包捕获旧 selectedEpisodeId 导致 404
+      await fetchEpisode(first.id)
+    } else {
+      // 理论上不会发生（分集至少返回一集）；兜底：不 fetch 旧集 id，
+      // 直接刷新剧集列表，若旧集已被删除由 fetchEpisode 的 404 自愈接管
+      await fetchEpisode()
     }
-    // 幂等刷新：显式传入新集 id，避免闭包捕获旧 selectedEpisodeId 导致 404
-    await fetchEpisode(first?.id)
   }
 
   // ── AI: Extract (via Agent) ─────────────────────────────────
