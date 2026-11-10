@@ -29,7 +29,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       // But if it has episodes/totalGenerated etc., return it so the caller
       // can handle partial failures gracefully.
       if (json.error && !json.episodes && json.totalGenerated === undefined) {
-        throw new Error(json.error || text)
+        const e = new Error(json.error || text)
+        // 附带 HTTP 状态码，供调用方区分 404（资源已删除）与其它错误并自愈
+        ;(e as Error & { status?: number }).status = res.status
+        throw e
       }
       // Return structured error response for the caller to handle
       return json as T
@@ -37,7 +40,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       if (parseErr instanceof Error && parseErr.message !== text) {
         throw parseErr // Re-throw if it was a JSON.parse success with error field
       }
-      throw new Error(`API ${res.status}: ${text.slice(0, 200)}`)
+      {
+        const e = new Error(`API ${res.status}: ${text.slice(0, 200)}`)
+        ;(e as Error & { status?: number }).status = res.status
+        throw e
+      }
     }
   }
   return res.json() as Promise<T>
@@ -327,6 +334,8 @@ export const api = {
           completedSteps: number
           totalSteps: number
           currentStep: string | null
+          /** 软失败步骤的错误明细（供前端展示与重试失败集） */
+          stepErrors?: string[]
           error?: string
         }>
       }>(`/api/dramas/${dramaId}/batch-status`),

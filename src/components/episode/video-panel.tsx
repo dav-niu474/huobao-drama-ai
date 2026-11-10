@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { panelVariants, shotTypeLabel } from './helpers'
+import { BatchProgressControls } from './batch-progress-controls'
 import type { VideoPanelProps } from './types'
 
 export function VideoPanel({
@@ -84,6 +85,7 @@ export function VideoPanel({
               <Loader2 className="size-3 animate-spin" />
               <span>{batchProgress.message}</span>
               <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
+              <BatchProgressControls progress={batchProgress} />
             </div>
           )}
           {pendingVideoShots.length > 0 && (

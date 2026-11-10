@@ -24,6 +24,9 @@ export interface ResultDialogState {
   confirmLabel?: string
   /** Optional callback when user confirms — typically to refresh data */
   onConfirm?: () => void
+  /** 次要操作（如「重试失败项」）— 展示在确认按钮左侧 */
+  secondaryLabel?: string
+  onSecondary?: () => void
 }
 
 export const EMPTY_RESULT_DIALOG: ResultDialogState = {
@@ -47,6 +50,8 @@ export function ResultDialog({ state, onClose }: ResultDialogProps) {
     description,
     details,
     confirmLabel,
+    secondaryLabel,
+    onSecondary,
   } = state
 
   const iconMap = {
@@ -92,7 +97,19 @@ export function ResultDialog({ state, onClose }: ResultDialogProps) {
           </div>
         )}
 
-        <DialogFooter className="sm:justify-center pt-2">
+        <DialogFooter className="sm:justify-center pt-2 gap-2">
+          {secondaryLabel && onSecondary && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                onSecondary()
+                onClose()
+              }}
+              className="min-w-[120px]"
+            >
+              {secondaryLabel}
+            </Button>
+          )}
           <Button
             variant={buttonVariantMap[status]}
             onClick={() => {

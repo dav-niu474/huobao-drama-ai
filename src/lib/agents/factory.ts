@@ -15,7 +15,7 @@ import { DEFAULT_SYSTEM_PROMPTS } from './prompts'
 import { getOpenAIToolsForAgent } from './tools/index'
 import { getExecutorsForAgent, ToolExecutor } from './tools/executors'
 import { loadAgentSkill } from './skills'
-import { getActiveProviderForUser } from '@/lib/ai-config'
+import { getActiveProviderForUser, withAiRetry } from '@/lib/ai-config'
 
 // ============================================================
 // Extended message types for tool calling
@@ -162,7 +162,10 @@ async function callLLMWithTools(
         body.tools = tools
         body.tool_choice = 'auto'
       }
-      const completion = await zai.chat.completions.create(body as any)
+      const completion = await withAiRetry(
+        () => zai.chat.completions.create(body as any),
+        'callLLMWithTools(z-ai-sdk)'
+      )
       const choice = completion.choices?.[0]
       return {
         message: {
@@ -217,11 +220,18 @@ async function callLLMWithTools(
 
   // Create AbortController with inactivity-based timeout
   // Timeout resets every time we receive ANY data from the stream
-  const controller = new AbortController()
-  let inactivityTimer = setTimeout(() => {
-    console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
-    controller.abort()
-  }, LLM_INACTIVITY_TIMEOUT)
+  // ⚠️ 每次重连都重新 arm 一个全新的 controller/signal，避免上一次尝试
+  // 被中止后，新尝试拿到已 aborted 的 signal 立即失败。
+  let controller = new AbortController()
+  let inactivityTimer: ReturnType<typeof setTimeout>
+  const armInactivityGuard = () => {
+    controller = new AbortController()
+    clearTimeout(inactivityTimer)
+    inactivityTimer = setTimeout(() => {
+      console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
+      controller.abort()
+    }, LLM_INACTIVITY_TIMEOUT)
+  }
 
   const resetInactivityTimer = () => {
     clearTimeout(inactivityTimer)
@@ -288,7 +298,11 @@ async function callLLMWithTools(
     }
   }
 
-  try {
+  // Initial connection — retried on transient errors (429/5xx/network jitter).
+  // 每次尝试都重新 arm inactivity guard（全新 signal）。
+  // 一旦流开始返回数据，后续失败不再重试（重试会导致已发出的流式事件重复）。
+  const openStream = async (): Promise<Response> => {
+    armInactivityGuard()
     const res = await fetch(url, {
       method: 'POST',
       headers,
@@ -328,6 +342,12 @@ async function callLLMWithTools(
     if (!res.body) {
       throw new Error('LLM API returned no body')
     }
+
+    return res
+  }
+
+  try {
+    const res = await withAiRetry(openStream, 'callLLMWithTools')
 
     // ── Stream reading + tool call assembly ──
     const reader = res.body.getReader()

@@ -17,6 +17,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
+import { BatchProgressControls } from './batch-progress-controls'
 import { panelVariants } from './helpers'
 import type { SceneImagesPanelProps } from './types'
 
@@ -28,6 +29,7 @@ export function SceneImagesPanel({
   uploadingField,
   copiedField,
   handleGenerateSceneImage,
+  handleGenerateAllSceneImages,
   handleUpload,
   handleCopy,
 }: SceneImagesPanelProps) {
@@ -81,6 +83,7 @@ export function SceneImagesPanel({
               <Loader2 className="size-3 animate-spin" />
               <span>{batchProgress.message}</span>
               <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
+              <BatchProgressControls progress={batchProgress} />
             </div>
           )}
           {scenesMissingImage.length > 0 && (
@@ -88,13 +91,18 @@ export function SceneImagesPanel({
               size="sm"
               variant="outline"
               onClick={() => {
-                scenesMissingImage.forEach((s) => {
-                  handleGenerateSceneImage(s.id)
-                })
+                if (handleGenerateAllSceneImages) {
+                  // 统一批量执行器：受控并发 + 失败收集 + 一键重试
+                  void handleGenerateAllSceneImages()
+                } else {
+                  scenesMissingImage.forEach((s) => {
+                    handleGenerateSceneImage(s.id)
+                  })
+                }
               }}
-              disabled={aiLoading || !!generatingSceneImg}
+              disabled={aiLoading || !!generatingSceneImg || !!batchProgress?.onCancel}
             >
-              {generatingSceneImg ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+              {generatingSceneImg || batchProgress?.onCancel ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
               批量生成全部场景图
               <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{scenesMissingImage.length}</Badge>
             </Button>

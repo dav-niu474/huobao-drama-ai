@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { panelVariants } from './helpers'
+import { BatchProgressControls } from './batch-progress-controls'
 import type { ComposePanelProps } from './types'
 
 export function ComposePanel({
@@ -106,6 +107,7 @@ export function ComposePanel({
               <Loader2 className="size-3 animate-spin" />
               <span>{batchProgress.message}</span>
               <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
+              <BatchProgressControls progress={batchProgress} />
             </div>
           )}
         </div>

@@ -116,6 +116,10 @@ export interface BatchProgress {
   current: number
   total: number
   message: string
+  /** 已失败项数（批量执行器收集） */
+  failed?: number
+  /** 批量取消回调（提供时进度条旁展示「取消」按钮） */
+  onCancel?: () => void
 }
 
 // ── Generation progress ───────────────────────────────────────
@@ -224,13 +228,13 @@ export interface StoryboardPanelProps {
   activePipelineStep: PipelineStepKey
   handleGenerateStoryboard: () => Promise<void>
   handleEnhanceShotPrompt: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllImages: () => Promise<void>
-  handleGenerateAllVideos: () => Promise<void>
+  handleGenerateAllImages: (onlyIds?: string[]) => Promise<void>
+  handleGenerateAllVideos: (onlyIds?: string[]) => Promise<void>
   handleGenerateShotImage: (storyboard: Storyboard) => Promise<void>
   handleGenerateVideo: (storyboard: Storyboard) => Promise<void>
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>
   /** 批量生成全部配音（可选；未传入时工具栏不展示该按钮） */
-  handleGenerateAllTts?: () => Promise<void>
+  handleGenerateAllTts?: (onlyIds?: string[]) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
   handleUpdateStoryboard: (id: string, data: Partial<Storyboard>) => Promise<void>
@@ -250,6 +254,8 @@ export interface CharImagesPanelProps {
   copiedField: string | null
   handleGenerateCharSheet: (charId: string) => Promise<void>
   handleGenerateCharImage: (charId: string) => Promise<void>
+  /** 批量生成全部头像（统一批量执行器：并发/取消/失败重试） */
+  handleGenerateAllCharImages?: (onlyIds?: string[]) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
 }
@@ -262,6 +268,8 @@ export interface SceneImagesPanelProps {
   uploadingField: string | null
   copiedField: string | null
   handleGenerateSceneImage: (sceneId: string) => Promise<void>
+  /** 批量生成全部场景图（统一批量执行器：并发/取消/失败重试） */
+  handleGenerateAllSceneImages?: (onlyIds?: string[]) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
 }
@@ -275,7 +283,7 @@ export interface DubbingPanelProps {
   batchProgress: BatchProgress | null
   uploadingField: string | null
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllTts: () => Promise<void>
+  handleGenerateAllTts: (onlyIds?: string[]) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
 }
 
@@ -289,7 +297,8 @@ export interface ShotFramesPanelProps {
   uploadingField: string | null
   copiedField: string | null
   handleGenerateShotImage: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllImages: () => Promise<void>
+  /** 批量生成全部图片（可选；未传入时工具栏不展示该按钮） */
+  handleGenerateAllImages?: () => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
 }
@@ -302,7 +311,7 @@ export interface VideoPanelProps {
   uploadingField: string | null
   copiedField: string | null
   handleGenerateVideo: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllVideos: () => Promise<void>
+  handleGenerateAllVideos: (onlyIds?: string[]) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
 }
@@ -320,7 +329,7 @@ export interface ComposePanelProps {
   previewAudioRef: React.RefObject<HTMLAudioElement | null>
   perms: UserPermissions
   handleComposeShot: (storyboard: Storyboard) => Promise<void>
-  handleComposeAll: () => Promise<void>
+  handleComposeAll: (onlyIds?: string[]) => Promise<void>
   handleStartPreview: () => void
   handlePreviewEnded: () => void
   handleExport: () => Promise<void>
@@ -356,13 +365,13 @@ export interface ProductionPanelProps {
   handleGenerateCharImage: (charId: string) => Promise<void>
   handleGenerateSceneImage: (sceneId: string) => Promise<void>
   handleGenerateShotImage: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllImages: () => Promise<void>
+  handleGenerateAllImages: (onlyIds?: string[]) => Promise<void>
   handleGenerateVideo: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllVideos: () => Promise<void>
+  handleGenerateAllVideos: (onlyIds?: string[]) => Promise<void>
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>
-  handleGenerateAllTts: () => Promise<void>
+  handleGenerateAllTts: (onlyIds?: string[]) => Promise<void>
   handleComposeShot: (storyboard: Storyboard) => Promise<void>
-  handleComposeAll: () => Promise<void>
+  handleComposeAll: (onlyIds?: string[]) => Promise<void>
   handleStartPreview: () => void
   handlePreviewEnded: () => void
   handleExport: () => Promise<void>

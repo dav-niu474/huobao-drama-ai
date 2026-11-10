@@ -46,6 +46,7 @@ import {
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { shotTypeLabel } from './helpers'
+import { BatchProgressControls } from './batch-progress-controls'
 import type { StoryboardPanelProps } from './types'
 import type { Character, Scene, Storyboard } from '@/lib/store'
 
@@ -867,6 +868,16 @@ export function StoryboardSeko({
               )}
               生成全部配音
             </Button>
+          )}
+
+          {/* 批量进度：失败计数 + 取消 */}
+          {batchProgress?.onCancel && (
+            <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1">
+              <span className="text-[11px] text-neutral-400">
+                {batchProgress.message}
+              </span>
+              <BatchProgressControls progress={batchProgress} />
+            </div>
           )}
         </div>
       </div>

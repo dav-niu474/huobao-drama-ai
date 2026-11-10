@@ -18,6 +18,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
+import { BatchProgressControls } from './batch-progress-controls'
 import { panelVariants } from './helpers'
 import type { CharImagesPanelProps } from './types'
 
@@ -30,6 +31,7 @@ export function CharImagesPanel({
   copiedField,
   handleGenerateCharSheet,
   handleGenerateCharImage,
+  handleGenerateAllCharImages,
   handleUpload,
   handleCopy,
 }: CharImagesPanelProps) {
@@ -83,6 +85,7 @@ export function CharImagesPanel({
               <Loader2 className="size-3 animate-spin" />
               <span>{batchProgress.message}</span>
               <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
+              <BatchProgressControls progress={batchProgress} />
             </div>
           )}
           {charsMissingImage.length > 0 && (
@@ -90,13 +93,18 @@ export function CharImagesPanel({
               size="sm"
               variant="outline"
               onClick={() => {
-                charsMissingImage.forEach((c) => {
-                  handleGenerateCharImage(c.id)
-                })
+                if (handleGenerateAllCharImages) {
+                  // 统一批量执行器：受控并发 + 失败收集 + 一键重试
+                  void handleGenerateAllCharImages()
+                } else {
+                  charsMissingImage.forEach((c) => {
+                    handleGenerateCharImage(c.id)
+                  })
+                }
               }}
-              disabled={aiLoading || !!generatingCharImg}
+              disabled={aiLoading || !!generatingCharImg || !!batchProgress?.onCancel}
             >
-              {generatingCharImg ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+              {generatingCharImg || batchProgress?.onCancel ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
               批量生成全部头像
               <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{charsMissingImage.length}</Badge>
             </Button>

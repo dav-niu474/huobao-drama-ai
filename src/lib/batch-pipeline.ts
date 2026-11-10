@@ -7,6 +7,7 @@
 import { db } from '@/lib/db'
 import { executeAgent } from '@/lib/agents/factory'
 import { generateEpisodeScript } from '@/lib/script-generation'
+import { userIdContext } from '@/lib/ai-config'
 
 // ── Helper: Resolve base URL for internal API calls ───────────
 
@@ -36,6 +37,8 @@ export interface EpisodeBatchState {
   completedSteps: number
   totalSteps: number
   currentStep: string | null
+  /** 软失败步骤的错误明细（步骤继续执行但错误被记录，供前端展示） */
+  stepErrors?: string[]
   error?: string
 }
 
@@ -92,6 +95,11 @@ class BatchPipelineManager {
   private batches: Map<string, BatchState> = new Map()
   private abortControllers: Map<string, AbortController> = new Map()
   private pauseResolvers: Map<string, () => void> = new Map()
+  /**
+   * 发起批次的用户会话 Cookie（用于内部 API 调用鉴权）。
+   * 仅保存在服务端内存，不参与任何状态响应序列化。
+   */
+  private authCookies: Map<string, string> = new Map()
 
   /**
    * Start batch pipeline execution for a drama
@@ -99,7 +107,8 @@ class BatchPipelineManager {
   async startBatch(
     dramaId: string,
     episodeIds?: string[],
-    steps?: string[]
+    steps?: string[],
+    options?: { authCookie?: string }
   ): Promise<BatchState> {
     // If there's already a running batch for this drama, return it
     const existing = this.batches.get(dramaId)
@@ -163,19 +172,45 @@ class BatchPipelineManager {
 
     this.batches.set(dramaId, batchState)
 
+    // 保存发起者的会话 Cookie（内部 API 调用转发鉴权用）
+    if (options?.authCookie) {
+      this.authCookies.set(dramaId, options.authCookie)
+    }
+
     // Create abort controller
     const controller = new AbortController()
     this.abortControllers.set(dramaId, controller)
 
-    // Start execution in the background (non-blocking)
-    this.executeBatch(dramaId, episodes, stepsToExecute, controller.signal).catch((err) => {
-      console.error(`[BatchPipeline] Batch execution failed:`, err)
-      const state = this.batches.get(dramaId)
-      if (state) {
-        state.status = 'failed'
-        state.error = err instanceof Error ? err.message : String(err)
-      }
+    // ── 解析剧集归属用户，并在其 ALS 上下文中执行整个批次 ──
+    // 后台执行会丢失请求级 AsyncLocalStorage 上下文，导致 aiClient
+    // 无法解析用户级供应商配置；这里显式恢复。
+    const drama = await db.drama.findUnique({
+      where: { id: dramaId },
+      select: { userId: true },
     })
+    const dramaUserId = drama?.userId ?? undefined
+
+    const runExecution = () =>
+      this.executeBatch(dramaId, episodes, stepsToExecute, controller.signal)
+        .catch((err) => {
+          console.error(`[BatchPipeline] Batch execution failed:`, err)
+          const state = this.batches.get(dramaId)
+          if (state) {
+            state.status = 'failed'
+            state.error = err instanceof Error ? err.message : String(err)
+          }
+        })
+        .finally(() => {
+          // 批次结束后清理会话 Cookie，避免长期驻留内存
+          this.authCookies.delete(dramaId)
+        })
+
+    // Start execution in the background (non-blocking)
+    if (dramaUserId) {
+      userIdContext.run(dramaUserId, runExecution)
+    } else {
+      runExecution()
+    }
 
     return batchState
   }
@@ -243,6 +278,31 @@ class BatchPipelineManager {
       progressPercent,
       episodes: state.episodes,
     }
+  }
+
+  // ── Internal: Authenticated internal API call ─────────────
+  // 之前直接 fetch 内部路由但不携带会话 Cookie，所有 requireAuth 的
+  // 生成路由都返回 401，制作步骤被静默跳过（当步骤已“完成”）。
+  // 现在转发发起批次的用户会话 Cookie，并在非 2xx 时抛出错误。
+  private async internalApi(
+    dramaId: string,
+    path: string,
+    body?: unknown
+  ): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const cookie = this.authCookies.get(dramaId)
+    if (cookie) headers['Cookie'] = cookie
+
+    const res = await fetch(`${getBaseUrl()}${path}`, {
+      method: 'POST',
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => 'Unknown error')
+      throw new Error(`内部API调用失败 (HTTP ${res.status}) ${path}: ${text.slice(0, 200)}`)
+    }
+    return res.json().catch(() => ({}))
   }
 
   // ── Internal: Execute the batch ──────────────────────────────
@@ -349,10 +409,15 @@ class BatchPipelineManager {
         await this.executeStep(episode, dramaId, step, signal)
         batchState.episodes[episodeIndex].completedSteps = stepIdx + 1
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
         console.error(`[BatchPipeline] Step ${stepLabel} failed for episode ${episode.episodeNumber}:`, err)
         // Mark step as failed but continue to next step
         // This is a soft failure — the episode continues
         batchState.episodes[episodeIndex].completedSteps = stepIdx + 1
+        // 记录步骤错误明细，供前端展示与排查（不再静默丢弃）
+        const errors = batchState.episodes[episodeIndex].stepErrors || []
+        errors.push(`${stepLabel}: ${errMsg.slice(0, 300)}`)
+        batchState.episodes[episodeIndex].stepErrors = errors
       }
     }
 
@@ -633,23 +698,15 @@ class BatchPipelineManager {
     })
     if (characters.length === 0) return
 
-    // Generate character images one by one (simplified — just calls the API)
+    // Generate character images one by one
     for (const char of characters) {
       try {
-        // Call the character image generation API internally
-        const response = await fetch(
-          `${getBaseUrl()}/api/ai/generate-character-image`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ characterId: char.id }),
-          }
-        )
-        if (!response.ok) {
-          console.warn(`[BatchPipeline] Character image failed for ${char.name}`)
-        }
+        await this.internalApi(dramaId, '/api/ai/generate-character-image', {
+          characterId: char.id,
+        })
       } catch (err) {
         console.warn(`[BatchPipeline] Character image failed for ${char.name}:`, err)
+        throw err
       }
     }
   }
@@ -666,19 +723,12 @@ class BatchPipelineManager {
 
     for (const scene of scenes) {
       try {
-        const response = await fetch(
-          `${getBaseUrl()}/api/ai/generate-scene-image`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sceneId: scene.id }),
-          }
-        )
-        if (!response.ok) {
-          console.warn(`[BatchPipeline] Scene image failed for ${scene.location}`)
-        }
+        await this.internalApi(dramaId, '/api/ai/generate-scene-image', {
+          sceneId: scene.id,
+        })
       } catch (err) {
         console.warn(`[BatchPipeline] Scene image failed for ${scene.location}:`, err)
+        throw err
       }
     }
   }
@@ -697,19 +747,13 @@ class BatchPipelineManager {
     // Generate TTS for each storyboard with dialogue
     for (const sb of withoutTts) {
       try {
-        const response = await fetch(
-          `${getBaseUrl()}/api/ai/generate-tts`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ storyboardId: sb.id, text: sb.dialogue || undefined }),
-          }
-        )
-        if (!response.ok) {
-          console.warn(`[BatchPipeline] TTS failed for shot ${sb.shotNumber}`)
-        }
+        await this.internalApi(dramaId, '/api/ai/generate-tts', {
+          storyboardId: sb.id,
+          text: sb.dialogue || undefined,
+        })
       } catch (err) {
         console.warn(`[BatchPipeline] TTS failed for shot ${sb.shotNumber}:`, err)
+        throw err
       }
     }
   }
@@ -728,28 +772,22 @@ class BatchPipelineManager {
     // Generate images for each storyboard
     for (const sb of withoutFrames) {
       try {
-        const result = await fetch(`${getBaseUrl()}/api/ai/generate-image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: sb.imagePrompt,
-            size: '1024x576',
-            episodeId: episode.id,
-            dialogueChar: sb.dialogueChar || undefined,
-          }),
+        const data = await this.internalApi(dramaId, '/api/ai/generate-image', {
+          prompt: sb.imagePrompt,
+          size: '1024x576',
+          episodeId: episode.id,
+          dialogueChar: sb.dialogueChar || undefined,
         })
 
-        if (result.ok) {
-          const data = await result.json()
-          if (data.imageUrl) {
-            await db.storyboard.update({
-              where: { id: sb.id },
-              data: { firstFrameUrl: data.imageUrl },
-            })
-          }
+        if (data.imageUrl) {
+          await db.storyboard.update({
+            where: { id: sb.id },
+            data: { firstFrameUrl: data.imageUrl as string },
+          })
         }
       } catch (err) {
         console.warn(`[BatchPipeline] Shot frame failed for shot ${sb.shotNumber}:`, err)
+        throw err
       }
     }
   }
@@ -768,20 +806,14 @@ class BatchPipelineManager {
     // Generate videos for each storyboard
     for (const sb of withoutVideos) {
       try {
-        const response = await fetch(`${getBaseUrl()}/api/ai/generate-video`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            storyboardId: sb.id,
-            prompt: sb.videoPrompt || undefined,
-            firstFrameUrl: sb.firstFrameUrl || undefined,
-          }),
+        await this.internalApi(dramaId, '/api/ai/generate-video', {
+          storyboardId: sb.id,
+          prompt: sb.videoPrompt || undefined,
+          firstFrameUrl: sb.firstFrameUrl || undefined,
         })
-        if (!response.ok) {
-          console.warn(`[BatchPipeline] Video failed for shot ${sb.shotNumber}`)
-        }
       } catch (err) {
         console.warn(`[BatchPipeline] Video failed for shot ${sb.shotNumber}:`, err)
+        throw err
       }
     }
   }
@@ -800,20 +832,12 @@ class BatchPipelineManager {
     // Compose each storyboard (video + audio + subtitles)
     for (const sb of withoutCompose) {
       try {
-        // Use the compose API endpoint
-        const response = await fetch(
-          `${getBaseUrl()}/api/episodes/${episode.id}/compose`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ storyboardId: sb.id }),
-          }
-        )
-        if (!response.ok) {
-          console.warn(`[BatchPipeline] Compose failed for shot ${sb.shotNumber}`)
-        }
+        await this.internalApi(dramaId, `/api/episodes/${episode.id}/compose`, {
+          storyboardId: sb.id,
+        })
       } catch (err) {
         console.warn(`[BatchPipeline] Compose failed for shot ${sb.shotNumber}:`, err)
+        throw err
       }
     }
   }
@@ -828,18 +852,10 @@ class BatchPipelineManager {
 
     // Try to merge
     try {
-      const response = await fetch(
-        `${getBaseUrl()}/api/episodes/${episode.id}/merge`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      )
-      if (!response.ok) {
-        console.warn(`[BatchPipeline] Merge failed for episode ${episode.id}`)
-      }
+      await this.internalApi(dramaId, `/api/episodes/${episode.id}/merge`)
     } catch (err) {
       console.warn(`[BatchPipeline] Merge failed for episode ${episode.id}:`, err)
+      throw err
     }
   }
 

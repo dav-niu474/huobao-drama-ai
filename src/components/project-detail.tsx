@@ -643,6 +643,27 @@ export function ProjectDetailView() {
     }
   }
 
+  // 重试失败集（含步骤软失败的集）：各步骤自身有幂等 guard，
+  // 已完成的产物不会重复生成，只补齐缺失部分
+  const handleRetryFailedEpisodes = async () => {
+    if (!selectedDramaId || !batchStatus) return
+    const retryIds = batchStatus.episodes
+      .filter((e) => e.status === 'failed' || (e.stepErrors && e.stepErrors.length > 0))
+      .map((e) => e.episodeId)
+    if (retryIds.length === 0) return
+    setBatchLoading(true)
+    try {
+      await api.dramas.startBatchPipeline(selectedDramaId, retryIds)
+      toast({ title: tp('retryFailedStarted'), description: `${retryIds.length} 集` })
+      setBatchPolling(true)
+      fetchBatchStatus()
+    } catch (err) {
+      toast({ title: tp('startFailed'), description: String(err), variant: 'destructive' })
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
   const handleSaveDefaultLockConfig = async () => {
     if (!drama) return
     setSavingLockConfig(true)
@@ -994,6 +1015,21 @@ export function ProjectDetailView() {
                           {tp('reExecute')}
                         </Button>
                       )}
+                      {(batchStatus.status === 'completed' || batchStatus.status === 'failed') &&
+                        batchStatus.episodes.some(
+                          (e) => e.status === 'failed' || (e.stepErrors && e.stepErrors.length > 0)
+                        ) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1 border-red-500/40 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          onClick={handleRetryFailedEpisodes}
+                          disabled={batchLoading}
+                        >
+                          <RefreshCw className="size-3" />
+                          {tp('retryFailedEpisodes')}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1063,6 +1099,24 @@ export function ProjectDetailView() {
                               <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
                                 → {ep.currentStep}
                               </p>
+                            )}
+                            {ep.stepErrors && ep.stepErrors.length > 0 && (
+                              <div className="mt-1 pt-1 border-t border-red-500/20">
+                                {ep.stepErrors.slice(0, 3).map((se, i) => (
+                                  <p
+                                    key={i}
+                                    className="text-[10px] text-red-500 truncate"
+                                    title={`${tp('stepFailureHeading')}：${se}`}
+                                  >
+                                    ⚠ {se}
+                                  </p>
+                                ))}
+                                {ep.stepErrors.length > 3 && (
+                                  <p className="text-[10px] text-red-400/70">
+                                    +{ep.stepErrors.length - 3} more…
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         ))}

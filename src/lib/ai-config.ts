@@ -515,14 +515,15 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** 判定是否为值得重试的瞬态错误（限流/服务端异常/网络抖动） */
-function isTransientAiError(err: unknown): boolean {
+export function isTransientAiError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
   const msg = err.message || ''
   // 限流：含友好文案 “(HTTP 429)” 或 SDK 原始报错中的 429/限流关键词
   if (/\b429\b/.test(msg)) return true
   if (/rate[\s_-]?limit|限流|超限|请求过于频繁|请求频率/i.test(msg)) return true
-  // 服务端异常：含友好文案 “(HTTP 5xx)”
+  // 服务端异常：含友好文案 “(HTTP 5xx)” 或适配器文案 “(502)” 等括号形式
   if (/HTTP 5\d{2}\b/.test(msg)) return true
+  if (/[\(（]5\d{2}[\)）]/.test(msg)) return true
   // 网络层瞬态错误
   if (
     /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|network|timeout|timed?\s?out|aborted/i.test(
@@ -534,7 +535,7 @@ function isTransientAiError(err: unknown): boolean {
 }
 
 /** 带指数退避的重试包装：仅重试瞬态错误，认证/模型不存在等永久错误直接抛出 */
-async function withAiRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+export async function withAiRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   let lastError: unknown
   for (let attempt = 0; attempt <= AI_RETRY_DELAYS_MS.length; attempt++) {
     try {
@@ -726,11 +727,15 @@ export const aiClient = {
         const size: AllowedSize = (allowedSizes as readonly string[]).includes(requestedSize)
           ? (requestedSize as AllowedSize)
           : '1024x1024'
-        const result = await zai.images.generations.create({
-          model: provider.model,
-          prompt: prompt,
-          size,
-        })
+        const result = await withAiRetry(
+          () =>
+            zai.images.generations.create({
+              model: provider.model,
+              prompt: prompt,
+              size,
+            }),
+          'generateImage(z-ai-sdk)'
+        )
         // SDK converts URLs to base64 — data[0].base64 contains the PNG data
         const imageBase64 = result.data?.[0]?.base64
         if (!imageBase64) {
@@ -770,15 +775,19 @@ export const aiClient = {
       referenceImages: options?.referenceImages,
       referenceImagesData,
     })
-    const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+    // 提交请求 + 解析响应整体接入重试（429/5xx/网络抖动自动退避重试；
+    // AsyncTaskError 的报错文案不命中瞬态规则，不会被重复提交）
+    const parsed = await withAiRetry(async () => {
+      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => 'Unknown error')
-      throw new Error(`图片生成API错误 (${res.status}): ${text.slice(0, 300)}`)
-    }
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
+        throw new Error(`图片生成API错误 (${res.status}): ${text.slice(0, 300)}`)
+      }
 
-    const result = await res.json()
-    const parsed = adapter.parseGenerateResponse(result)
+      const result = await res.json()
+      return adapter.parseGenerateResponse(result)
+    }, 'generateImage(HTTP)')
 
     // Sync response with URL
     if (!parsed.isAsync && parsed.imageUrl) {
@@ -976,15 +985,19 @@ export const aiClient = {
         const { default: ZAI } = await import('z-ai-web-dev-sdk')
         const zai = await ZAI.create()
 
-        // Submit video generation task
-        const videoResponse = await zai.video.generations.create({
-          model: provider.model,
-          prompt: prompt,
-          ...(firstFrameUrl ? { image_url: firstFrameUrl } : {}),
-          quality: 'quality',
-          with_audio: false,
-          watermark_enabled: false,
-        })
+        // Submit video generation task（提交阶段接入重试；任务已创建后不再重试提交，避免重复扣费）
+        const videoResponse = await withAiRetry(
+          () =>
+            zai.video.generations.create({
+              model: provider.model,
+              prompt: prompt,
+              ...(firstFrameUrl ? { image_url: firstFrameUrl } : {}),
+              quality: 'quality',
+              with_audio: false,
+              watermark_enabled: false,
+            }),
+          'generateVideo(z-ai-sdk submit)'
+        )
 
         // Video generation is async — get the task ID
         const taskId = videoResponse.id
@@ -996,7 +1009,11 @@ export const aiClient = {
         let videoUrl = ''
         for (let i = 0; i < 30; i++) {
           await new Promise((r) => setTimeout(r, 10_000))
-          const result = await zai.async.result.query(taskId)
+          // 单次查询接入重试：查询瞬态失败不应中止整个已提交的生成任务
+          const result = await withAiRetry(
+            () => zai.async.result.query(taskId),
+            'generateVideo(z-ai-sdk poll)'
+          )
 
           if (result.task_status === 'SUCCESS') {
             // Get video URL from response
@@ -1056,15 +1073,19 @@ export const aiClient = {
       const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
 
       const req = adapter.buildGenerateRequest(config, { prompt, firstFrameUrl, duration: 5 })
-      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+      // 提交请求 + 解析响应整体接入重试（此阶段尚未开始轮询，重试不会重复提交任务；
+      // AsyncTaskError 不命中瞬态规则，不会重复提交）
+      const { parsed } = await withAiRetry(async () => {
+        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => 'Unknown error')
-        throw new Error(`视频生成API错误 (${res.status}): ${text.slice(0, 300)}`)
-      }
+        if (!res.ok) {
+          const text = await res.text().catch(() => 'Unknown error')
+          throw new Error(`视频生成API错误 (${res.status}): ${text.slice(0, 300)}`)
+        }
 
-      const result = await res.json()
-      const parsed = adapter.parseGenerateResponse(result)
+        const result = await res.json()
+        return adapter.parseGenerateResponse(result)
+      }, 'generateVideo(HTTP)')
 
       if (parsed.videoUrl) {
         videoUrl = parsed.videoUrl
@@ -1150,7 +1171,10 @@ export const aiClient = {
           ttsBody.model = provider.model
         }
 
-        const response: Response = await zai.audio.tts.create(ttsBody as any)
+        const response: Response = await withAiRetry(
+          () => zai.audio.tts.create(ttsBody as any) as Promise<Response>,
+          'generateTts(z-ai-sdk)'
+        )
         if (!response.ok) {
           const errText = await response.text().catch(() => 'Unknown error')
           throw new Error(`TTS API错误 (${response.status}): ${errText.slice(0, 300)}`)
@@ -1186,7 +1210,16 @@ export const aiClient = {
 
       const req = adapter.buildGenerateRequest(config, { text, voiceId, speed: 1.0, voiceStyle })
       console.log(`[generateTts] provider=${provider.provider}, model=${config.model}, voiceId=${voiceId}, text=${text.slice(0, 30)}...`)
-      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body), signal: AbortSignal.timeout(60_000) })
+      const res = await withAiRetry(
+        () =>
+          fetch(req.url, {
+            method: req.method,
+            headers: req.headers,
+            body: JSON.stringify(req.body),
+            signal: AbortSignal.timeout(60_000),
+          }),
+        'generateTts(HTTP)'
+      )
 
       if (!res.ok) {
         const errText = await res.text().catch(() => 'Unknown error')
