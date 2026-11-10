@@ -19,6 +19,14 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   ArrowLeft,
   Loader2,
   FileText,
@@ -37,6 +45,7 @@ import {
   LayoutGrid,
   Clapperboard,
   Plus,
+  ListOrdered,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { ResultDialog, EMPTY_RESULT_DIALOG, type ResultDialogState } from '@/components/episode/result-dialog'
@@ -70,6 +79,16 @@ interface FailedBatchItem {
 }
 
 type BatchKind = 'images' | 'videos' | 'tts' | 'compose' | 'charImages' | 'sceneImages'
+
+// ── 待确认的跳转意图（未保存修改保护弹窗）──────────────────
+
+type PendingNav =
+  | { type: 'episode'; id: string }
+  | { type: 'project' }
+  | { type: 'split' }
+
+// 剧集下拉一次最多渲染的条目数（大项目 400+ 集，避免一次性渲染卡顿）
+const EP_RENDER_LIMIT = 80
 
 // ── Main tab definition (剧本 / 设定 / 分镜 / 短片) ──────────
 
@@ -112,6 +131,17 @@ export function EpisodeWorkspace() {
   const [splitOpen, setSplitOpen] = useState(false)
   const [rawContent, setRawContent] = useState('')
   const [scriptContent, setScriptContent] = useState('')
+  // ── 未保存修改保护：记录最近一次加载/保存成功的内容基准 ──
+  const loadedContentRef = useRef<{ raw: string; script: string }>({ raw: '', script: '' })
+  const [pendingNav, setPendingNav] = useState<PendingNav | null>(null)
+  // 镜像当前本地编辑值（供异步回调读取最新值，避免闭包陈旧）
+  const liveContentRef = useRef({ raw: '', script: '' })
+  liveContentRef.current = { raw: rawContent, script: scriptContent }
+  // 最近一次成功加载的集 id：同集刷新时保护未保存的本地编辑，换集时整体替换
+  const loadedEpisodeIdRef = useRef<string | null>(null)
+  // 剧集下拉搜索 + 整理集号
+  const [epQuery, setEpQuery] = useState('')
+  const [renumbering, setRenumbering] = useState(false)
   const [characters, setCharacters] = useState<Character[]>([])
   const [scenes, setScenes] = useState<Scene[]>([])
   const [props, setProps] = useState<Prop[]>([])
@@ -315,8 +345,24 @@ export function EpisodeWorkspace() {
       const detail = await api.episodes.get(targetId)
       setCurrentEpisode(detail)
       // Sync local state from episode
-      setRawContent(detail.rawContent ?? '')
-      setScriptContent(detail.scriptContent ?? '')
+      // 同集刷新时，若本地有未保存修改（与基线不同）则保留本地值，
+      // 避免后台刷新（自动提取/批量进度等）覆盖正在编辑的内容；
+      // 换集加载则整体替换。
+      const serverRaw = detail.rawContent ?? ''
+      const serverScript = detail.scriptContent ?? ''
+      const sameEpisode = loadedEpisodeIdRef.current === targetId
+      const localDirty =
+        liveContentRef.current.raw !== loadedContentRef.current.raw ||
+        liveContentRef.current.script !== loadedContentRef.current.script
+      if (sameEpisode && localDirty &&
+          (liveContentRef.current.raw !== serverRaw || liveContentRef.current.script !== serverScript)) {
+        // 保留本地编辑，基线仍指向服务端值 → dirty 状态保持，导航时提示保存
+      } else {
+        setRawContent(serverRaw)
+        setScriptContent(serverScript)
+        loadedContentRef.current = { raw: serverRaw, script: serverScript }
+      }
+      loadedEpisodeIdRef.current = targetId
       // Fetch characters & scenes & props + episodes list from drama
       if (selectedDramaId) {
         const dramaDetail = await api.dramas.get(selectedDramaId)
@@ -361,6 +407,8 @@ export function EpisodeWorkspace() {
             setRawContent('')
             setScriptContent('')
             setStoryboards([])
+            loadedContentRef.current = { raw: '', script: '' }
+            loadedEpisodeIdRef.current = null
             toast({
               title: '项目暂无剧集',
               description: '原集已被删除，可在「剧本」页导入小说重新开始',
@@ -609,14 +657,77 @@ export function EpisodeWorkspace() {
 
   // ── Episode switching (header selector) ────────────────────
 
+  // ── 未保存修改保护：统一跳转入口 ────────────────────────
+  // 有未保存修改时先弹确认（保存并继续 / 放弃修改 / 取消），无修改直接跳转
+
+  const hasUnsavedChanges =
+    rawContent !== loadedContentRef.current.raw ||
+    scriptContent !== loadedContentRef.current.script
+
+  const performNav = (nav: PendingNav) => {
+    if (nav.type === 'episode') {
+      if (!selectedDramaId) return
+      setSwitchingEpisode(true)
+      try {
+        useAppStore.getState().navigateToEpisode(selectedDramaId, nav.id)
+      } finally {
+        setSwitchingEpisode(false)
+      }
+    } else if (nav.type === 'project') {
+      if (selectedDramaId) navigateToProject(selectedDramaId)
+    } else {
+      setSplitOpen(true)
+    }
+  }
+
+  const requestNav = (nav: PendingNav) => {
+    if (hasUnsavedChanges) setPendingNav(nav)
+    else performNav(nav)
+  }
+
   const handleSwitchEpisode = async (episodeId: string) => {
     if (!selectedDramaId || episodeId === selectedEpisodeId) return
-    setSwitchingEpisode(true)
+    requestNav({ type: 'episode', id: episodeId })
+  }
+
+  // 确认弹窗：保存当前集内容后继续待定跳转
+  const handleSaveAndContinue = async () => {
+    if (!selectedEpisodeId) return
+    setSaving(true)
     try {
-      const { navigateToEpisode } = useAppStore.getState()
-      navigateToEpisode(selectedDramaId, episodeId)
+      await api.episodes.update(selectedEpisodeId, { rawContent, scriptContent })
+      loadedContentRef.current = { raw: rawContent, script: scriptContent }
+      const nav = pendingNav
+      setPendingNav(null)
+      if (nav) performNav(nav)
+    } catch (err) {
+      toast({ title: '保存失败', description: String(err), variant: 'destructive' })
     } finally {
-      setSwitchingEpisode(false)
+      setSaving(false)
+    }
+  }
+
+  const handleDiscardAndContinue = () => {
+    const nav = pendingNav
+    setPendingNav(null)
+    if (nav) performNav(nav)
+  }
+
+  // ── 整理集号：把所有剧集编号重排为连续 1..N ────────────────
+  const handleRenumber = async () => {
+    if (!selectedDramaId) return
+    setRenumbering(true)
+    try {
+      const res = await api.dramas.renumberEpisodes(selectedDramaId)
+      toast({
+        title: '集号已整理',
+        description: `共 ${res.total} 集，调整了 ${res.changed} 个编号`,
+      })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '整理集号失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setRenumbering(false)
     }
   }
 
@@ -2245,6 +2356,26 @@ export function EpisodeWorkspace() {
   const dramaTitle = currentDrama?.title ?? '项目'
   const episodeTitle = episode?.title || (episode ? `第${episode.episodeNumber}集` : '集')
   const sortedEpisodes = [...dramaEpisodes].sort((a, b) => a.episodeNumber - b.episodeNumber)
+  // 下拉搜索过滤（集号或标题）
+  const filteredEpisodes = epQuery.trim()
+    ? sortedEpisodes.filter((ep) => {
+        const q = epQuery.trim().toLowerCase()
+        return (
+          (ep.title || '').toLowerCase().includes(q) ||
+          String(ep.episodeNumber).includes(q) ||
+          `ep${String(ep.episodeNumber).padStart(2, '0')}`.includes(q)
+        )
+      })
+    : sortedEpisodes
+  // 上/下集快捷切换
+  const currentIndex = sortedEpisodes.findIndex((ep) => ep.id === selectedEpisodeId)
+  const prevEpisode = currentIndex > 0 ? sortedEpisodes[currentIndex - 1] : null
+  const nextEpisode =
+    currentIndex >= 0 && currentIndex < sortedEpisodes.length - 1
+      ? sortedEpisodes[currentIndex + 1]
+      : null
+  // 跳号检测：编号不等于 1..N 时显示「整理集号」入口
+  const hasNumberingGaps = sortedEpisodes.some((ep, i) => ep.episodeNumber !== i + 1)
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950 text-neutral-200">
@@ -2255,7 +2386,7 @@ export function EpisodeWorkspace() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => selectedDramaId && navigateToProject(selectedDramaId)}
+            onClick={() => selectedDramaId && requestNav({ type: 'project' })}
             className="text-neutral-400 hover:text-neutral-100 hover:bg-neutral-900 -ml-2 gap-1"
           >
             <ArrowLeft className="size-4" />
@@ -2266,7 +2397,7 @@ export function EpisodeWorkspace() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setSplitOpen(true)}
+            onClick={() => requestNav({ type: 'split' })}
             disabled={!selectedDramaId}
             className="h-8 gap-1.5 text-neutral-400 hover:bg-neutral-900 hover:text-lime-300 -ml-1 shrink-0 px-2"
             title="从小说分集导入"
@@ -2275,64 +2406,135 @@ export function EpisodeWorkspace() {
             <span className="hidden lg:inline text-xs">从小说分集</span>
           </Button>
 
-          {/* 剧集选择器 */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={switchingEpisode || sortedEpisodes.length === 0}
-                className="h-8 gap-1.5 border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 hover:text-neutral-100 text-xs max-w-44"
-              >
-                {switchingEpisode ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Badge className="bg-lime-300/15 text-lime-300 border-0 text-[10px] px-1.5 h-4 shrink-0">
-                    第{episode?.episodeNumber ?? '-'}集
-                  </Badge>
-                )}
-                <span className="truncate">{episodeTitle}</span>
-                <ChevronDown className="size-3.5 text-neutral-500 shrink-0" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto bg-neutral-900 border-neutral-800">
-              {sortedEpisodes.map((ep) => (
-                <DropdownMenuItem
-                  key={ep.id}
-                  onClick={() => handleSwitchEpisode(ep.id)}
-                  className={`gap-2 text-xs cursor-pointer ${
-                    ep.id === selectedEpisodeId ? 'text-lime-300' : 'text-neutral-300'
-                  }`}
+          {/* 剧集选择器（上/下集 + 搜索过滤 + 整理集号） */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="上一集"
+              title={prevEpisode ? `上一集：EP${String(prevEpisode.episodeNumber).padStart(2, '0')}` : '已是第一集'}
+              disabled={switchingEpisode || !prevEpisode}
+              onClick={() => prevEpisode && void handleSwitchEpisode(prevEpisode.id)}
+              className="h-8 w-8 p-0 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+
+            <DropdownMenu onOpenChange={(open) => { if (!open) setEpQuery('') }}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={switchingEpisode || sortedEpisodes.length === 0}
+                  className="h-8 gap-1.5 border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 hover:text-neutral-100 text-xs max-w-44"
                 >
-                  <span className="font-mono text-[10px] text-neutral-500 w-10 shrink-0">
-                    EP{String(ep.episodeNumber).padStart(2, '0')}
-                  </span>
-                  <span className="truncate max-w-48">{ep.title || `第${ep.episodeNumber}集`}</span>
-                  {ep.scriptStatus === 'completed' && (
-                    <Check className="size-3 text-emerald-400 ml-auto shrink-0" />
+                  {switchingEpisode ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Badge className="bg-lime-300/15 text-lime-300 border-0 text-[10px] px-1.5 h-4 shrink-0">
+                      第{episode?.episodeNumber ?? '-'}集
+                    </Badge>
                   )}
-                  {ep.id === selectedEpisodeId && (
-                    <span className="ml-auto size-1.5 rounded-full bg-lime-300 shrink-0" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-              {sortedEpisodes.length === 0 && (
-                <div className="px-3 py-3 text-center">
-                  <p className="mb-2 text-xs text-neutral-500">暂无剧集，从小说导入创建</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSplitOpen(true)}
-                    disabled={!selectedDramaId}
-                    className="h-7 gap-1 border-neutral-800 bg-transparent text-xs text-lime-300 hover:bg-neutral-800 hover:text-lime-200"
-                  >
-                    <BookOpenText className="size-3" />
-                    从小说导入
-                  </Button>
+                  <span className="truncate">{episodeTitle}</span>
+                  <ChevronDown className="size-3.5 text-neutral-500 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-72 max-h-96 overflow-y-auto bg-neutral-900 border-neutral-800">
+                {/* 搜索框：阻止按键冒泡，避免触发菜单 typeahead/快捷键 */}
+                <div
+                  className="sticky top-0 z-10 bg-neutral-900 p-1.5"
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <input
+                    value={epQuery}
+                    onChange={(e) => setEpQuery(e.target.value)}
+                    placeholder="搜索集号或标题…"
+                    aria-label="搜索剧集"
+                    className="h-8 w-full rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-lime-300/30"
+                  />
                 </div>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+
+                {filteredEpisodes.slice(0, EP_RENDER_LIMIT).map((ep) => (
+                  <DropdownMenuItem
+                    key={ep.id}
+                    onClick={() => handleSwitchEpisode(ep.id)}
+                    className={`gap-2 text-xs cursor-pointer ${
+                      ep.id === selectedEpisodeId ? 'text-lime-300' : 'text-neutral-300'
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] text-neutral-500 w-10 shrink-0">
+                      EP{String(ep.episodeNumber).padStart(2, '0')}
+                    </span>
+                    <span className="truncate max-w-44">{ep.title || `第${ep.episodeNumber}集`}</span>
+                    {ep.scriptStatus === 'completed' && (
+                      <Check className="size-3 text-emerald-400 ml-auto shrink-0" />
+                    )}
+                    {ep.id === selectedEpisodeId && (
+                      <span className="ml-auto size-1.5 rounded-full bg-lime-300 shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+
+                {filteredEpisodes.length > EP_RENDER_LIMIT && (
+                  <div className="px-3 py-2 text-center text-[11px] text-neutral-500">
+                    已显示前 {EP_RENDER_LIMIT} 集 / 共 {filteredEpisodes.length} 集，请输入关键词缩小范围
+                  </div>
+                )}
+
+                {sortedEpisodes.length === 0 && (
+                  <div className="px-3 py-3 text-center">
+                    <p className="mb-2 text-xs text-neutral-500">暂无剧集，从小说导入创建</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => requestNav({ type: 'split' })}
+                      disabled={!selectedDramaId}
+                      className="h-7 gap-1 border-neutral-800 bg-transparent text-xs text-lime-300 hover:bg-neutral-800 hover:text-lime-200"
+                    >
+                      <BookOpenText className="size-3" />
+                      从小说导入
+                    </Button>
+                  </div>
+                )}
+
+                {sortedEpisodes.length > 0 && filteredEpisodes.length === 0 && (
+                  <div className="px-3 py-3 text-center text-xs text-neutral-500">
+                    没有匹配「{epQuery.trim()}」的剧集
+                  </div>
+                )}
+
+                {selectedDramaId && hasNumberingGaps && sortedEpisodes.length > 0 && (
+                  <>
+                    <div className="my-1 h-px bg-neutral-800" role="separator" />
+                    <DropdownMenuItem
+                      disabled={renumbering}
+                      onClick={() => void handleRenumber()}
+                      className="gap-2 text-xs cursor-pointer text-amber-400 focus:text-amber-300"
+                    >
+                      {renumbering ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <ListOrdered className="size-3.5" />
+                      )}
+                      整理集号为连续 1..{sortedEpisodes.length}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="下一集"
+              title={nextEpisode ? `下一集：EP${String(nextEpisode.episodeNumber).padStart(2, '0')}` : '已是最后一集'}
+              disabled={switchingEpisode || !nextEpisode}
+              onClick={() => nextEpisode && void handleSwitchEpisode(nextEpisode.id)}
+              className="h-8 w-8 p-0 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
 
           {/* 中央 Tab 组：剧本 — 设定 — 分镜 — 短片（移动端换行居中） */}
           <div className="order-last w-full basis-full sm:order-none sm:w-auto sm:basis-auto sm:flex-1 flex items-center justify-center min-w-0 overflow-x-auto">
@@ -2451,6 +2653,35 @@ export function EpisodeWorkspace() {
       </div>
 
       <ResultDialog state={resultDialog} onClose={() => setResultDialog(EMPTY_RESULT_DIALOG)} />
+
+      {/* ── 未保存修改确认弹窗 ─────────────────────────────── */}
+      <Dialog
+        open={pendingNav !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingNav(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>有未保存的修改</DialogTitle>
+            <DialogDescription>
+              当前集的剧本或小说内容尚未保存。继续操作将丢失这些修改，可选择先保存。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-1">
+            <Button variant="ghost" onClick={() => setPendingNav(null)}>
+              取消
+            </Button>
+            <Button variant="outline" onClick={handleDiscardAndContinue}>
+              放弃修改
+            </Button>
+            <Button onClick={handleSaveAndContinue} disabled={saving}>
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              保存并继续
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── 从小说分集弹窗（顶栏入口 / 下拉空态入口） ─────────── */}
       {selectedDramaId && (
