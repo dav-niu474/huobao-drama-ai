@@ -10,6 +10,7 @@ import {
   PATHS,
   ensureStorageDirs,
 } from '@/lib/ffmpeg'
+import { saveMediaFile, migrateDataUrlToFile, isDataUrl } from '@/lib/file-storage'
 import path from 'path'
 
 // GET /api/episodes/[id]/compose?storyboardId=xxx
@@ -124,9 +125,34 @@ export async function POST(
 
     // ── Mode 2: Client-side fallback — save composed URL ──
     if (composedUrl) {
+      // Persist data URLs (client Canvas/MediaRecorder output) to file
+      // storage so we don't store megabyte-scale base64 in the database
+      let persistedUrl = composedUrl
+      if (isDataUrl(composedUrl)) {
+        try {
+          const storyboardRow = await db.storyboard.findUnique({
+            where: { id: storyboardId },
+            select: { episodeId: true },
+          })
+          const ep = storyboardRow
+            ? await db.episode.findUnique({
+                where: { id: storyboardRow.episodeId },
+                select: { dramaId: true },
+              })
+            : null
+          const saved = await migrateDataUrlToFile(composedUrl, {
+            category: 'composed',
+            dramaId: ep?.dramaId,
+            filename: `shot_client_${Date.now()}`,
+          })
+          if (saved) persistedUrl = saved
+        } catch (err) {
+          console.warn('[compose] Failed to persist client composed data URL:', err)
+        }
+      }
       const storyboard = await db.storyboard.update({
         where: { id: storyboardId },
-        data: { composedUrl },
+        data: { composedUrl: persistedUrl },
       })
       return NextResponse.json({ storyboard, source: 'client' })
     }
@@ -169,16 +195,20 @@ export async function POST(
     const shotTag = `shot_${storyboard.shotNumber}_${storyboard.id.slice(-6)}`
     const timestamp = Date.now()
 
+    // Resolve dramaId for file-storage organization
+    const parentEpisode = await db.episode.findUnique({
+      where: { id: storyboard.episodeId },
+      select: { dramaId: true },
+    })
+
     // ── Step 1: Download video to local file ──
-    const videoExt = storyboard.videoUrl.startsWith('data:video/') ? 'mp4' : 'mp4'
-    const localVideoPath = path.join(PATHS.composed, `${shotTag}_video_${timestamp}.${videoExt}`)
+    const localVideoPath = path.join(PATHS.composed, `${shotTag}_video_${timestamp}.mp4`)
     await downloadFile(storyboard.videoUrl, localVideoPath)
 
     // ── Step 2: Download TTS audio (if available) ──
     let localAudioPath: string | undefined
     if (storyboard.ttsAudioUrl) {
-      const audioExt = storyboard.ttsAudioUrl.startsWith('data:audio/') ? 'mp3' : 'mp3'
-      localAudioPath = path.join(PATHS.audio, `${shotTag}_audio_${timestamp}.${audioExt}`)
+      localAudioPath = path.join(PATHS.audio, `${shotTag}_audio_${timestamp}.mp3`)
       try {
         await downloadFile(storyboard.ttsAudioUrl, localAudioPath)
       } catch (err) {
@@ -219,10 +249,15 @@ export async function POST(
         composedOutputPath
       )
 
-      // Store the composed video path as the composedUrl
-      // In production, this would be uploaded to cloud storage
-      // For now, use a local file path reference
-      const composedFileUrl = `/tmp/drama-storage/composed/${path.basename(resultPath)}`
+      // Persist composed MP4 to file storage → servable URL (/api/files/...)
+      const composedBuffer = await import('fs/promises').then((m) => m.readFile(resultPath))
+      const saveResult = await saveMediaFile(composedBuffer, {
+        mimeType: 'video/mp4',
+        category: 'composed',
+        dramaId: parentEpisode?.dramaId,
+        filename: `${shotTag}_composed`,
+      })
+      const composedFileUrl = saveResult.url
 
       // Update storyboard in DB
       const updatedStoryboard = await db.storyboard.update({
@@ -230,9 +265,9 @@ export async function POST(
         data: { composedUrl: composedFileUrl },
       })
 
-      // Clean up temporary files (keep the composed output)
+      // Clean up temporary files (composed output already saved to storage)
       const { unlink } = await import('fs/promises')
-      for (const tmpPath of [localVideoPath, localAudioPath, localSubtitlePath]) {
+      for (const tmpPath of [localVideoPath, localAudioPath, localSubtitlePath, resultPath]) {
         if (tmpPath) {
           try { await unlink(tmpPath) } catch { /* ignore */ }
         }

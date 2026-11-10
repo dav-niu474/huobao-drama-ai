@@ -328,11 +328,20 @@ export interface ComposePanelProps {
   previewVideoRef: React.RefObject<HTMLVideoElement | null>
   previewAudioRef: React.RefObject<HTMLAudioElement | null>
   perms: UserPermissions
+  /** 服务端 FFmpeg 合并的整集成片 URL（episode.videoUrl），空则未合成 */
+  episodeVideoUrl: string | null
+  /** 成片时长（秒），0 表示未知 */
+  episodeDuration: number
+  /** 整集成片合并进行中 */
+  merging: boolean
+  /** 服务端 FFmpeg 可用 */
+  ffmpegAvailable: boolean
   handleComposeShot: (storyboard: Storyboard) => Promise<void>
   handleComposeAll: (onlyIds?: string[]) => Promise<void>
   handleStartPreview: () => void
   handlePreviewEnded: () => void
   handleExport: () => Promise<void>
+  handleServerMerge: () => Promise<void>
   setPreviewMode: (v: boolean) => void
   setCurrentPreviewShot: (v: number | ((prev: number) => number)) => void
 }
