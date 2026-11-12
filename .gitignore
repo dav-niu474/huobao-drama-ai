@@ -108,3 +108,7 @@ generate-roadmap.js
 
 # Caddyfile (local dev reverse proxy, not needed in repo)
 Caddyfile
+
+# Session artifacts (tool outputs, pasted/verification images — local dev only)
+tool-results/
+upload/
