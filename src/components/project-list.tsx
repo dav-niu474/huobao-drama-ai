@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslations } from 'next-intl'
 import { useAppStore, type Drama } from '@/lib/store'
@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Store, Layers, ArrowRight, ArrowLeft, Check, Smartphone, Monitor } from 'lucide-react'
+import { Plus, Film, Users, MapPin, Clock, Trash2, Settings, Upload, Library, Store, Layers, ArrowRight, ArrowLeft, Check, Smartphone, Monitor, Search, Image as ImageIcon, Video, Mic, Clapperboard, Coins, X } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { ScriptUploadDialog } from '@/components/script-upload-dialog'
@@ -101,6 +101,32 @@ function FilmStripSprockets() {
   )
 }
 
+// ── production progress computation (card) ───────────────
+
+function computeCardProgress(drama: Drama): {
+  overallPercent: number
+  scriptPct: number
+  footagePct: number
+} {
+  const p = drama.progress
+  const epCount = drama._count?.episodes ?? 0
+  if (!p || (epCount === 0 && p.storyboards === 0)) {
+    return { overallPercent: 0, scriptPct: 0, footagePct: 0 }
+  }
+  // 剧本完成率
+  const scriptPct = epCount > 0 ? p.scriptedEpisodes / epCount : 0
+  // 素材完成率：镜头图 + 视频 + 合成 三段均分（与 ComposePanel 的 pipelinePercent 口径一致）
+  const footagePct = p.storyboards > 0
+    ? (p.shotsWithImage + p.shotsWithVideo + p.shotsComposed) / (p.storyboards * 3)
+    : 0
+  const overallPercent = Math.round(((scriptPct + footagePct) / 2) * 100)
+  return {
+    overallPercent: Math.min(100, overallPercent),
+    scriptPct: Math.round(scriptPct * 100),
+    footagePct: Math.round(footagePct * 100),
+  }
+}
+
 // ── project card ─────────────────────────────────────────────
 
 function ProjectCard({
@@ -121,8 +147,9 @@ function ProjectCard({
   const charCount = drama._count?.characters ?? 0
   const sceneCount = drama._count?.scenes ?? 0
   const epCount = drama._count?.episodes ?? 0
-  const totalEps = drama.totalEpisodes || 0
-  const progressPercent = totalEps > 0 ? Math.round((epCount / totalEps) * 100) : 0
+  const p = drama.progress
+  const { overallPercent, scriptPct, footagePct } = computeCardProgress(drama)
+  const hasProgressData = !!p && (epCount > 0 || p.storyboards > 0)
 
   return (
     <motion.div
@@ -141,14 +168,20 @@ function ProjectCard({
             {drama.title}
           </h3>
 
-          {/* Tags */}
-          <div className="flex flex-wrap gap-1.5">
+          {/* Tags + cost */}
+          <div className="flex flex-wrap gap-1.5 items-center">
             <Badge variant="secondary" className="text-[11px] px-2 py-0">
               {drama.genre}
             </Badge>
             <Badge variant="outline" className="text-[11px] px-2 py-0">
               {getStyleLabel(drama.style, tp)}
             </Badge>
+            {p && p.costCredits > 0 && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 text-amber-600 border-amber-500/30 bg-amber-500/5 ml-auto">
+                <Coins className="size-2.5" />
+                {p.costCredits}
+              </Badge>
+            )}
           </div>
 
           {/* Meta */}
@@ -164,13 +197,35 @@ function ProjectCard({
             </span>
           </div>
 
-          {/* Progress */}
-          {totalEps > 0 && (
-            <div className="space-y-1">
-              <Progress value={progressPercent} className="h-1.5" />
-              <p className="text-[10px] text-muted-foreground text-right">
-                {tp('percentComplete', { percent: progressPercent })}
-              </p>
+          {/* Production progress (real aggregates) */}
+          {hasProgressData && (
+            <div className="space-y-1.5">
+              <Progress value={overallPercent} className="h-1.5" />
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground min-w-0">
+                  <span className={`flex items-center gap-0.5 ${scriptPct === 100 ? 'text-emerald-600 font-medium' : ''}`}>
+                    <Film className="size-2.5" />
+                    {tp('scriptDone', { done: p?.scriptedEpisodes ?? 0, total: epCount })}
+                  </span>
+                  {p && p.storyboards > 0 && (
+                    <>
+                      <span className={p.shotsWithVideo === p.storyboards ? 'text-emerald-600 font-medium' : ''}>
+                        <ImageIcon className="size-2.5 inline" /> {p.shotsWithImage}
+                        <Video className="size-2.5 inline ml-1" /> {p.shotsWithVideo}
+                        <Clapperboard className="size-2.5 inline ml-1" /> {p.shotsComposed}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <span className="text-[10px] text-muted-foreground shrink-0">
+                  {tp('percentComplete', { percent: overallPercent })}
+                </span>
+              </div>
+              {p && p.episodesWithVideo > 0 && (
+                <p className="text-[10px] text-emerald-600/80">
+                  {tp('episodesWithVideo', { count: p.episodesWithVideo })}
+                </p>
+              )}
             </div>
           )}
 
@@ -234,6 +289,49 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
   // delete dialog
   const [deleteTarget, setDeleteTarget] = useState<Drama | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // search / filter / sort
+  const [searchQuery, setSearchQuery] = useState('')
+  const [genreFilter, setGenreFilter] = useState('all')
+  const [sortBy, setSortBy] = useState<'updatedAt' | 'createdAt' | 'progress' | 'cost'>('updatedAt')
+
+  const genreOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const d of dramas) {
+      if (d.genre) set.add(d.genre)
+    }
+    return Array.from(set)
+  }, [dramas])
+
+  const visibleDramas = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    let list = dramas
+    if (q) {
+      list = list.filter(
+        (d) =>
+          d.title.toLowerCase().includes(q) ||
+          (d.description || '').toLowerCase().includes(q)
+      )
+    }
+    if (genreFilter !== 'all') {
+      list = list.filter((d) => d.genre === genreFilter)
+    }
+    const progressOf = (d: Drama) => computeCardProgress(d).overallPercent
+    const costOf = (d: Drama) => d.progress?.costCredits ?? 0
+    return [...list].sort((a, b) => {
+      switch (sortBy) {
+        case 'createdAt':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        case 'progress':
+          return progressOf(b) - progressOf(a)
+        case 'cost':
+          return costOf(b) - costOf(a)
+        case 'updatedAt':
+        default:
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      }
+    })
+  }, [dramas, searchQuery, genreFilter, sortBy])
 
   // fetch dramas
   const fetchDramas = useCallback(async () => {
@@ -451,51 +549,117 @@ const { dramas, setDramas, navigateToProject, navigateToSettings, navigateToAsse
             </Card>
           </div>
         ) : (
-          /* Project grid */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {dramas.map((drama) => (
-              <ProjectCard
-                key={drama.id}
-                drama={drama}
-                onClick={async () => {
-                  // Navigate directly to pipeline production
-                  // Find or create the first episode for this drama
-                  try {
-                    const eps = await api.episodes.list(drama.id)
-                    if (eps && eps.length > 0) {
-                      navigateToEpisode(drama.id, eps[0].id)
-                    } else {
-                      // No episodes yet — create one and go to pipeline
-                      const ep = await api.episodes.create(drama.id, { title: '第1集' })
-                      navigateToEpisode(drama.id, ep.id)
-                    }
-                  } catch {
-                    // Fallback: go to project detail if episode creation fails
-                    navigateToProject(drama.id)
-                  }
-                }}
-                onDelete={() => setDeleteTarget(drama)}
-                tc={tc}
-                tp={tp}
-              />
-            ))}
+          <>
+            {/* ── Search / filter / sort toolbar ── */}
+            <div className="flex items-center gap-2 flex-wrap mb-5">
+              <div className="relative flex-1 min-w-48 max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={tp('searchPlaceholder')}
+                  className="h-8 pl-8 pr-7 text-xs bg-background"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+              <Select value={genreFilter} onValueChange={setGenreFilter}>
+                <SelectTrigger className="h-8 w-32 text-xs">
+                  <SelectValue placeholder={tp('allGenres')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">{tp('allGenres')}</SelectItem>
+                  {genreOptions.map((g) => (
+                    <SelectItem key={g} value={g} className="text-xs">{g}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                <SelectTrigger className="h-8 w-36 text-xs">
+                  <SelectValue placeholder={tp('sortBy')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="updatedAt" className="text-xs">{tp('sortUpdatedAt')}</SelectItem>
+                  <SelectItem value="createdAt" className="text-xs">{tp('sortCreatedAt')}</SelectItem>
+                  <SelectItem value="progress" className="text-xs">{tp('sortProgress')}</SelectItem>
+                  <SelectItem value="cost" className="text-xs">{tp('sortCost')}</SelectItem>
+                </SelectContent>
+              </Select>
+              {(searchQuery || genreFilter !== 'all') && (
+                <span className="text-[11px] text-muted-foreground">
+                  {visibleDramas.length} / {dramas.length}
+                </span>
+              )}
+            </div>
 
-            {/* Add new card (subtle) */}
-            <Card
-              className="border-dashed border-2 border-border/30 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
-              onClick={() => { resetWizard(); setCreateOpen(true) }}
-            >
-              <CardContent className="p-6 flex flex-col items-center justify-center gap-3 text-muted-foreground min-h-[200px]">
-                <div className="size-12 rounded-full bg-muted/60 flex items-center justify-center">
-                  <Plus className="size-6 text-primary/60" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium">{tp('newProjectShort')}</p>
-                  <p className="text-[11px] opacity-60 mt-0.5">{tc('create')}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+            {visibleDramas.length === 0 ? (
+              /* No results after filtering */
+              <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
+                <Search className="size-8 opacity-30" />
+                <p className="text-sm">{tp('noResults')}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setSearchQuery(''); setGenreFilter('all') }}
+                >
+                  {tp('allGenres')}
+                </Button>
+              </div>
+            ) : (
+              /* Project grid */
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {visibleDramas.map((drama) => (
+                  <ProjectCard
+                    key={drama.id}
+                    drama={drama}
+                    onClick={async () => {
+                      // Navigate to the most recent episode without side effects.
+                      // If the project has no episodes yet, go to the project
+                      // overview (novel import / episode creation live there)
+                      // instead of silently creating "第1集" on a stray click.
+                      try {
+                        const eps = await api.episodes.list(drama.id)
+                        if (eps && eps.length > 0) {
+                          navigateToEpisode(drama.id, eps[0].id)
+                        } else {
+                          navigateToProject(drama.id)
+                        }
+                      } catch {
+                        // Fallback: go to project detail if episode listing fails
+                        navigateToProject(drama.id)
+                      }
+                    }}
+                    onDelete={() => setDeleteTarget(drama)}
+                    tc={tc}
+                    tp={tp}
+                  />
+                ))}
+
+                {/* Add new card (subtle) */}
+                <Card
+                  className="border-dashed border-2 border-border/30 hover:border-primary/40 transition-colors cursor-pointer py-0 gap-0"
+                  onClick={() => { resetWizard(); setCreateOpen(true) }}
+                >
+                  <CardContent className="p-6 flex flex-col items-center justify-center gap-3 text-muted-foreground min-h-[200px]">
+                    <div className="size-12 rounded-full bg-muted/60 flex items-center justify-center">
+                      <Plus className="size-6 text-primary/60" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium">{tp('newProjectShort')}</p>
+                      <p className="text-[11px] opacity-60 mt-0.5">{tc('create')}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </>
         )}
       </main>
 

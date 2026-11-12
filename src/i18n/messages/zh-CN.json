@@ -156,7 +156,19 @@
     "platformWechat": "微信视频号",
     "platformLongvideo": "长视频平台",
     "createProject": "创建项目",
-    "firstEpisodeTitle": "第1集"
+    "firstEpisodeTitle": "第1集",
+    "searchPlaceholder": "搜索项目…",
+    "allGenres": "全部题材",
+    "sortBy": "排序",
+    "sortUpdatedAt": "最近更新",
+    "sortCreatedAt": "创建时间",
+    "sortProgress": "制作进度",
+    "sortCost": "消耗最多",
+    "scriptDone": "剧本 {done}/{total} 集",
+    "creditsUnit": "积分",
+    "noResults": "没有匹配的项目",
+    "shotsUnit": "镜",
+    "episodesWithVideo": "{count} 集有成片"
   },
   "projectDetail": {
     "loadDetailFailed": "加载项目详情失败",

@@ -22,6 +22,17 @@ export interface Drama {
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }
+  /** 每项目制作进度与消耗聚合（GET /api/dramas 返回，卡片展示用） */
+  progress?: {
+    scriptedEpisodes: number
+    episodesWithVideo: number
+    totalDuration: number
+    storyboards: number
+    shotsWithImage: number
+    shotsWithVideo: number
+    shotsComposed: number
+    costCredits: number
+  }
 }
 
 export interface Prop {
