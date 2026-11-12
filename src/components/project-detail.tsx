@@ -97,6 +97,143 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+// ── Drama final cut (整剧成片) ────────────────────────────
+
+interface DramaMergeStatus {
+  dramaId: string
+  dramaTitle: string
+  finalVideoUrl: string | null
+  finalVideoDuration: number
+  dramaMergedAt: string | null
+  episodes: {
+    total: number
+    withVideo: number
+    missing: number
+    estimatedDuration: number
+    list: Array<{
+      id: string
+      episodeNumber: number
+      title: string
+      hasVideo: boolean
+      duration: number
+    }>
+  }
+  canMerge: boolean
+  ffmpegAvailable: boolean
+}
+
+function DramaFinalCutCard({
+  status,
+  merging,
+  onMerge,
+}: {
+  status: DramaMergeStatus
+  merging: boolean
+  onMerge: () => void
+}) {
+  const { episodes } = status
+  const hasVideo = episodes.withVideo > 0
+  const merged = !!status.finalVideoUrl
+
+  return (
+    <Card className="border-primary/20 bg-primary/[0.03] py-0 gap-0">
+      <CardContent className="p-4 space-y-3">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <Clapperboard className="size-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-medium leading-tight">整剧成片</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {episodes.withVideo}/{episodes.total} 集已成片
+                {episodes.missing > 0 && ` · ${episodes.missing} 集未出片`}
+                {merged && status.finalVideoDuration > 0 && ` · 总时长 ${formatDuration(status.finalVideoDuration)}`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {merged && status.finalVideoUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1"
+                asChild
+              >
+                <a href={status.finalVideoUrl} download={`${status.dramaTitle || 'drama'}.mp4`}>
+                  <Download className="size-3.5" />
+                  下载整剧
+                </a>
+              </Button>
+            )}
+            <Button
+              variant={merged ? 'ghost' : 'default'}
+              size="sm"
+              className="h-8 text-xs gap-1"
+              onClick={onMerge}
+              disabled={merging || !hasVideo || !status.ffmpegAvailable}
+            >
+              {merging ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {merging ? '合并中…' : merged ? '重新合并' : '合并整剧'}
+            </Button>
+          </div>
+        </div>
+
+        {/* Per-episode readiness chips */}
+        <div className="flex flex-wrap gap-1.5">
+          {episodes.list.map((ep) => (
+            <span
+              key={ep.id}
+              title={`${ep.title || `E${ep.episodeNumber}`}${ep.hasVideo ? ' · 已出片' : ' · 未出片'}`}
+              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                ep.hasVideo
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                  : 'border-border/50 bg-muted/40 text-muted-foreground'
+              }`}
+            >
+              E{String(ep.episodeNumber).padStart(2, '0')}
+            </span>
+          ))}
+        </div>
+
+        {/* Merged player */}
+        {merged && status.finalVideoUrl && (
+          <video
+            key={status.finalVideoUrl}
+            src={status.finalVideoUrl}
+            controls
+            className="w-full rounded-lg border border-border/50 bg-black max-h-[420px]"
+            preload="metadata"
+          />
+        )}
+
+        {/* Hints */}
+        {merging && (
+          <p className="text-xs text-muted-foreground">
+            正在下载全部集成片并合并，集数较多时可能需要几分钟，请勿关闭页面…
+          </p>
+        )}
+        {!status.ffmpegAvailable && (
+          <p className="text-xs text-amber-600 dark:text-amber-300">
+            服务器未安装 FFmpeg，无法合并整剧成片
+          </p>
+        )}
+        {hasVideo && !merged && !merging && episodes.missing > 0 && (
+          <p className="text-xs text-muted-foreground">
+            可先合并已出片的 {episodes.withVideo} 集，未出片剧集将在下次合并时补充
+          </p>
+        )}
+        {!hasVideo && (
+          <p className="text-xs text-muted-foreground">
+            暂无已出片的剧集 — 完成单集成片后即可在此一键合并整剧
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── episode card ─────────────────────────────────────────────
 
 function isLocked(lockedConfig: string | null | undefined): boolean {
@@ -160,6 +297,12 @@ function EpisodeCard({
                 <span className="flex items-center gap-1">
                   <Clock className="size-3" />
                   {durationStr}
+                </span>
+              )}
+              {episode.videoUrl && (
+                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-300 font-medium">
+                  <Clapperboard className="size-3" />
+                  已出片
                 </span>
               )}
             </div>
@@ -412,11 +555,17 @@ export function ProjectDetailView() {
       totalSteps: number
       currentStep: string | null
       error?: string
+      /** 软失败步骤的错误明细（供前端展示与重试失败集） */
+      stepErrors?: string[]
     }>
   } | null>(null)
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchExpanded, setBatchExpanded] = useState(false)
   const [batchPolling, setBatchPolling] = useState(false)
+
+  // ── Drama final cut (整剧成片) ──
+  const [mergeStatus, setMergeStatus] = useState<DramaMergeStatus | null>(null)
+  const [merging, setMerging] = useState(false)
 
   // Collaboration sidebar
   const [collabOpen, setCollabOpen] = useState(false)
@@ -453,6 +602,58 @@ export function ProjectDetailView() {
   useEffect(() => {
     fetchDrama()
   }, [fetchDrama])
+
+  // ── Drama final cut (整剧成片) handlers ──────────────
+  const fetchMergeStatus = useCallback(async () => {
+    if (!selectedDramaId) return
+    try {
+      const status = await api.dramas.getDramaMergeStatus(selectedDramaId)
+      setMergeStatus(status)
+    } catch {
+      // Non-critical — the card simply stays hidden / stale
+    }
+  }, [selectedDramaId])
+
+  useEffect(() => {
+    fetchMergeStatus()
+  }, [fetchMergeStatus])
+
+  // Refresh merge readiness when a batch pipeline run finishes
+  const batchFinished = batchStatus?.status === 'completed'
+  useEffect(() => {
+    if (batchFinished) fetchMergeStatus()
+  }, [batchFinished, fetchMergeStatus])
+
+  const handleMergeDrama = async () => {
+    if (!selectedDramaId) return
+    setMerging(true)
+    try {
+      const res = await api.dramas.mergeDrama(selectedDramaId)
+      const failedNote =
+        res.merge.failedEpisodes.length > 0
+          ? `（下载失败：${res.merge.failedEpisodes.join('、')}）`
+          : ''
+      toast({
+        title: '整剧合并完成',
+        description: `已合并 ${res.merge.episodesMerged}/${res.merge.totalEpisodes} 集，总时长 ${formatDuration(res.merge.duration)}${failedNote}`,
+      })
+      setMergeStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              finalVideoUrl: res.merge.url,
+              finalVideoDuration: res.merge.duration,
+              dramaMergedAt: new Date().toISOString(),
+            }
+          : prev
+      )
+      fetchDrama()
+    } catch (err) {
+      toast({ title: '整剧合并失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setMerging(false)
+    }
+  }
 
   // Add episode
   const handleAddEpisode = async () => {
@@ -1125,6 +1326,11 @@ export function ProjectDetailView() {
                   )}
                 </CardContent>
               </Card>
+            )}
+
+            {/* ── Drama Final Cut Card (整剧成片) ── */}
+            {mergeStatus && mergeStatus.episodes.total > 0 && (
+              <DramaFinalCutCard status={mergeStatus} merging={merging} onMerge={handleMergeDrama} />
             )}
 
             {drama.episodes

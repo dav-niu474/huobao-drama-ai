@@ -147,6 +147,8 @@ export interface AgentExecState {
   resultTexts: Record<string, string>
   durations: Record<string, number>
   errors: Record<string, string | null>
+  /** 清空某个 agent 的日志与错误状态（失败后"清空并返回"用） */
+  clearAgent: (agentType: string) => void
 }
 
 // ── Panel props ───────────────────────────────────────────────

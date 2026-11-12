@@ -27,7 +27,14 @@ import {
   Zap,
   Eye,
   RotateCcw,
+  ScrollText,
 } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -77,16 +84,43 @@ export interface AgentExecutionPanelProps {
   defaultExpanded?: boolean
 }
 
-// ── Icon mapping ──────────────────────────────────────────
+// ── Entry visual mapping ──────────────────────────────────
+
+const ENTRY_BADGES: Record<
+  AgentLogEntry['type'],
+  { label: string; className: string } | null
+> = {
+  starting: { label: '启动', className: 'text-blue-600 dark:text-blue-300 bg-blue-500/[0.08] border-blue-500/25 dark:border-blue-400/30' },
+  thinking: { label: '思考', className: 'text-violet-600 dark:text-violet-300 bg-violet-500/[0.08] border-violet-500/25 dark:border-violet-400/30' },
+  text_stream: { label: '思考', className: 'text-violet-600 dark:text-violet-300 bg-violet-500/[0.08] border-violet-500/25 dark:border-violet-400/30' },
+  tool_call: { label: '工具', className: 'text-amber-600 dark:text-amber-300 bg-amber-500/[0.08] border-amber-500/25 dark:border-amber-400/30' },
+  tool_result: { label: '结果', className: 'text-emerald-600 dark:text-emerald-300 bg-emerald-500/[0.08] border-emerald-500/25 dark:border-emerald-400/30' },
+  tool_error: { label: '错误', className: 'text-red-600 dark:text-red-300 bg-red-500/[0.08] border-red-500/25 dark:border-red-400/30' },
+  text_output: { label: '输出', className: 'text-sky-600 dark:text-sky-300 bg-sky-500/[0.08] border-sky-500/25 dark:border-sky-400/30' },
+  completed: { label: '完成', className: 'text-emerald-700 dark:text-emerald-200 bg-emerald-500/15 border-emerald-500/40 dark:border-emerald-400/40 font-medium' },
+  error: { label: '失败', className: 'text-red-700 dark:text-red-200 bg-red-500/15 border-red-500/40 dark:border-red-400/40 font-medium' },
+}
+
+const NODE_BG: Record<AgentLogEntry['type'], string> = {
+  starting: 'bg-blue-500/10',
+  thinking: 'bg-violet-500/10',
+  text_stream: 'bg-violet-500/10',
+  tool_call: 'bg-amber-500/10',
+  tool_result: 'bg-emerald-500/10',
+  tool_error: 'bg-red-500/10',
+  text_output: 'bg-sky-500/10',
+  completed: 'bg-emerald-500/15',
+  error: 'bg-red-500/15',
+}
 
 function getEntryIcon(type: AgentLogEntry['type']) {
   switch (type) {
     case 'starting':
       return <Play className="size-3.5 text-blue-500" />
     case 'thinking':
-      return <Brain className="size-3.5 text-violet-500 animate-pulse" />
+      return <Brain className="size-3.5 text-violet-500" />
     case 'text_stream':
-      return <Brain className="size-3.5 text-violet-500 animate-pulse" />
+      return <Brain className="size-3.5 text-violet-500" />
     case 'tool_call':
       return <Wrench className="size-3.5 text-amber-500" />
     case 'tool_result':
@@ -100,33 +134,23 @@ function getEntryIcon(type: AgentLogEntry['type']) {
     case 'error':
       return <AlertCircle className="size-3.5 text-red-500" />
     default:
-      return <Zap className="size-3.5" />
+      return <Zap className="size-3.5 text-muted-foreground" />
   }
 }
 
 function getEntryBadge(type: AgentLogEntry['type']) {
-  switch (type) {
-    case 'starting':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300">启动</Badge>
-    case 'thinking':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-300">思考</Badge>
-    case 'text_stream':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-300">思考</Badge>
-    case 'tool_call':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">工具调用</Badge>
-    case 'tool_result':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">结果</Badge>
-    case 'tool_error':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-red-600 border-red-300">错误</Badge>
-    case 'text_output':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-sky-600 border-sky-300">输出</Badge>
-    case 'completed':
-      return <Badge className="text-[10px] px-1.5 py-0 status-completed">完成</Badge>
-    case 'error':
-      return <Badge className="text-[10px] px-1.5 py-0 status-failed">失败</Badge>
-    default:
-      return null
-  }
+  const def = ENTRY_BADGES[type]
+  if (!def) return null
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center rounded-full border px-2 py-px text-[10px] leading-4',
+        def.className
+      )}
+    >
+      {def.label}
+    </span>
+  )
 }
 
 // ── Tool argument formatter ───────────────────────────────
@@ -178,6 +202,14 @@ function formatTimestamp(ts: number, startTs: number): string {
   return `+${(diff / 1000).toFixed(1)}s`
 }
 
+/** When the step chip is rendered, strip the duplicated "步骤 N: " prefix from the message */
+function stripStepPrefix(message: string, stepNumber?: number): string {
+  if (!stepNumber) return message
+  return message
+    .replace(new RegExp(`^步骤\\s*${stepNumber}\\s*[:：]\\s*`), '')
+    .replace(new RegExp(`^Step\\s*${stepNumber}\\s*[:：]\\s*`, 'i'), '')
+}
+
 // ── Tool name display mapping ─────────────────────────────
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -218,6 +250,8 @@ function LogEntryItem({
 
   // For streaming thinking, show content preview with animation
   const isStreamingThinking = entry.isStreamingThinking
+  const isErrorEntry = entry.type === 'error'
+  const displayMessage = stripStepPrefix(entry.message, entry.stepNumber)
   const thinkingPreview = isStreamingThinking && entry.message.length > 200
     ? entry.message.slice(0, 200) + '...'
     : entry.message
@@ -226,27 +260,46 @@ function LogEntryItem({
     <div className="relative flex gap-3">
       {/* Timeline connector */}
       <div className="flex flex-col items-center">
-        <div className={`rounded-full p-1.5 ${isLast ? 'bg-primary/10' : 'bg-muted/50'}`}>
+        <div
+          className={cn(
+            'rounded-full p-1.5 shrink-0',
+            NODE_BG[entry.type] ?? 'bg-muted/50',
+            isStreamingThinking && isLast && 'animate-pulse'
+          )}
+        >
           {getEntryIcon(entry.type)}
         </div>
         {!isLast && (
-          <div className="w-px flex-1 bg-border/50 min-h-[16px]" />
+          <div className="w-px flex-1 bg-border min-h-[16px]" />
         )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 pb-3 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div
+        className={cn(
+          'flex-1 min-w-0',
+          isErrorEntry
+            ? 'mb-3 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 dark:border-red-400/20 dark:bg-red-400/[0.06]'
+            : 'pb-3'
+        )}
+      >
+        <div className="flex items-start gap-2 flex-wrap">
           {getEntryBadge(entry.type)}
-          <span className="text-sm font-medium">
-            {isStreamingThinking ? '思考中...' : entry.message}
+          <span
+            className={cn(
+              'min-w-0 flex-1 text-[13px] font-medium leading-5 break-words',
+              isErrorEntry && 'text-red-600 dark:text-red-300',
+              entry.type === 'completed' && 'text-emerald-600 dark:text-emerald-300'
+            )}
+          >
+            {isStreamingThinking ? '思考中...' : displayMessage}
           </span>
-          {entry.stepNumber && (
-            <span className="text-[10px] text-muted-foreground font-mono">
-              Step {entry.stepNumber}
+          {entry.stepNumber && !displayMessage.startsWith('步骤') && !displayMessage.startsWith('Step') && (
+            <span className="shrink-0 rounded bg-muted/70 px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+              步骤 {entry.stepNumber}
             </span>
           )}
-          <span className="text-[10px] text-muted-foreground font-mono ml-auto">
+          <span className="shrink-0 pt-0.5 font-mono text-[10px] text-muted-foreground/70 tabular-nums ml-auto">
             {formatTimestamp(entry.timestamp, startTimestamp)}
           </span>
         </div>
@@ -272,13 +325,13 @@ function LogEntryItem({
             {hasDetails && (
               <Collapsible open={expanded} onOpenChange={setExpanded}>
                 <CollapsibleTrigger asChild>
-                  <button className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 mt-1 transition-colors">
+                  <button className="rounded px-1 py-0.5 -mx-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center gap-1 mt-1 transition-colors">
                     {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                     {expanded ? '收起参数' : '查看参数'}
                   </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <pre className="mt-1 text-[11px] bg-muted/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto font-mono leading-relaxed">
+                  <pre className="mt-1 rounded-md border border-border/40 bg-muted/40 p-2 text-[11px] overflow-x-auto max-h-40 overflow-y-auto font-mono leading-relaxed">
                     {formatToolArgs(entry.toolCall.arguments)}
                   </pre>
                 </CollapsibleContent>
@@ -303,13 +356,13 @@ function LogEntryItem({
             {hasDetails && (
               <Collapsible open={expanded} onOpenChange={setExpanded}>
                 <CollapsibleTrigger asChild>
-                  <button className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 mt-1 transition-colors">
+                  <button className="rounded px-1 py-0.5 -mx-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center gap-1 mt-1 transition-colors">
                     {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                     {expanded ? '收起结果' : '查看结果'}
                   </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <pre className="mt-1 text-[11px] bg-muted/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto font-mono leading-relaxed">
+                  <pre className="mt-1 rounded-md border border-border/40 bg-muted/40 p-2 text-[11px] overflow-x-auto max-h-40 overflow-y-auto font-mono leading-relaxed">
                     {entry.toolResult.error || formatToolResult(entry.toolResult.result)}
                   </pre>
                 </CollapsibleContent>
@@ -333,7 +386,7 @@ function LogEntryItem({
                   </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <pre className="text-xs bg-muted/50 rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                  <pre className="rounded-md border border-border/40 bg-muted/40 p-2 text-xs overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                     {entry.textOutput}
                   </pre>
                 </CollapsibleContent>
@@ -367,13 +420,16 @@ export function AgentExecutionPanel({
 
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
-    if (scrollRef.current && expanded) {
-      const el = scrollRef.current
-      // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
-      })
-    }
+    if (!scrollRef.current || !expanded) return
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      const root = scrollRef.current
+      if (!root) return
+      // Radix ScrollArea scrolls on its inner viewport, not the root node
+      const viewport = root.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
+      const target = viewport ?? root
+      target.scrollTop = target.scrollHeight
+    })
   }, [logs, expanded])
 
   const startTimestamp = logs.length > 0 ? logs[0].timestamp : Date.now()
@@ -388,60 +444,83 @@ export function AgentExecutionPanel({
   const startEvent = logs.find(l => l.type === 'starting')
   const skillLoaded = startEvent?.skillLoaded
 
+  // Avoid double-rendering the same failure: the timeline's trailing "失败"
+  // row already carries the message when the SSE error event produced both.
+  const lastLog = logs.length > 0 ? logs[logs.length - 1] : null
+  const errorShownInTimeline = !!(error && lastLog && lastLog.type === 'error' && lastLog.message === error)
+  const finishedWithSuccess = !!lastLog && lastLog.type === 'completed'
+
   return (
-    <Card className="border-primary/20 shadow-sm">
+    <Card className={cn('shadow-sm transition-colors', isRunning ? 'border-primary/20' : error ? 'border-red-500/30' : 'border-border/60')}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger asChild>
           <CardHeader className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`rounded-full p-1.5 ${isRunning ? 'bg-primary/10' : error ? 'bg-red-100 dark:bg-red-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={cn('rounded-full p-1.5 shrink-0', isRunning ? 'bg-primary/10' : error ? 'bg-red-500/10' : finishedWithSuccess ? 'bg-emerald-500/15' : 'bg-muted')}>
                   {isRunning ? (
                     <Loader2 className="size-4 text-primary animate-spin" />
                   ) : error ? (
                     <AlertCircle className="size-4 text-red-500" />
-                  ) : logs.length > 0 && logs[logs.length - 1]?.type === 'completed' ? (
+                  ) : finishedWithSuccess ? (
                     <Sparkles className="size-4 text-emerald-500" />
                   ) : (
                     <Brain className="size-4 text-muted-foreground" />
                   )}
                 </div>
-                <div>
-                  <CardTitle className="text-sm font-semibold">{agentName}</CardTitle>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-muted-foreground font-mono">{agentType}</span>
+                <div className="min-w-0">
+                  <CardTitle className="text-sm font-semibold truncate">{agentName}</CardTitle>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="rounded border border-border/40 bg-muted/60 px-1.5 py-px text-[10px] text-muted-foreground font-mono">
+                      {agentType}
+                    </span>
                     {skillLoaded !== undefined && (
-                      <Badge variant="outline" className={`text-[9px] px-1 py-0 ${skillLoaded ? 'text-emerald-600 border-emerald-300' : 'text-amber-600 border-amber-300'}`}>
-                        {skillLoaded ? '✓ SKILL已加载' : '⚠ SKILL未找到'}
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className={cn(
+                            'inline-flex cursor-default items-center gap-1 rounded-full border px-1.5 py-px text-[9px] font-medium leading-3.5',
+                            skillLoaded
+                              ? 'text-emerald-600 bg-emerald-500/[0.08] border-emerald-500/25 dark:text-emerald-300 dark:border-emerald-400/30'
+                              : 'text-amber-600 bg-amber-500/[0.08] border-amber-500/25 dark:text-amber-300 dark:border-amber-400/30'
+                          )}>
+                            <ScrollText className="size-2.5" />
+                            {skillLoaded ? 'SKILL 已加载' : 'SKILL 缺失'}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-56">
+                          {skillLoaded
+                            ? '已加载该 Agent 的专业技能指南（SKILL.md），输出质量更稳定'
+                            : '未找到该 Agent 的 SKILL.md 技能文件，正在使用基础提示词执行，效果可能下降'}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                {/* Stats */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                {/* Stats — only render non-zero metrics */}
                 {logs.length > 0 && (
-                  <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <div className="hidden md:flex items-center gap-3 text-[11px] font-medium text-muted-foreground tabular-nums">
                     {totalSteps > 0 && (
                       <span className="flex items-center gap-1">
                         <RotateCcw className="size-3" />
-                        {totalSteps}步
+                        {totalSteps} 步
                       </span>
                     )}
                     {toolCallCount > 0 && (
                       <span className="flex items-center gap-1">
                         <Wrench className="size-3" />
-                        {toolCallCount}次工具
+                        {toolCallCount} 次工具
                       </span>
                     )}
                     {toolErrorCount > 0 && (
                       <span className="flex items-center gap-1 text-red-500">
                         <X className="size-3" />
-                        {toolErrorCount}个错误
+                        {toolErrorCount} 个错误
                       </span>
                     )}
-                    {duration && (
+                    {!!duration && duration > 0 && (
                       <span className="flex items-center gap-1">
                         <Clock className="size-3" />
                         {formatTime(duration)}
@@ -508,14 +587,16 @@ export function AgentExecutionPanel({
               </div>
             </ScrollArea>
 
-            {/* Error display */}
-            {error && (
-              <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                <div className="flex items-start gap-2">
+            {/* Error display — skipped when the timeline already shows the identical failure row */}
+            {error && !errorShownInTimeline && (
+              <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/[0.07] p-3 dark:border-red-400/25 dark:bg-red-400/[0.06]">
+                <div className="flex items-start gap-2.5">
                   <AlertCircle className="size-4 text-red-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-red-700 dark:text-red-400">执行失败</p>
-                    <p className="text-xs text-red-600 dark:text-red-300 mt-1">{error}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-red-600 dark:text-red-300">执行失败</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-red-500/90 dark:text-red-300/80 max-h-32 overflow-y-auto">
+                      {error}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -523,12 +604,12 @@ export function AgentExecutionPanel({
 
             {/* Result summary */}
             {resultText && !error && (
-              <div className="mt-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
-                <div className="flex items-start gap-2">
+              <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.07] p-3 dark:border-emerald-400/25 dark:bg-emerald-400/[0.06]">
+                <div className="flex items-start gap-2.5">
                   <Sparkles className="size-4 text-emerald-500 mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">执行结果</p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-300 mt-1 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                    <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">执行结果</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-emerald-700/90 dark:text-emerald-200/80 max-h-32 overflow-y-auto">
                       {resultText.length > 500 ? resultText.slice(0, 500) + '...' : resultText}
                     </p>
                   </div>

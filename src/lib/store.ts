@@ -19,6 +19,10 @@ export interface Drama {
   novelParsed: boolean
   artStyle: string | null
   assetStatus: string
+  // 整剧成片 — merged full-drama video
+  finalVideoUrl: string | null
+  finalVideoDuration: number
+  dramaMergedAt: string | null
   createdAt: string
   updatedAt: string
   _count?: { episodes: number; characters: number; scenes: number }

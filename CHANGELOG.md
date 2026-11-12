@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 整剧成片闭环（管线最后一公里）
+- 整剧合并 API — `GET/POST /api/dramas/[id]/merge`
+  - GET：各集成片就绪度（X/Y 集已成片）、预估总时长、FFmpeg 可用性、最新整剧产物
+  - POST：按集序下载全部集成片 → FFmpeg concat 合并 → 落文件存储 → 写回 `Drama.finalVideoUrl/finalVideoDuration/dramaMergedAt`；全部集齐时自动置 `status='completed'`
+- Schema：Drama 新增 `finalVideoUrl` / `finalVideoDuration` / `dramaMergedAt`
+- 项目详情页新增「整剧成片」卡片
+  - 未合并：集就绪度徽章（E01/E02…）+ 一键「合并整剧」
+  - 已合并：内嵌整剧连播播放器 + 「下载整剧」+「重新合并」
+  - 批量管线跑完后自动刷新就绪状态
+- EpisodeCard 新增「已出片」徽标（集级成片一眼可见）
+- 新增 `scripts/seed-e2e-drama.ts` E2E 种子脚本（真实小 MP4 成片 + 剧本内容）
+
+### Fixed — Agent 执行面板渲染优化 + 失败态消失
+- 时间线消息去重：剥离冗余「步骤 N: 」前缀，改用统一「步骤 N」胶囊
+- 失败行高亮：红色面板承载失败信息，避免时间线与底部错误框重复渲染同一错误（自动去重）
+- 统计胶囊只渲染非零指标（步数/工具/错误/耗时），修复头部无意义的「0」
+- SKILL 徽章重设计：缺失时显示可解释的 Tooltip（此前只显示「⚠ SKILL未找到」无说明）
+- 暗色模式适配：所有徽章/节点/错误框使用双模式颜色 token
+- 修复 Radix ScrollArea 自动滚动失效（此前滚动的是根节点而非 viewport）
+- 修复提取失败后执行面板被立即卸载的问题 — 失败后保留完整错误时间线，并提供「重新提取 / 清空并返回」就地操作
+
+### Added — 补齐 Agent SKILL 技能文件（6 个）
+- `extractor` / `storyboard_breaker` / `voice_assigner` / `script_parser` / `script_rewriter` / `grid_prompt_generator`
+- 消除「SKILL未找到」警告；以上 Agent 执行时自动加载专业技能指南，输出质量更稳定
+
 ### Fixed — 剧本工坊全流程可用 (P0)
 
 #### 根因: NVIDIA 默认模型 EOL

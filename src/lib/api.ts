@@ -350,6 +350,45 @@ export const api = {
         method: 'POST',
       }),
 
+    // ---- Drama Final Cut (整剧成片：合并全部集成片 + 整剧连播) ----
+    getDramaMergeStatus: (dramaId: string) =>
+      request<{
+        dramaId: string
+        dramaTitle: string
+        finalVideoUrl: string | null
+        finalVideoDuration: number
+        dramaMergedAt: string | null
+        episodes: {
+          total: number
+          withVideo: number
+          missing: number
+          estimatedDuration: number
+          list: Array<{
+            id: string
+            episodeNumber: number
+            title: string
+            hasVideo: boolean
+            duration: number
+          }>
+        }
+        canMerge: boolean
+        ffmpegAvailable: boolean
+      }>(`/api/dramas/${dramaId}/merge`),
+
+    mergeDrama: (dramaId: string) =>
+      request<{
+        drama: Drama
+        merge: {
+          url: string
+          duration: number
+          episodesMerged: number
+          totalEpisodes: number
+          failedEpisodes: string[]
+        }
+      }>(`/api/dramas/${dramaId}/merge`, {
+        method: 'POST',
+      }),
+
     getDashboard: (dramaId: string) =>
       request<any>(`/api/dramas/${dramaId}/dashboard`),
 
