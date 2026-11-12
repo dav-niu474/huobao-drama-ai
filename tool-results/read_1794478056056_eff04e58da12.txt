@@ -1,0 +1,766 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useRef } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     6→import { Badge } from '@/components/ui/badge'
+     7→import { ScrollArea } from '@/components/ui/scroll-area'
+     8→import { Button } from '@/components/ui/button'
+     9→import {
+    10→  Collapsible,
+    11→  CollapsibleTrigger,
+    12→  CollapsibleContent,
+    13→} from '@/components/ui/collapsible'
+    14→import {
+    15→  Loader2,
+    16→  Check,
+    17→  X,
+    18→  ChevronDown,
+    19→  ChevronRight,
+    20→  Wrench,
+    21→  Brain,
+    22→  Sparkles,
+    23→  AlertCircle,
+    24→  Play,
+    25→  FileText,
+    26→  Clock,
+    27→  Zap,
+    28→  Eye,
+    29→  RotateCcw,
+    30→} from 'lucide-react'
+    31→
+    32→// ── Types ──────────────────────────────────────────────────
+    33→
+    34→export interface AgentLogEntry {
+    35→  id: string
+    36→  type: 'starting' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_error' | 'text_output' | 'text_stream' | 'completed' | 'error'
+    37→  message: string
+    38→  timestamp: number
+    39→  stepNumber?: number
+    40→  toolCall?: {
+    41→    id: string
+    42→    name: string
+    43→    arguments: Record<string, unknown>
+    44→  }
+    45→  toolResult?: {
+    46→    name: string
+    47→    result?: unknown
+    48→    error?: string
+    49→  }
+    50→  textOutput?: string
+    51→  agentType?: string
+    52→  agentName?: string
+    53→  skillLoaded?: boolean
+    54→  duration?: number
+    55→  toolCalls?: unknown[]
+    56→  steps?: number
+    57→  /** Whether this is a streaming thinking entry that should be updated in place */
+    58→  isStreamingThinking?: boolean
+    59→}
+    60→
+    61→export interface AgentExecutionPanelProps {
+    62→  /** Agent type identifier */
+    63→  agentType: string
+    64→  /** Agent display name */
+    65→  agentName: string
+    66→  /** Whether the agent is currently running */
+    67→  isRunning: boolean
+    68→  /** Log entries from SSE events */
+    69→  logs: AgentLogEntry[]
+    70→  /** Final result text */
+    71→  resultText?: string
+    72→  /** Total execution duration in ms */
+    73→  duration?: number
+    74→  /** Error message if any */
+    75→  error?: string | null
+    76→  /** Whether the panel is expanded by default */
+    77→  defaultExpanded?: boolean
+    78→}
+    79→
+    80→// ── Icon mapping ──────────────────────────────────────────
+    81→
+    82→function getEntryIcon(type: AgentLogEntry['type']) {
+    83→  switch (type) {
+    84→    case 'starting':
+    85→      return <Play className="size-3.5 text-blue-500" />
+    86→    case 'thinking':
+    87→      return <Brain className="size-3.5 text-violet-500 animate-pulse" />
+    88→    case 'text_stream':
+    89→      return <Brain className="size-3.5 text-violet-500 animate-pulse" />
+    90→    case 'tool_call':
+    91→      return <Wrench className="size-3.5 text-amber-500" />
+    92→    case 'tool_result':
+    93→      return <Check className="size-3.5 text-emerald-500" />
+    94→    case 'tool_error':
+    95→      return <X className="size-3.5 text-red-500" />
+    96→    case 'text_output':
+    97→      return <FileText className="size-3.5 text-sky-500" />
+    98→    case 'completed':
+    99→      return <Sparkles className="size-3.5 text-emerald-500" />
+   100→    case 'error':
+   101→      return <AlertCircle className="size-3.5 text-red-500" />
+   102→    default:
+   103→      return <Zap className="size-3.5" />
+   104→  }
+   105→}
+   106→
+   107→function getEntryBadge(type: AgentLogEntry['type']) {
+   108→  switch (type) {
+   109→    case 'starting':
+   110→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300">启动</Badge>
+   111→    case 'thinking':
+   112→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-300">思考</Badge>
+   113→    case 'text_stream':
+   114→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-300">思考</Badge>
+   115→    case 'tool_call':
+   116→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">工具调用</Badge>
+   117→    case 'tool_result':
+   118→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">结果</Badge>
+   119→    case 'tool_error':
+   120→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-red-600 border-red-300">错误</Badge>
+   121→    case 'text_output':
+   122→      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-sky-600 border-sky-300">输出</Badge>
+   123→    case 'completed':
+   124→      return <Badge className="text-[10px] px-1.5 py-0 status-completed">完成</Badge>
+   125→    case 'error':
+   126→      return <Badge className="text-[10px] px-1.5 py-0 status-failed">失败</Badge>
+   127→    default:
+   128→      return null
+   129→  }
+   130→}
+   131→
+   132→// ── Tool argument formatter ───────────────────────────────
+   133→
+   134→function formatToolArgs(args: Record<string, unknown>): string {
+   135→  try {
+   136→    // For array arguments, show count instead of full content
+   137→    const summarized: Record<string, unknown> = {}
+   138→    for (const [key, value] of Object.entries(args)) {
+   139→      if (Array.isArray(value)) {
+   140→        summarized[key] = `[${value.length}项]`
+   141→      } else if (typeof value === 'string' && value.length > 100) {
+   142→        summarized[key] = value.slice(0, 100) + '...'
+   143→      } else {
+   144→        summarized[key] = value
+   145→      }
+   146→    }
+   147→    return JSON.stringify(summarized, null, 2)
+   148→  } catch {
+   149→    return String(args)
+   150→  }
+   151→}
+   152→
+   153→function formatToolResult(result: unknown): string {
+   154→  if (!result || typeof result !== 'object') return String(result)
+   155→  try {
+   156→    const str = JSON.stringify(result, null, 2)
+   157→    // Truncate very long results
+   158→    if (str.length > 500) {
+   159→      return str.slice(0, 500) + '\n... (结果已截断)'
+   160→    }
+   161→    return str
+   162→  } catch {
+   163→    return String(result)
+   164→  }
+   165→}
+   166→
+   167→// ── Time formatter ────────────────────────────────────────
+   168→
+   169→function formatTime(ms: number): string {
+   170→  if (ms < 1000) return `${ms}ms`
+   171→  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+   172→  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+   173→}
+   174→
+   175→function formatTimestamp(ts: number, startTs: number): string {
+   176→  const diff = ts - startTs
+   177→  if (diff < 1000) return `+${diff}ms`
+   178→  return `+${(diff / 1000).toFixed(1)}s`
+   179→}
+   180→
+   181→// ── Tool name display mapping ─────────────────────────────
+   182→
+   183→const TOOL_DISPLAY_NAMES: Record<string, string> = {
+   184→  read_episode_script: '📖 读取剧本',
+   185→  save_script: '💾 保存剧本',
+   186→  read_script_for_extraction: '📖 读取剧本(提取)',
+   187→  read_existing_characters: '👥 查看已有角色',
+   188→  read_existing_scenes: '🎬 查看已有场景',
+   189→  save_characters: '💾 保存角色',
+   190→  save_scenes: '💾 保存场景',
+   191→  read_storyboard_context: '📋 读取分镜上下文',
+   192→  save_storyboards: '💾 保存分镜',
+   193→  update_storyboard: '✏️ 更新分镜',
+   194→  get_characters: '👥 获取角色列表',
+   195→  list_available_voices: '🔊 浏览音色库',
+   196→  assign_voice: '🎤 分配音色',
+   197→  read_characters: '👥 读取角色',
+   198→  read_scenes: '🎬 读取场景',
+   199→  read_shots: '🎞️ 读取镜头',
+   200→  generate_character_prompt: '✨ 生成角色提示词',
+   201→  generate_scene_prompt: '✨ 生成场景提示词',
+   202→  generate_grid_prompt: '✨ 生成宫格提示词',
+   203→}
+   204→
+   205→// ── Sub-component: Single Log Entry ──────────────────────
+   206→
+   207→function LogEntryItem({
+   208→  entry,
+   209→  startTimestamp,
+   210→  isLast,
+   211→}: {
+   212→  entry: AgentLogEntry
+   213→  startTimestamp: number
+   214→  isLast: boolean
+   215→}) {
+   216→  const [expanded, setExpanded] = useState(false)
+   217→  const hasDetails = entry.toolCall || entry.toolResult || (entry.textOutput && entry.textOutput.length > 80)
+   218→
+   219→  // For streaming thinking, show content preview with animation
+   220→  const isStreamingThinking = entry.isStreamingThinking
+   221→  const thinkingPreview = isStreamingThinking && entry.message.length > 200
+   222→    ? entry.message.slice(0, 200) + '...'
+   223→    : entry.message
+   224→
+   225→  return (
+   226→    <div className="relative flex gap-3">
+   227→      {/* Timeline connector */}
+   228→      <div className="flex flex-col items-center">
+   229→        <div className={`rounded-full p-1.5 ${isLast ? 'bg-primary/10' : 'bg-muted/50'}`}>
+   230→          {getEntryIcon(entry.type)}
+   231→        </div>
+   232→        {!isLast && (
+   233→          <div className="w-px flex-1 bg-border/50 min-h-[16px]" />
+   234→        )}
+   235→      </div>
+   236→
+   237→      {/* Content */}
+   238→      <div className="flex-1 pb-3 min-w-0">
+   239→        <div className="flex items-center gap-2 flex-wrap">
+   240→          {getEntryBadge(entry.type)}
+   241→          <span className="text-sm font-medium">
+   242→            {isStreamingThinking ? '思考中...' : entry.message}
+   243→          </span>
+   244→          {entry.stepNumber && (
+   245→            <span className="text-[10px] text-muted-foreground font-mono">
+   246→              Step {entry.stepNumber}
+   247→            </span>
+   248→          )}
+   249→          <span className="text-[10px] text-muted-foreground font-mono ml-auto">
+   250→            {formatTimestamp(entry.timestamp, startTimestamp)}
+   251→          </span>
+   252→        </div>
+   253→
+   254→        {/* Streaming thinking content preview */}
+   255→        {isStreamingThinking && entry.message.length > 30 && (
+   256→          <div className="mt-1.5 ml-0">
+   257→            <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
+   258→              {thinkingPreview}
+   259→            </p>
+   260→          </div>
+   261→        )}
+   262→
+   263→        {/* Tool call details */}
+   264→        {entry.toolCall && (
+   265→          <div className="mt-1.5">
+   266→            <div className="flex items-center gap-1.5">
+   267→              <Wrench className="size-3 text-amber-500" />
+   268→              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+   269→                {TOOL_DISPLAY_NAMES[entry.toolCall.name] || entry.toolCall.name}
+   270→              </span>
+   271→            </div>
+   272→            {hasDetails && (
+   273→              <Collapsible open={expanded} onOpenChange={setExpanded}>
+   274→                <CollapsibleTrigger asChild>
+   275→                  <button className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 mt-1 transition-colors">
+   276→                    {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+   277→                    {expanded ? '收起参数' : '查看参数'}
+   278→                  </button>
+   279→                </CollapsibleTrigger>
+   280→                <CollapsibleContent>
+   281→                  <pre className="mt-1 text-[11px] bg-muted/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto font-mono leading-relaxed">
+   282→                    {formatToolArgs(entry.toolCall.arguments)}
+   283→                  </pre>
+   284→                </CollapsibleContent>
+   285→              </Collapsible>
+   286→            )}
+   287→          </div>
+   288→        )}
+   289→
+   290→        {/* Tool result details */}
+   291→        {entry.toolResult && (
+   292→          <div className="mt-1.5">
+   293→            <div className="flex items-center gap-1.5">
+   294→              {entry.toolResult.error ? (
+   295→                <X className="size-3 text-red-500" />
+   296→              ) : (
+   297→                <Check className="size-3 text-emerald-500" />
+   298→              )}
+   299→              <span className={`text-xs font-semibold ${entry.toolResult.error ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+   300→                {entry.toolResult.error ? '执行失败' : '执行成功'}
+   301→              </span>
+   302→            </div>
+   303→            {hasDetails && (
+   304→              <Collapsible open={expanded} onOpenChange={setExpanded}>
+   305→                <CollapsibleTrigger asChild>
+   306→                  <button className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 mt-1 transition-colors">
+   307→                    {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+   308→                    {expanded ? '收起结果' : '查看结果'}
+   309→                  </button>
+   310→                </CollapsibleTrigger>
+   311→                <CollapsibleContent>
+   312→                  <pre className="mt-1 text-[11px] bg-muted/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto font-mono leading-relaxed">
+   313→                    {entry.toolResult.error || formatToolResult(entry.toolResult.result)}
+   314→                  </pre>
+   315→                </CollapsibleContent>
+   316→              </Collapsible>
+   317→            )}
+   318→          </div>
+   319→        )}
+   320→
+   321→        {/* Text output preview */}
+   322→        {entry.textOutput && entry.textOutput.length > 0 && (
+   323→          <div className="mt-1.5">
+   324→            {entry.textOutput.length > 200 ? (
+   325→              <Collapsible open={expanded} onOpenChange={setExpanded}>
+   326→                <p className="text-xs text-muted-foreground leading-relaxed">
+   327→                  {entry.textOutput.slice(0, 200)}...
+   328→                </p>
+   329→                <CollapsibleTrigger asChild>
+   330→                  <button className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-1 mt-1 transition-colors">
+   331→                    {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+   332→                    {expanded ? '收起' : '展开全文'}
+   333→                  </button>
+   334→                </CollapsibleTrigger>
+   335→                <CollapsibleContent>
+   336→                  <pre className="text-xs bg-muted/50 rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+   337→                    {entry.textOutput}
+   338→                  </pre>
+   339→                </CollapsibleContent>
+   340→              </Collapsible>
+   341→            ) : (
+   342→              <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+   343→                {entry.textOutput}
+   344→              </p>
+   345→            )}
+   346→          </div>
+   347→        )}
+   348→      </div>
+   349→    </div>
+   350→  )
+   351→}
+   352→
+   353→// ── Main Component ────────────────────────────────────────
+   354→
+   355→export function AgentExecutionPanel({
+   356→  agentType,
+   357→  agentName,
+   358→  isRunning,
+   359→  logs,
+   360→  resultText,
+   361→  duration,
+   362→  error,
+   363→  defaultExpanded = true,
+   364→}: AgentExecutionPanelProps) {
+   365→  const [expanded, setExpanded] = useState(defaultExpanded)
+   366→  const scrollRef = useRef<HTMLDivElement>(null)
+   367→
+   368→  // Auto-scroll to bottom when new logs arrive
+   369→  useEffect(() => {
+   370→    if (scrollRef.current && expanded) {
+   371→      const el = scrollRef.current
+   372→      // Use requestAnimationFrame to ensure DOM has updated
+   373→      requestAnimationFrame(() => {
+   374→        el.scrollTop = el.scrollHeight
+   375→      })
+   376→    }
+   377→  }, [logs, expanded])
+   378→
+   379→  const startTimestamp = logs.length > 0 ? logs[0].timestamp : Date.now()
+   380→
+   381→  // Calculate stats
+   382→  const toolCallCount = logs.filter(l => l.type === 'tool_call').length
+   383→  const toolResultCount = logs.filter(l => l.type === 'tool_result').length
+   384→  const toolErrorCount = logs.filter(l => l.type === 'tool_error').length
+   385→  const totalSteps = logs.reduce((max, l) => Math.max(max, l.stepNumber || 0), 0)
+   386→
+   387→  // Get skill status from starting event
+   388→  const startEvent = logs.find(l => l.type === 'starting')
+   389→  const skillLoaded = startEvent?.skillLoaded
+   390→
+   391→  return (
+   392→    <Card className="border-primary/20 shadow-sm">
+   393→      <Collapsible open={expanded} onOpenChange={setExpanded}>
+   394→        <CollapsibleTrigger asChild>
+   395→          <CardHeader className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors">
+   396→            <div className="flex items-center justify-between">
+   397→              <div className="flex items-center gap-3">
+   398→                <div className={`rounded-full p-1.5 ${isRunning ? 'bg-primary/10' : error ? 'bg-red-100 dark:bg-red-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30'}`}>
+   399→                  {isRunning ? (
+   400→                    <Loader2 className="size-4 text-primary animate-spin" />
+   401→                  ) : error ? (
+   402→                    <AlertCircle className="size-4 text-red-500" />
+   403→                  ) : logs.length > 0 && logs[logs.length - 1]?.type === 'completed' ? (
+   404→                    <Sparkles className="size-4 text-emerald-500" />
+   405→                  ) : (
+   406→                    <Brain className="size-4 text-muted-foreground" />
+   407→                  )}
+   408→                </div>
+   409→                <div>
+   410→                  <CardTitle className="text-sm font-semibold">{agentName}</CardTitle>
+   411→                  <div className="flex items-center gap-2 mt-0.5">
+   412→                    <span className="text-[10px] text-muted-foreground font-mono">{agentType}</span>
+   413→                    {skillLoaded !== undefined && (
+   414→                      <Badge variant="outline" className={`text-[9px] px-1 py-0 ${skillLoaded ? 'text-emerald-600 border-emerald-300' : 'text-amber-600 border-amber-300'}`}>
+   415→                        {skillLoaded ? '✓ SKILL已加载' : '⚠ SKILL未找到'}
+   416→                      </Badge>
+   417→                    )}
+   418→                  </div>
+   419→                </div>
+   420→              </div>
+   421→
+   422→              <div className="flex items-center gap-3">
+   423→                {/* Stats */}
+   424→                {logs.length > 0 && (
+   425→                  <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
+   426→                    {totalSteps > 0 && (
+   427→                      <span className="flex items-center gap-1">
+   428→                        <RotateCcw className="size-3" />
+   429→                        {totalSteps}步
+   430→                      </span>
+   431→                    )}
+   432→                    {toolCallCount > 0 && (
+   433→                      <span className="flex items-center gap-1">
+   434→                        <Wrench className="size-3" />
+   435→                        {toolCallCount}次工具
+   436→                      </span>
+   437→                    )}
+   438→                    {toolErrorCount > 0 && (
+   439→                      <span className="flex items-center gap-1 text-red-500">
+   440→                        <X className="size-3" />
+   441→                        {toolErrorCount}个错误
+   442→                      </span>
+   443→                    )}
+   444→                    {duration && (
+   445→                      <span className="flex items-center gap-1">
+   446→                        <Clock className="size-3" />
+   447→                        {formatTime(duration)}
+   448→                      </span>
+   449→                    )}
+   450→                  </div>
+   451→                )}
+   452→
+   453→                {isRunning && (
+   454→                  <Badge variant="outline" className="text-[10px] px-2 py-0 text-primary border-primary/30 amber-pulse">
+   455→                    执行中
+   456→                  </Badge>
+   457→                )}
+   458→
+   459→                {expanded ? (
+   460→                  <ChevronDown className="size-4 text-muted-foreground" />
+   461→                ) : (
+   462→                  <ChevronRight className="size-4 text-muted-foreground" />
+   463→                )}
+   464→              </div>
+   465→            </div>
+   466→          </CardHeader>
+   467→        </CollapsibleTrigger>
+   468→
+   469→        <CollapsibleContent>
+   470→          <CardContent className="pt-0 px-4 pb-4">
+   471→            {/* Execution timeline */}
+   472→            <ScrollArea className="max-h-96" ref={scrollRef}>
+   473→              <div className="space-y-0">
+   474→                <AnimatePresence initial={false}>
+   475→                  {logs.map((entry, index) => (
+   476→                    <motion.div
+   477→                      key={entry.id}
+   478→                      initial={{ opacity: 0, x: -8 }}
+   479→                      animate={{ opacity: 1, x: 0 }}
+   480→                      transition={{ duration: 0.15, ease: 'easeOut' }}
+   481→                    >
+   482→                      <LogEntryItem
+   483→                        entry={entry}
+   484→                        startTimestamp={startTimestamp}
+   485→                        isLast={index === logs.length - 1}
+   486→                      />
+   487→                    </motion.div>
+   488→                  ))}
+   489→                </AnimatePresence>
+   490→
+   491→                {/* Empty state */}
+   492→                {logs.length === 0 && !isRunning && (
+   493→                  <div className="flex items-center justify-center py-8 text-muted-foreground">
+   494→                    <div className="text-center">
+   495→                      <Eye className="size-8 mx-auto mb-2 opacity-40" />
+   496→                      <p className="text-xs">等待Agent执行...</p>
+   497→                    </div>
+   498→                  </div>
+   499→                )}
+   500→
+   501→                {/* Loading indicator while running but no logs yet */}
+   502→                {isRunning && logs.length === 0 && (
+   503→                  <div className="flex items-center gap-2 py-4 text-muted-foreground">
+   504→                    <Loader2 className="size-4 animate-spin" />
+   505→                    <span className="text-xs">正在连接Agent...</span>
+   506→                  </div>
+   507→                )}
+   508→              </div>
+   509→            </ScrollArea>
+   510→
+   511→            {/* Error display */}
+   512→            {error && (
+   513→              <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+   514→                <div className="flex items-start gap-2">
+   515→                  <AlertCircle className="size-4 text-red-500 mt-0.5 shrink-0" />
+   516→                  <div>
+   517→                    <p className="text-xs font-semibold text-red-700 dark:text-red-400">执行失败</p>
+   518→                    <p className="text-xs text-red-600 dark:text-red-300 mt-1">{error}</p>
+   519→                  </div>
+   520→                </div>
+   521→              </div>
+   522→            )}
+   523→
+   524→            {/* Result summary */}
+   525→            {resultText && !error && (
+   526→              <div className="mt-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+   527→                <div className="flex items-start gap-2">
+   528→                  <Sparkles className="size-4 text-emerald-500 mt-0.5 shrink-0" />
+   529→                  <div className="min-w-0 flex-1">
+   530→                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">执行结果</p>
+   531→                    <p className="text-xs text-emerald-600 dark:text-emerald-300 mt-1 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+   532→                      {resultText.length > 500 ? resultText.slice(0, 500) + '...' : resultText}
+   533→                    </p>
+   534→                  </div>
+   535→                </div>
+   536→              </div>
+   537→            )}
+   538→          </CardContent>
+   539→        </CollapsibleContent>
+   540→      </Collapsible>
+   541→    </Card>
+   542→  )
+   543→}
+   544→
+   545→// ── Hook: useAgentExecution ───────────────────────────────
+   546→// Manages the SSE stream connection and accumulates log entries
+   547→
+   548→export function useAgentExecution() {
+   549→  const [logs, setLogs] = useState<Record<string, AgentLogEntry[]>>({})
+   550→  const [runningAgents, setRunningAgents] = useState<Set<string>>(new Set())
+   551→  const [resultTexts, setResultTexts] = useState<Record<string, string>>({})
+   552→  const [durations, setDurations] = useState<Record<string, number>>({})
+   553→  const [errors, setErrors] = useState<Record<string, string | null>>({})
+   554→  const idCounter = useRef(0)
+   555→
+   556→  const startAgent = async (
+   557→    agentType: string,
+   558→    episodeId: string,
+   559→    dramaId: string,
+   560→    message: string,
+   561→    options?: { model?: string }
+   562→  ): Promise<{ hadErrors: boolean; toolErrors: string[] }> => {
+   563→    // Track tool errors during execution
+   564→    const toolErrors: string[] = []
+   565→    let hadTopLevelError = false
+   566→
+   567→    // Reset state for this agent
+   568→    setLogs(prev => ({ ...prev, [agentType]: [] }))
+   569→    setRunningAgents(prev => new Set(prev).add(agentType))
+   570→    setResultTexts(prev => ({ ...prev, [agentType]: '' }))
+   571→    setDurations(prev => ({ ...prev, [agentType]: 0 }))
+   572→    setErrors(prev => ({ ...prev, [agentType]: null }))
+   573→
+   574→    try {
+   575→      const res = await fetch(`/api/agent/${agentType}/stream`, {
+   576→        method: 'POST',
+   577→        headers: { 'Content-Type': 'application/json' },
+   578→        body: JSON.stringify({ episodeId, dramaId, message, model: options?.model }),
+   579→      })
+   580→
+   581→      if (!res.ok) {
+   582→        const text = await res.text().catch(() => 'Unknown error')
+   583→        setErrors(prev => ({ ...prev, [agentType]: `API ${res.status}: ${text}` }))
+   584→        setRunningAgents(prev => {
+   585→          const next = new Set(prev)
+   586→          next.delete(agentType)
+   587→          return next
+   588→        })
+   589→        return { hadErrors: true, toolErrors: [] }
+   590→      }
+   591→
+   592→      const reader = res.body?.getReader()
+   593→      if (!reader) {
+   594→        setErrors(prev => ({ ...prev, [agentType]: 'No readable stream' }))
+   595→        setRunningAgents(prev => {
+   596→          const next = new Set(prev)
+   597→          next.delete(agentType)
+   598→          return next
+   599→        })
+   600→        return { hadErrors: true, toolErrors: [] }
+   601→      }
+   602→
+   603→      const decoder = new TextDecoder()
+   604→      let buffer = ''
+   605→
+   606→      while (true) {
+   607→        const { done, value } = await reader.read()
+   608→        if (done) break
+   609→
+   610→        buffer += decoder.decode(value, { stream: true })
+   611→        const lines = buffer.split('\n')
+   612→        buffer = lines.pop() || ''
+   613→
+   614→        for (const line of lines) {
+   615→          if (line.startsWith('data: ')) {
+   616→            try {
+   617→              const event = JSON.parse(line.slice(6))
+   618→              const entryId = `log-${++idCounter.current}`
+   619→
+   620→              const entry: AgentLogEntry = {
+   621→                id: entryId,
+   622→                type: event.type || event.step || 'unknown',
+   623→                message: event.message || '',
+   624→                timestamp: event.timestamp || Date.now(),
+   625→                stepNumber: event.stepNumber,
+   626→                toolCall: event.toolCall,
+   627→                toolResult: event.toolResult,
+   628→                textOutput: event.textOutput,
+   629→                agentType: event.agentType,
+   630→                agentName: event.agentName,
+   631→                skillLoaded: event.skillLoaded,
+   632→              }
+   633→
+   634→              // ── Heartbeat / Streaming thinking handling ──
+   635→              // When we receive a "thinking" event that says "仍在生成中",
+   636→              // it's a heartbeat to keep the connection alive. We UPDATE
+   637→              // the last thinking entry's message instead of adding a new one.
+   638→              // For streaming thinking (actual content), we also update the
+   639→              // last thinking entry for the same step to show real-time progress.
+   640→              if (event.type === 'thinking') {
+   641→                const isHeartbeat = event.message?.includes('仍在生成中')
+   642→                const isInitialThink = event.message?.includes('正在思考')
+   643→                
+   644→                setLogs(prev => {
+   645→                  const currentLogs = prev[agentType] || []
+   646→                  // Find the last "thinking" or "text_stream" entry for this step
+   647→                  const lastThinkingIdx = [...currentLogs]
+   648→                    .reverse()
+   649→                    .findIndex(l => 
+   650→                      (l.type === 'thinking' || l.type === 'text_stream') && 
+   651→                      l.stepNumber === event.stepNumber
+   652→                    )
+   653→
+   654→                  if (lastThinkingIdx !== -1) {
+   655→                    const realIdx = currentLogs.length - 1 - lastThinkingIdx
+   656→                    const existing = currentLogs[realIdx]
+   657→                    // Update the existing thinking entry:
+   658→                    // - For heartbeat: just update the message
+   659→                    // - For streaming content: update message and mark as streaming
+   660→                    const updated = [...currentLogs]
+   661→                    updated[realIdx] = { 
+   662→                      ...existing, 
+   663→                      message: event.message,
+   664→                      // If it's actual content (not heartbeat/initial), mark as streaming
+   665→                      isStreamingThinking: !isHeartbeat && !isInitialThink,
+   666→                      type: isHeartbeat ? existing.type : 'thinking',
+   667→                    }
+   668→                    return { ...prev, [agentType]: updated }
+   669→                  }
+   670→                  // No previous thinking found, add as new entry
+   671→                  return { ...prev, [agentType]: [...currentLogs, entry] }
+   672→                })
+   673→                // Don't process further — it's a thinking update
+   674→                continue
+   675→              }
+   676→
+   677→              // Handle backward compatibility with old format (step field)
+   678→              if (!event.type && event.step) {
+   679→                entry.type = event.step
+   680→              }
+   681→
+   682→              setLogs(prev => ({
+   683→                ...prev,
+   684→                [agentType]: [...(prev[agentType] || []), entry],
+   685→              }))
+   686→
+   687→              // Handle completion
+   688→              if (entry.type === 'completed') {
+   689→                const resultText = event.textOutput || event.text || ''
+   690→                setResultTexts(prev => ({ ...prev, [agentType]: resultText }))
+   691→                if (event.duration) {
+   692→                  setDurations(prev => ({ ...prev, [agentType]: event.duration }))
+   693→                }
+   694→              }
+   695→
+   696→              // Handle error
+   697→              if (entry.type === 'error') {
+   698→                setErrors(prev => ({ ...prev, [agentType]: event.message }))
+   699→                hadTopLevelError = true
+   700→              }
+   701→
+   702→              // Track tool errors for caller to check
+   703→              if (entry.type === 'tool_error') {
+   704→                const errMsg = event.toolResult?.error || event.message || 'Unknown tool error'
+   705→                toolErrors.push(errMsg)
+   706→              }
+   707→            } catch {
+   708→              // ignore parse errors
+   709→            }
+   710→          }
+   711→        }
+   712→      }
+   713→    } catch (err) {
+   714→      hadTopLevelError = true
+   715→      setErrors(prev => ({
+   716→        ...prev,
+   717→        [agentType]: err instanceof Error ? err.message : String(err),
+   718→      }))
+   719→    } finally {
+   720→      setRunningAgents(prev => {
+   721→        const next = new Set(prev)
+   722→        next.delete(agentType)
+   723→        return next
+   724→      })
+   725→    }
+   726→
+   727→    return { hadErrors: hadTopLevelError || toolErrors.length > 0, toolErrors }
+   728→  }
+   729→
+   730→  const clearAgent = (agentType: string) => {
+   731→    setLogs(prev => {
+   732→      const next = { ...prev }
+   733→      delete next[agentType]
+   734→      return next
+   735→    })
+   736→    setResultTexts(prev => {
+   737→      const next = { ...prev }
+   738→      delete next[agentType]
+   739→      return next
+   740→    })
+   741→    setDurations(prev => {
+   742→      const next = { ...prev }
+   743→      delete next[agentType]
+   744→      return next
+   745→    })
+   746→    setErrors(prev => {
+   747→      const next = { ...prev }
+   748→      delete next[agentType]
+   749→      return next
+   750→    })
+   751→  }
+   752→
+   753→  const isRunning = (agentType: string) => runningAgents.has(agentType)
+   754→
+   755→  return {
+   756→    logs,
+   757→    runningAgents,
+   758→    resultTexts,
+   759→    durations,
+   760→    errors,
+   761→    startAgent,
+   762→    clearAgent,
+   763→    isRunning,
+   764→  }
+   765→}
+   766→

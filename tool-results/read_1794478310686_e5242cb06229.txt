@@ -1,0 +1,1075 @@
+     1→// ============================================================
+     2→// Agent Architecture — Factory & Execution Loop
+     3→// Core file implementing the agent execution pattern inspired
+     4→// by Mastra framework. Implements an agentic loop that:
+     5→// 1. Gets agent config from DB (or defaults)
+     6→// 2. Builds instructions (base prompt + skill)
+     7→// 3. Creates tool definitions and executors
+     8→// 4. Calls LLM with tools (OpenAI function calling format)
+     9→// 5. Executes tool calls and feeds results back
+    10→// 6. Repeats until no more tool calls or max steps
+    11→// ============================================================
+    12→
+    13→import { AgentType, AgentExecutionResult, AGENT_NAMES } from './types'
+    14→import { DEFAULT_SYSTEM_PROMPTS } from './prompts'
+    15→import { getOpenAIToolsForAgent } from './tools/index'
+    16→import { getExecutorsForAgent, ToolExecutor } from './tools/executors'
+    17→import { loadAgentSkill } from './skills'
+    18→import { getActiveProviderForUser, withAiRetry } from '@/lib/ai-config'
+    19→
+    20→// ============================================================
+    21→// Extended message types for tool calling
+    22→// ============================================================
+    23→
+    24→interface ToolCallMessage {
+    25→  id: string
+    26→  type: 'function'
+    27→  function: {
+    28→    name: string
+    29→    arguments: string
+    30→  }
+    31→}
+    32→
+    33→interface ChatMessage {
+    34→  role: 'system' | 'user' | 'assistant' | 'tool'
+    35→  content: string | null
+    36→  tool_calls?: ToolCallMessage[]
+    37→  tool_call_id?: string
+    38→}
+    39→
+    40→// ============================================================
+    41→// Rich progress event type for SSE streaming
+    42→// ============================================================
+    43→
+    44→export interface AgentProgressEvent {
+    45→  /** Event type: starting, thinking, tool_call, tool_result, tool_error, text_output, text_stream, completed, error */
+    46→  type: string
+    47→  /** Human-readable message */
+    48→  message: string
+    49→  /** Timestamp */
+    50→  timestamp: number
+    51→  /** Tool call details (for tool_call events) */
+    52→  toolCall?: {
+    53→    id: string
+    54→    name: string
+    55→    arguments: Record<string, unknown>
+    56→  }
+    57→  /** Tool result details (for tool_result/tool_error events) */
+    58→  toolResult?: {
+    59→    name: string
+    60→    result?: unknown
+    61→    error?: string
+    62→  }
+    63→  /** LLM text output (for text_output events) */
+    64→  textOutput?: string
+    65→  /** Step number */
+    66→  stepNumber?: number
+    67→  /** Agent type */
+    68→  agentType?: string
+    69→  /** Agent display name */
+    70→  agentName?: string
+    71→  /** Skill loaded status */
+    72→  skillLoaded?: boolean
+    73→}
+    74→
+    75→export type AgentProgressCallback = (event: AgentProgressEvent) => void
+    76→
+    77→// ============================================================
+    78→// Agent Config from DB
+    79→// ============================================================
+    80→
+    81→interface AgentConfigRow {
+    82→  systemPrompt: string | null
+    83→  model: string | null
+    84→  temperature: number
+    85→  maxTokens: number
+    86→  isActive: boolean
+    87→}
+    88→
+    89→async function getAgentConfig(
+    90→  agentType: AgentType
+    91→): Promise<AgentConfigRow | null> {
+    92→  try {
+    93→    const { db } = await import('@/lib/db')
+    94→    const agentConfigModel = (db as any).agentConfig
+    95→    if (!agentConfigModel) return null
+    96→
+    97→    const config = await agentConfigModel.findUnique({
+    98→      where: { agentType },
+    99→    })
+   100→    return config as AgentConfigRow | null
+   101→  } catch {
+   102→    // AgentConfig table might not exist yet
+   103→    return null
+   104→  }
+   105→}
+   106→
+   107→// ============================================================
+   108→// LLM Call with Tool Support — STREAMING
+   109→// Uses streaming API with INACTIVITY-BASED timeout.
+   110→// Timeout resets every time a chunk is received, so long
+   111→// responses that are actively streaming won't be killed.
+   112→// Only truly stalled connections (no data for 120s) are aborted.
+   113→// Thinking content (delta.content / reasoning_content) is
+   114→// streamed to the frontend in real-time for better UX.
+   115→// ============================================================
+   116→
+   117→const LLM_INACTIVITY_TIMEOUT = 120_000 // 2 min without ANY data → abort
+   118→const THINKING_STREAM_INTERVAL = 400   // Throttle thinking events to every 400ms
+   119→
+   120→async function callLLMWithTools(
+   121→  messages: ChatMessage[],
+   122→  tools: ReturnType<typeof getOpenAIToolsForAgent>,
+   123→  options: {
+   124→    model?: string
+   125→    temperature?: number
+   126→    maxTokens?: number
+   127→    userId?: string
+   128→    onProgress?: AgentProgressCallback
+   129→    stepNumber?: number
+   130→  }
+   131→): Promise<{
+   132→  message: {
+   133→    role: string
+   134→    content: string | null
+   135→    tool_calls?: ToolCallMessage[]
+   136→  }
+   137→  finishReason: string
+   138→}> {
+   139→  const provider = await getActiveProviderForUser('llm', options.userId)
+   140→  if (!provider) {
+   141→    throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
+   142→  }
+   143→
+   144→  // z-ai-sdk uses z-ai-web-dev-sdk instead of HTTP fetch — no API key required
+   145→  // Use non-streaming chat completions via SDK
+   146→  if (provider.provider === 'z-ai-sdk') {
+   147→    try {
+   148→      const { default: ZAI } = await import('z-ai-web-dev-sdk')
+   149→      const zai = await ZAI.create()
+   150→      const body: Record<string, unknown> = {
+   151→        model: options.model || provider.model,
+   152→        messages: messages.map((m) => ({
+   153→          role: m.role,
+   154→          content: m.content,
+   155→          ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+   156→          ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+   157→        })),
+   158→        temperature: options.temperature ?? 0.7,
+   159→        max_tokens: options.maxTokens ?? 4096,
+   160→      }
+   161→      if (tools.length > 0) {
+   162→        body.tools = tools
+   163→        body.tool_choice = 'auto'
+   164→      }
+   165→      const completion = await withAiRetry(
+   166→        () => zai.chat.completions.create(body as any),
+   167→        'callLLMWithTools(z-ai-sdk)'
+   168→      )
+   169→      const choice = completion.choices?.[0]
+   170→      return {
+   171→        message: {
+   172→          role: choice?.message?.role || 'assistant',
+   173→          content: choice?.message?.content || null,
+   174→          tool_calls: choice?.message?.tool_calls as ToolCallMessage[] | undefined,
+   175→        },
+   176→        finishReason: choice?.finish_reason || 'stop',
+   177→      }
+   178→    } catch (err: any) {
+   179→      console.error('[z-ai-sdk] callLLMWithTools failed:', err.message)
+   180→      const errMsg = err.message || 'Z.ai SDK 调用失败'
+   181→      if (errMsg.includes('API key') || errMsg.includes('apiKey') || errMsg.includes('401')) {
+   182→        throw new Error('Z.ai 内置 LLM 认证失败：请检查是否安装 z-ai-web-dev-sdk 或配置其他 LLM 供应商')
+   183→      }
+   184→      throw new Error(`Z.ai LLM 调用失败: ${errMsg}`)
+   185→    }
+   186→  }
+   187→
+   188→  const body: Record<string, unknown> = {
+   189→    model: options.model || provider.model,
+   190→    messages: messages.map((m) => ({
+   191→      role: m.role,
+   192→      content: m.content,
+   193→      ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+   194→      ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+   195→    })),
+   196→    temperature: options.temperature ?? 0.7,
+   197→    max_tokens: options.maxTokens ?? 4096,
+   198→    stream: true, // ← CRITICAL: Use streaming to prevent timeouts
+   199→  }
+   200→
+   201→  // Add tools if provided
+   202→  if (tools.length > 0) {
+   203→    body.tools = tools
+   204→    body.tool_choice = 'auto'
+   205→  }
+   206→
+   207→  const url = provider.baseUrl.endsWith('/chat/completions')
+   208→    ? provider.baseUrl
+   209→    : `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`
+   210→
+   211→  // Build headers — OpenRouter requires additional headers for app identification
+   212→  const headers: Record<string, string> = {
+   213→    Authorization: `Bearer ${provider.apiKey}`,
+   214→    'Content-Type': 'application/json',
+   215→  }
+   216→  if (provider.provider === 'openrouter') {
+   217→    headers['HTTP-Referer'] = 'https://huobao-drama-ai.vercel.app'
+   218→    headers['X-Title'] = 'AI Drama Creator'
+   219→  }
+   220→
+   221→  // Create AbortController with inactivity-based timeout
+   222→  // Timeout resets every time we receive ANY data from the stream
+   223→  // ⚠️ 每次重连都重新 arm 一个全新的 controller/signal，避免上一次尝试
+   224→  // 被中止后，新尝试拿到已 aborted 的 signal 立即失败。
+   225→  let controller = new AbortController()
+   226→  let inactivityTimer: ReturnType<typeof setTimeout>
+   227→  const armInactivityGuard = () => {
+   228→    controller = new AbortController()
+   229→    clearTimeout(inactivityTimer)
+   230→    inactivityTimer = setTimeout(() => {
+   231→      console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
+   232→      controller.abort()
+   233→    }, LLM_INACTIVITY_TIMEOUT)
+   234→  }
+   235→
+   236→  const resetInactivityTimer = () => {
+   237→    clearTimeout(inactivityTimer)
+   238→    inactivityTimer = setTimeout(() => {
+   239→      console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
+   240→      controller.abort()
+   241→    }, LLM_INACTIVITY_TIMEOUT)
+   242→  }
+   243→
+   244→  // Throttled thinking stream — only emit events every THINKING_STREAM_INTERVAL
+   245→  let lastThinkingEmitTime = 0
+   246→  let pendingThinkingContent = ''
+   247→  let thinkingEmitTimer: ReturnType<typeof setTimeout> | null = null
+   248→
+   249→  const emitThinkingStream = (content: string) => {
+   250→    pendingThinkingContent = content
+   251→    const now = Date.now()
+   252→    if (now - lastThinkingEmitTime >= THINKING_STREAM_INTERVAL) {
+   253→      // Enough time has passed — emit immediately
+   254→      lastThinkingEmitTime = now
+   255→      options.onProgress?.({
+   256→        type: 'thinking',
+   257→        message: pendingThinkingContent,
+   258→        timestamp: now,
+   259→        stepNumber: options.stepNumber,
+   260→      })
+   261→      pendingThinkingContent = ''
+   262→      if (thinkingEmitTimer) {
+   263→        clearTimeout(thinkingEmitTimer)
+   264→        thinkingEmitTimer = null
+   265→      }
+   266→    } else if (!thinkingEmitTimer) {
+   267→      // Schedule a delayed emit to ensure the last chunk is sent
+   268→      thinkingEmitTimer = setTimeout(() => {
+   269→        if (pendingThinkingContent) {
+   270→          lastThinkingEmitTime = Date.now()
+   271→          options.onProgress?.({
+   272→            type: 'thinking',
+   273→            message: pendingThinkingContent,
+   274→            timestamp: Date.now(),
+   275→            stepNumber: options.stepNumber,
+   276→          })
+   277→          pendingThinkingContent = ''
+   278→        }
+   279→        thinkingEmitTimer = null
+   280→      }, THINKING_STREAM_INTERVAL)
+   281→    }
+   282→  }
+   283→
+   284→  // Flush any remaining thinking content
+   285→  const flushThinkingStream = () => {
+   286→    if (thinkingEmitTimer) {
+   287→      clearTimeout(thinkingEmitTimer)
+   288→      thinkingEmitTimer = null
+   289→    }
+   290→    if (pendingThinkingContent) {
+   291→      options.onProgress?.({
+   292→        type: 'thinking',
+   293→        message: pendingThinkingContent,
+   294→        timestamp: Date.now(),
+   295→        stepNumber: options.stepNumber,
+   296→      })
+   297→      pendingThinkingContent = ''
+   298→    }
+   299→  }
+   300→
+   301→  // Initial connection — retried on transient errors (429/5xx/network jitter).
+   302→  // 每次尝试都重新 arm inactivity guard（全新 signal）。
+   303→  // 一旦流开始返回数据，后续失败不再重试（重试会导致已发出的流式事件重复）。
+   304→  const openStream = async (): Promise<Response> => {
+   305→    armInactivityGuard()
+   306→    const res = await fetch(url, {
+   307→      method: 'POST',
+   308→      headers,
+   309→      body: JSON.stringify(body),
+   310→      signal: controller.signal,
+   311→    })
+   312→
+   313→    if (!res.ok) {
+   314→      const text = await res.text().catch(() => 'Unknown error')
+   315→
+   316→      // Provide user-friendly error messages based on status code
+   317→      let friendlyError: string
+   318→      if (res.status === 401 || res.status === 403) {
+   319→        friendlyError = `AI 供应商认证失败 (HTTP ${res.status})：请检查 API Key 是否正确配置`
+   320→      } else if (res.status === 404) {
+   321→        // Model not found — extract model name from error if possible
+   322→        const modelMatch = text.match(/model[^"]*"?([^"]+)"?/i)
+   323→        const modelName = modelMatch ? modelMatch[1] : '当前模型'
+   324→        friendlyError = `模型不可用 (HTTP 404)：${modelName} 可能已下线，请在设置中切换其他模型`
+   325→      } else if (res.status === 410) {
+   326→        // Gone — model EOL
+   327→        const eolMatch = text.match(/model['"]?\s*['"]?([^'"]+)['"]?.*?(\d{4}-\d{2}-\d{2})/i)
+   328→        const modelName = eolMatch ? eolMatch[1] : '当前模型'
+   329→        friendlyError = `模型已下线 (HTTP 410)：${modelName} 已停止服务，请在设置中切换其他模型`
+   330→      } else if (res.status === 429) {
+   331→        friendlyError = `请求频率超限 (HTTP 429)：请稍后重试或联系供应商提升配额`
+   332→      } else if (res.status >= 500) {
+   333→        friendlyError = `AI 供应商服务异常 (HTTP ${res.status})：请稍后重试`
+   334→      } else {
+   335→        friendlyError = `AI 调用失败 (HTTP ${res.status})：${text.slice(0, 200)}`
+   336→      }
+   337→
+   338→      console.error(`[callLLMWithTools] ${friendlyError}`, { status: res.status, url: provider.baseUrl, model: options.model || provider.model })
+   339→      throw new Error(friendlyError)
+   340→    }
+   341→
+   342→    if (!res.body) {
+   343→      throw new Error('LLM API returned no body')
+   344→    }
+   345→
+   346→    return res
+   347→  }
+   348→
+   349→  try {
+   350→    const res = await withAiRetry(openStream, 'callLLMWithTools')
+   351→
+   352→    // ── Stream reading + tool call assembly ──
+   353→    const reader = res.body.getReader()
+   354→    const decoder = new TextDecoder()
+   355→
+   356→    let content = ''
+   357→    let reasoningContent = ''
+   358→    let finishReason = ''
+   359→    const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>()
+   360→
+   361→    let buffer = ''
+   362→    let chunksReceived = 0
+   363→
+   364→    while (true) {
+   365→      const { done, value } = await reader.read()
+   366→      if (done) break
+   367→
+   368→      // Reset inactivity timer on every chunk received
+   369→      resetInactivityTimer()
+   370→      chunksReceived++
+   371→
+   372→      buffer += decoder.decode(value, { stream: true })
+   373→      const lines = buffer.split('\n')
+   374→      buffer = lines.pop() || ''
+   375→
+   376→      for (const line of lines) {
+   377→        const trimmed = line.trim()
+   378→        if (!trimmed || !trimmed.startsWith('data: ')) continue
+   379→
+   380→        const data = trimmed.slice(6)
+   381→        if (data === '[DONE]') continue
+   382→
+   383→        try {
+   384→          const chunk = JSON.parse(data)
+   385→          const choice = chunk.choices?.[0]
+   386→          if (!choice) continue
+   387→
+   388→          const delta = choice.delta
+   389→
+   390→          // Accumulate and stream reasoning_content (DeepSeek R1, etc.)
+   391→          if (delta?.reasoning_content) {
+   392→            reasoningContent += delta.reasoning_content
+   393→            emitThinkingStream(reasoningContent)
+   394→          }
+   395→
+   396→          // Accumulate and stream text content as thinking
+   397→          if (delta?.content) {
+   398→            content += delta.content
+   399→            // Stream content as thinking events so user sees the LLM's
+   400→            // thought process in real-time (especially for storyboard_breaker)
+   401→            emitThinkingStream(content)
+   402→          }
+   403→
+   404→          // Accumulate tool calls (OpenAI standard format: delta.tool_calls)
+   405→          if (delta?.tool_calls) {
+   406→            for (const tc of delta.tool_calls) {
+   407→              const idx = tc.index ?? 0
+   408→              if (!toolCallsMap.has(idx)) {
+   409→                toolCallsMap.set(idx, {
+   410→                  id: tc.id || '',
+   411→                  name: tc.function?.name || '',
+   412→                  arguments: '',
+   413→                })
+   414→              }
+   415→              const existing = toolCallsMap.get(idx)!
+   416→              if (tc.id) existing.id = tc.id
+   417→              if (tc.function?.name) existing.name = tc.function.name
+   418→              if (tc.function?.arguments) existing.arguments += tc.function.arguments
+   419→            }
+   420→          }
+   421→
+   422→          // Handle old OpenAI format: delta.function_call (singular)
+   423→          // Some providers (e.g., older SenseNova) use this instead of tool_calls
+   424→          if (delta?.function_call) {
+   425→            const fc = delta.function_call
+   426→            const idx = 0 // old format only supports one function call
+   427→            if (!toolCallsMap.has(idx)) {
+   428→              toolCallsMap.set(idx, {
+   429→                id: '',
+   430→                name: fc.name || '',
+   431→                arguments: fc.arguments || '',
+   432→              })
+   433→            } else {
+   434→              const existing = toolCallsMap.get(idx)!
+   435→              if (fc.name) existing.name = fc.name
+   436→              if (fc.arguments) existing.arguments += fc.arguments
+   437→            }
+   438→          }
+   439→
+   440→          // Handle non-standard format: some providers put tool call in choice itself
+   441→          // (not in delta, but in the choice-level tool_calls or function_call)
+   442→          if (!delta?.tool_calls && !delta?.function_call && choice.tool_calls) {
+   443→            for (let i = 0; i < choice.tool_calls.length; i++) {
+   444→              const tc = choice.tool_calls[i]
+   445→              const idx = tc.index ?? i  // Use loop index as fallback to avoid collision
+   446→              if (!toolCallsMap.has(idx)) {
+   447→                toolCallsMap.set(idx, {
+   448→                  id: tc.id || '',
+   449→                  name: tc.function?.name || '',
+   450→                  arguments: tc.function?.arguments || '',
+   451→                })
+   452→              } else {
+   453→                const existing = toolCallsMap.get(idx)!
+   454→                if (tc.id) existing.id = tc.id
+   455→                if (tc.function?.name) existing.name = tc.function.name
+   456→                if (tc.function?.arguments) existing.arguments += tc.function.arguments
+   457→              }
+   458→            }
+   459→          }
+   460→
+   461→          // Capture finish reason
+   462→          if (choice.finish_reason) {
+   463→            finishReason = choice.finish_reason
+   464→          }
+   465→        } catch {
+   466→          // Ignore JSON parse errors on individual chunks
+   467→        }
+   468→      }
+   469→    }
+   470→
+   471→    // Flush any remaining thinking content
+   472→    flushThinkingStream()
+   473→
+   474→    // Clear timers
+   475→    clearTimeout(inactivityTimer)
+   476→    if (thinkingEmitTimer) clearTimeout(thinkingEmitTimer)
+   477→
+   478→    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, reasoning=${reasoningContent.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}, max_tokens=${options.maxTokens}`)
+   479→
+   480→    // Log each tool call's argument length for debugging truncation issues
+   481→    for (const [idx, tc] of toolCallsMap) {
+   482→      console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, argsLen=${tc.arguments.length}, id=${tc.id}`)
+   483→    }
+   484→
+   485→    // ── Non-streaming fallback when tool call parsing fails ──
+   486→    // If streaming didn't properly capture tool call names (some providers
+   487→    // don't stream tool calls correctly), retry with a non-streaming request
+   488→    const hasEmptyToolNames = [...toolCallsMap.values()].some(tc => !tc.name && tc.arguments)
+   489→    const hasToolCallsWithNoNameOrArgs = [...toolCallsMap.values()].some(tc => !tc.name && !tc.arguments)
+   490→    // Also check: if content looks like it might contain a tool call attempt
+   491→    // (e.g., the LLM output the tool call as text instead of proper format)
+   492→    const toolNames = tools.map(t => t.function?.name).filter(Boolean)
+   493→    const contentLooksLikeToolCall = content && !toolCallsMap.size &&
+   494→      toolNames.some(name => content.includes(name!))
+   495→
+   496→    if ((hasEmptyToolNames || hasToolCallsWithNoNameOrArgs || contentLooksLikeToolCall) && tools.length > 0) {
+   497→      console.warn(`[callLLMWithTools] Streaming tool call parsing failed (emptyNames=${hasEmptyToolNames}, noNameNoArgs=${hasToolCallsWithNoNameOrArgs}, contentLikeToolCall=${contentLooksLikeToolCall}), retrying with non-streaming request`)
+   498→      try {
+   499→        const nonStreamRes = await fetch(url, {
+   500→          method: 'POST',
+   501→          headers,
+   502→          body: JSON.stringify({ ...body, stream: false }),
+   503→          signal: AbortSignal.timeout(180_000), // 3 min timeout for non-streaming
+   504→        })
+   505→        if (nonStreamRes.ok) {
+   506→          const nonStreamData = await nonStreamRes.json()
+   507→          const nsChoice = nonStreamData.choices?.[0]
+   508→          if (nsChoice) {
+   509→            // Override content and finish reason from non-streaming response
+   510→            if (nsChoice.message?.content) content = nsChoice.message.content
+   511→            if (nsChoice.finish_reason) finishReason = nsChoice.finish_reason
+   512→            // Clear and rebuild tool calls from non-streaming response
+   513→            if (nsChoice.message?.tool_calls?.length) {
+   514→              toolCallsMap.clear()
+   515→              for (const tc of nsChoice.message.tool_calls) {
+   516→                toolCallsMap.set(toolCallsMap.size, {
+   517→                  id: tc.id || '',
+   518→                  name: tc.function?.name || '',
+   519→                  arguments: tc.function?.arguments || '',
+   520→                })
+   521→              }
+   522→              console.log(`[callLLMWithTools] Non-streaming fallback succeeded: ${toolCallsMap.size} tool calls recovered`)
+   523→            } else if (nsChoice.message?.function_call) {
+   524→              // Old format: single function_call
+   525→              toolCallsMap.clear()
+   526→              toolCallsMap.set(0, {
+   527→                id: '',
+   528→                name: nsChoice.message.function_call.name || '',
+   529→                arguments: nsChoice.message.function_call.arguments || '',
+   530→              })
+   531→              console.log(`[callLLMWithTools] Non-streaming fallback (function_call format): name=${nsChoice.message.function_call.name}`)
+   532→            } else if (nsChoice.message?.content) {
+   533→              // LLM output text instead of calling tools — this is fine,
+   534→              // the agentic loop will handle it (nudge logic)
+   535→              console.log(`[callLLMWithTools] Non-streaming response is text-only (no tool calls) — content=${nsChoice.message.content.slice(0, 100)}...`)
+   536→            }
+   537→          }
+   538→        } else {
+   539→          console.warn(`[callLLMWithTools] Non-streaming fallback failed: ${nonStreamRes.status}`)
+   540→        }
+   541→      } catch (nsErr) {
+   542→        console.warn(`[callLLMWithTools] Non-streaming fallback error: ${nsErr instanceof Error ? nsErr.message : String(nsErr)}`)
+   543→      }
+   544→    }
+   545→
+   546→    // Assemble final message
+   547→    const toolCalls: ToolCallMessage[] = []
+   548→    for (const [idx, tc] of toolCallsMap) {
+   549→      // Some LLM providers don't send tool_call id in the first chunk,
+   550→      // or send it as empty string. Generate a fallback id if missing.
+   551→      const toolCallId = tc.id || `tool_call_${idx}_${Date.now()}`
+   552→      const toolCallName = tc.name || 'unknown'
+   553→      console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, id=${tc.id}, argsLen=${tc.arguments.length}, fallbackId=${toolCallId}`)
+   554→      toolCalls.push({
+   555→        id: toolCallId,
+   556→        type: 'function',
+   557→        function: {
+   558→          name: toolCallName,
+   559→          arguments: tc.arguments || '{}',
+   560→        },
+   561→      })
+   562→    }
+   563→
+   564→    return {
+   565→      message: {
+   566→        role: 'assistant',
+   567→        content: content || null,
+   568→        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+   569→      },
+   570→      finishReason: finishReason || 'stop',
+   571→    }
+   572→  } catch (error) {
+   573→    clearTimeout(inactivityTimer)
+   574→    if (thinkingEmitTimer) clearTimeout(thinkingEmitTimer)
+   575→
+   576→    if (error instanceof DOMException && error.name === 'AbortError') {
+   577→      throw new Error(`LLM API调用超时（${LLM_INACTIVITY_TIMEOUT / 1000}秒内无数据返回），模型可能已停止响应。请尝试使用更快的模型或减少单次数据量。`)
+   578→    }
+   579→    throw error
+   580→  }
+   581→}
+   582→
+   583→// ============================================================
+   584→// Agent name mapping (imported from types)
+   585→// ============================================================
+   586→
+   587→// AGENT_NAMES imported above
+   588→
+   589→// ============================================================
+   590→// Main Agent Execution Function
+   591→// ============================================================
+   592→
+   593→const MAX_STEPS = 20
+   594→
+   595→export async function executeAgent(
+   596→  agentType: AgentType,
+   597→  episodeId: string,
+   598→  dramaId: string,
+   599→  message: string,
+   600→  onProgress?: AgentProgressCallback,
+   601→  options?: { modelOverride?: string; userId?: string }
+   602→): Promise<AgentExecutionResult> {
+   603→  // 1. Get agent config from DB (or use defaults)
+   604→  const dbConfig = await getAgentConfig(agentType)
+   605→
+   606→  const systemPrompt =
+   607→    dbConfig?.systemPrompt || DEFAULT_SYSTEM_PROMPTS[agentType]
+   608→  const model = options?.modelOverride || dbConfig?.model || undefined
+   609→  const temperature = dbConfig?.temperature ?? 0.7
+   610→  // storyboard_breaker needs much larger max_tokens because save_storyboards
+   611→  // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot).
+   612→  // ⚠️ IMPORTANT: The AgentConfig table has maxTokens @default(4096), and the
+   613→  // PATCH API creates rows with 4096 when not specified. We must NOT let a DB
+   614→  // value of 4096 override the type-specific default (e.g., 32768 for storyboard_breaker).
+   615→  // Strategy: only use DB value if it EXCEEDS the type-specific default; otherwise
+   616→  // the DB value is likely a stale/generic default and should be ignored.
+   617→  const defaultMaxTokens: Record<string, number> = {
+   618→    script_parser: 8192,
+   619→    storyboard_breaker: 32768,
+   620→    extractor: 8192,
+   621→    script_rewriter: 8192,
+   622→  }
+   623→  const typeDefault = defaultMaxTokens[agentType] ?? 4096
+   624→  // Use DB value only if it's explicitly set to a value larger than the type default
+   625→  // (i.e., the admin intentionally increased it). Otherwise, use the type default.
+   626→  const maxTokens = (dbConfig?.maxTokens && dbConfig.maxTokens > typeDefault)
+   627→    ? dbConfig.maxTokens
+   628→    : typeDefault
+   629→
+   630→  console.log(`[executeAgent] agentType=${agentType}, dbMaxTokens=${dbConfig?.maxTokens}, typeDefault=${typeDefault}, finalMaxTokens=${maxTokens}`)
+   631→
+   632→  // 2. Build instructions (base prompt + skill)
+   633→  const skillContent = loadAgentSkill(agentType)
+   634→  const fullSystemPrompt = skillContent
+   635→    ? `${systemPrompt}\n\n---\n## 专业技能指南\n${skillContent}`
+   636→    : systemPrompt
+   637→
+   638→  // Send starting event
+   639→  onProgress?.({
+   640→    type: 'starting',
+   641→    message: `${AGENT_NAMES[agentType]} 开始工作...`,
+   642→    timestamp: Date.now(),
+   643→    agentType,
+   644→    agentName: AGENT_NAMES[agentType],
+   645→    skillLoaded: !!skillContent,
+   646→  })
+   647→
+   648→  // 3. Create tool definitions and executors for this agent type
+   649→  const openAITools = getOpenAIToolsForAgent(agentType)
+   650→  const executors = getExecutorsForAgent(agentType)
+   651→
+   652→  // 4. Initialize messages
+   653→  const messages: ChatMessage[] = [
+   654→    { role: 'system', content: fullSystemPrompt },
+   655→    { role: 'user', content: message },
+   656→  ]
+   657→
+   658→  const toolCallResults: Array<{
+   659→    name: string
+   660→    arguments: Record<string, unknown>
+   661→    result: unknown
+   662→  }> = []
+   663→
+   664→  let steps = 0
+   665→  let finalText = ''
+   666→  let consecutiveUnknownToolCalls = 0 // Dead-loop detection: count consecutive "unknown" tool calls
+   667→
+   668→  // 5. Agentic execution loop
+   669→  while (steps < MAX_STEPS) {
+   670→    steps++
+   671→
+   672→    onProgress?.({
+   673→      type: 'thinking',
+   674→      message: `步骤 ${steps}: Agent 正在思考...`,
+   675→      timestamp: Date.now(),
+   676→      stepNumber: steps,
+   677→    })
+   678→
+   679→    const response = await callLLMWithTools(messages, openAITools, {
+   680→      model,
+   681→      temperature,
+   682→      maxTokens,
+   683→      userId: options?.userId,
+   684→      onProgress,
+   685→      stepNumber: steps,
+   686→    })
+   687→
+   688→    const assistantMessage = response.message
+   689→    const finishReason = response.finishReason
+   690→
+   691→    // CRITICAL: Detect LLM output truncation (finish_reason === 'length')
+   692→    // This happens when max_tokens is too small for the tool call arguments
+   693→    if (finishReason === 'length') {
+   694→      onProgress?.({
+   695→        type: 'tool_error',
+   696→        message: `步骤 ${steps}: LLM输出被截断（达到max_tokens=${maxTokens}限制），正在分批重试...`,
+   697→        timestamp: Date.now(),
+   698→        stepNumber: steps,
+   699→      })
+   700→
+   701→      // If there were partial tool calls, report truncation to the LLM
+   702→      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+   703→        // Add the truncated assistant message
+   704→        messages.push({
+   705→          role: 'assistant',
+   706→          content: assistantMessage.content || null,
+   707→          tool_calls: assistantMessage.tool_calls,
+   708→        })
+   709→        // Report truncation error for each tool call
+   710→        for (const tc of assistantMessage.tool_calls) {
+   711→          messages.push({
+   712→            role: 'tool',
+   713→            content: JSON.stringify({
+   714→              error: `⚠️ 你的输出被截断了！arguments不完整导致JSON解析失败。请将save_storyboards拆分为多次调用，每次保存3-5个分镜，并设置append=true（第一次除外）。`,
+   715→            }),
+   716→            tool_call_id: tc.id,
+   717→          })
+   718→        }
+   719→        continue // Let the LLM retry with smaller batches
+   720→      }
+   721→
+   722→      // No tool calls, just text was truncated
+   723→      messages.push({
+   724→        role: 'assistant',
+   725→        content: assistantMessage.content || '',
+   726→      })
+   727→      messages.push({
+   728→        role: 'user',
+   729→        content: '⚠️ 你的上一次输出被截断了（达到max_tokens限制）。请继续输出，或者减少输出量，分批保存。',
+   730→      })
+   731→      continue
+   732→    }
+   733→
+   734→    // Add assistant message to conversation
+   735→    const assistantChatMsg: ChatMessage = {
+   736→      role: 'assistant',
+   737→      content: assistantMessage.content || null,
+   738→    }
+   739→    if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+   740→      assistantChatMsg.tool_calls = assistantMessage.tool_calls
+   741→    }
+   742→    messages.push(assistantChatMsg)
+   743→
+   744→    // If the LLM produced text output (alongside or without tool calls), emit it
+   745→    if (assistantMessage.content) {
+   746→      onProgress?.({
+   747→        type: 'text_output',
+   748→        message: `步骤 ${steps}: Agent 输出文本`,
+   749→        timestamp: Date.now(),
+   750→        textOutput: assistantMessage.content,
+   751→        stepNumber: steps,
+   752→      })
+   753→    }
+   754→
+   755→    // Check if there are tool calls to execute
+   756→    if (
+   757→      !assistantMessage.tool_calls ||
+   758→      assistantMessage.tool_calls.length === 0
+   759→    ) {
+   760→      // No tool calls — check if the LLM should have called a tool but didn't
+   761→      // (e.g., the model doesn't support function calling, or it's generating
+   762→      // text output instead of tool calls)
+   763→      const hasToolDefinitions = openAITools.length > 0
+   764→      const isStoryboardBreaker = agentType === 'storyboard_breaker'
+   765→      const isScriptParser = agentType === 'script_parser'
+   766→      const shouldUseTools = hasToolDefinitions && (isStoryboardBreaker || isScriptParser) && steps < MAX_STEPS - 2
+   767→      const contentStr = assistantMessage.content || ''
+   768→
+   769→      // If this is storyboard_breaker and it hasn't called any tools yet,
+   770→      // it might be outputting the storyboard as text instead of calling save_storyboards.
+   771→      // Nudge it to use the tool.
+   772→      if (shouldUseTools && toolCallResults.length === 0) {
+   773→        onProgress?.({
+   774→          type: 'thinking',
+   775→          message: `步骤 ${steps}: LLM未调用工具，正在引导使用工具...`,
+   776→          timestamp: Date.now(),
+   777→          stepNumber: steps,
+   778→        })
+   779→        // NOTE: Do NOT push assistant message again — it was already pushed above (line 654)
+   780→        const nudgeMessage = isScriptParser
+   781→          ? '⚠️ 你需要使用提供的工具来完成任务。请先调用 read_uploaded_text 工具读取上传的剧本文本，然后调用 save_parsed_script 工具保存解析结果。'
+   782→          : '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。重要：请分批保存，每次3-5个镜头，使用append参数控制是否追加。'
+   783→        messages.push({
+   784→          role: 'user',
+   785→          content: nudgeMessage,
+   786→        })
+   787→        continue
+   788→      }
+   789→
+   790→      // No more tool calls — we're done
+   791→      finalText = contentStr
+   792→      break
+   793→    }
+   794→
+   795→    // 6. Execute each tool call
+   796→    for (const toolCall of assistantMessage.tool_calls) {
+   797→      const toolName = toolCall.function.name
+   798→
+   799→      // Dead-loop detection: if tool name is "unknown", count consecutive occurrences
+   800→      if (toolName === 'unknown') {
+   801→        consecutiveUnknownToolCalls++
+   802→        if (consecutiveUnknownToolCalls >= 3) {
+   803→          // Too many consecutive unknown tool calls — break the loop
+   804→          console.error(`[executeAgent] Dead loop detected: ${consecutiveUnknownToolCalls} consecutive "unknown" tool calls. Breaking loop.`)
+   805→          onProgress?.({
+   806→            type: 'error',
+   807→            message: `检测到LLM工具调用异常（连续${consecutiveUnknownToolCalls}次工具名称为空），可能是模型不支持function calling。请尝试更换模型。`,
+   808→            timestamp: Date.now(),
+   809→            stepNumber: steps,
+   810→          })
+   811→          finalText = `⚠️ LLM工具调用异常：模型连续返回了${consecutiveUnknownToolCalls}次无效的工具调用（工具名称为空）。这通常意味着当前模型不完全支持function calling功能。建议：1) 更换为支持function calling的模型（如DeepSeek V4 Flash、GPT-4o等）；2) 检查API供应商配置是否正确。`
+   812→          // Break out of both the tool call loop and the step loop
+   813→          steps = MAX_STEPS + 1 // Force exit from while loop
+   814→          break
+   815→        }
+   816→      } else {
+   817→        consecutiveUnknownToolCalls = 0 // Reset counter on successful tool call
+   818→      }
+   819→
+   820→      // Parse arguments — detect truncated JSON early
+   821→      let args: Record<string, unknown>
+   822→      try {
+   823→        args = JSON.parse(toolCall.function.arguments)
+   824→      } catch (parseErr) {
+   825→        // JSON parse failed — likely due to max_tokens truncation.
+   826→        // Give the LLM clear instructions to split into smaller batches.
+   827→        const isSaveStoryboards = toolName === 'save_storyboards'
+   828→        const parseErrorMsg = isSaveStoryboards
+   829→          ? `JSON解析失败：你的save_storyboards参数被截断了（输出超过max_tokens限制）。请将分镜拆分为多次调用，每次只保存3-5个分镜。第一次调用：save_storyboards(storyboards=[镜头1-5], append=false)，后续调用：save_storyboards(storyboards=[镜头6-10], append=true)，以此类推。解析错误: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+   830→          : `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
+   831→        messages.push({
+   832→          role: 'tool',
+   833→          content: JSON.stringify({ error: parseErrorMsg }),
+   834→          tool_call_id: toolCall.id,
+   835→        })
+   836→        toolCallResults.push({
+   837→          name: toolName,
+   838→          arguments: {},
+   839→          result: { error: parseErrorMsg },
+   840→        })
+   841→        onProgress?.({
+   842→          type: 'tool_error',
+   843→          message: `工具 ${toolName} 参数解析失败（可能被截断），已请求LLM分批重试`,
+   844→          timestamp: Date.now(),
+   845→          stepNumber: steps,
+   846→          toolResult: { name: toolName, error: parseErrorMsg },
+   847→        })
+   848→        continue // Skip executing the tool with invalid args
+   849→      }
+   850→
+   851→      // Emit tool_call event
+   852→      onProgress?.({
+   853→        type: 'tool_call',
+   854→        message: `调用工具: ${toolName}`,
+   855→        timestamp: Date.now(),
+   856→        stepNumber: steps,
+   857→        toolCall: {
+   858→          id: toolCall.id,
+   859→          name: toolName,
+   860→          arguments: args,
+   861→        },
+   862→      })
+   863→
+   864→      const executor: ToolExecutor | undefined = executors[toolName]
+   865→
+   866→      if (!executor) {
+   867→        // Tool not found — report error back to LLM
+   868→        const errorMsg = `Tool "${toolName}" not found. Available tools: ${Object.keys(executors).join(', ')}`
+   869→        messages.push({
+   870→          role: 'tool',
+   871→          content: JSON.stringify({ error: errorMsg }),
+   872→          tool_call_id: toolCall.id,
+   873→        })
+   874→        toolCallResults.push({
+   875→          name: toolName,
+   876→          arguments: args,
+   877→          result: { error: errorMsg },
+   878→        })
+   879→
+   880→        onProgress?.({
+   881→          type: 'tool_error',
+   882→          message: `工具 ${toolName} 未找到`,
+   883→          timestamp: Date.now(),
+   884→          stepNumber: steps,
+   885→          toolResult: {
+   886→            name: toolName,
+   887→            error: errorMsg,
+   888→          },
+   889→        })
+   890→        continue
+   891→      }
+   892→
+   893→      try {
+   894→        // Execute the tool with captured context
+   895→        const result = await executor(args, { episodeId, dramaId })
+   896→
+   897→        messages.push({
+   898→          role: 'tool',
+   899→          content: JSON.stringify(result),
+   900→          tool_call_id: toolCall.id,
+   901→        })
+   902→
+   903→        toolCallResults.push({
+   904→          name: toolName,
+   905→          arguments: args,
+   906→          result,
+   907→        })
+   908→
+   909→        // Summarize result for display
+   910→        const resultSummary = summarizeToolResult(toolName, result)
+   911→
+   912→        onProgress?.({
+   913→          type: 'tool_result',
+   914→          message: `工具 ${toolName} 执行成功: ${resultSummary}`,
+   915→          timestamp: Date.now(),
+   916→          stepNumber: steps,
+   917→          toolResult: {
+   918→            name: toolName,
+   919→            result,
+   920→          },
+   921→        })
+   922→
+   923→        // After successful save_storyboards with append=false, instruct the LLM
+   924→        // to continue with append=true for subsequent batches
+   925→        if (toolName === 'save_storyboards' && !args.append) {
+   926→          const savedCount = (result as any)?.count || 0
+   927→          const totalExpected = 15 // rough estimate, LLM knows the actual count
+   928→          if (savedCount < totalExpected) {
+   929→            messages.push({
+   930→              role: 'user',
+   931→              content: `✅ 已保存第一批 ${savedCount} 个分镜。请继续生成剩余分镜，调用 save_storyboards 时设置 append=true 来追加保存，不要覆盖已有数据。每次保存3-5个镜头即可。`,
+   932→            })
+   933→          }
+   934→        }
+   935→      } catch (error) {
+   936→        const errorMsg =
+   937→          error instanceof Error ? error.message : String(error)
+   938→
+   939→        messages.push({
+   940→          role: 'tool',
+   941→          content: JSON.stringify({ error: errorMsg }),
+   942→          tool_call_id: toolCall.id,
+   943→        })
+   944→
+   945→        toolCallResults.push({
+   946→          name: toolName,
+   947→          arguments: args,
+   948→          result: { error: errorMsg },
+   949→        })
+   950→
+   951→        onProgress?.({
+   952→          type: 'tool_error',
+   953→          message: `工具 ${toolName} 执行失败: ${errorMsg}`,
+   954→          timestamp: Date.now(),
+   955→          stepNumber: steps,
+   956→          toolResult: {
+   957→            name: toolName,
+   958→            error: errorMsg,
+   959→          },
+   960→        })
+   961→      }
+   962→    }
+   963→
+   964→    // Continue the loop — LLM will see tool results and decide next action
+   965→  }
+   966→
+   967→  // If we hit max steps without a final text, use the last assistant message
+   968→  if (!finalText && steps >= MAX_STEPS) {
+   969→    finalText = '达到最大执行步骤数，Agent执行已终止。'
+   970→  }
+   971→
+   972→  // Check if storyboard_breaker completed without actually saving
+   973→  if (agentType === 'storyboard_breaker') {
+   974→    const saveResult = toolCallResults.find(
+   975→      (r) => r.name === 'save_storyboards' && !(r.result as Record<string, unknown>)?.error
+   976→    )
+   977→    if (!saveResult) {
+   978→      finalText = '⚠️ 分镜拆解完成但未成功保存到数据库。' + finalText
+   979→    }
+   980→  }
+   981→
+   982→  // Check if script_parser completed without saving parsed result
+   983→  if (agentType === 'script_parser') {
+   984→    const saveResult = toolCallResults.find(
+   985→      (r) => r.name === 'save_parsed_script' && !(r.result as Record<string, unknown>)?.error
+   986→    )
+   987→    if (!saveResult) {
+   988→      finalText = '⚠️ 剧本解析完成但未成功输出解析结果。' + finalText
+   989→    }
+   990→  }
+   991→
+   992→  // NOTE: Do NOT emit 'completed' here — the stream route does that
+   993→  // with full result data. Duplicate events confuse the frontend.
+   994→
+   995→  return {
+   996→    text: finalText,
+   997→    toolCalls: toolCallResults,
+   998→    steps,
+   999→  }
+  1000→}
+  1001→
+  1002→// ============================================================
+  1003→// Summarize tool results for display
+  1004→// ============================================================
+  1005→
+  1006→function summarizeToolResult(toolName: string, result: unknown): string {
+  1007→  if (!result || typeof result !== 'object') return String(result)
+  1008→
+  1009→  const r = result as Record<string, unknown>
+  1010→
+  1011→  switch (toolName) {
+  1012→    case 'read_uploaded_text':
+  1013→      return `读取到上传文本 (${String(r.charCount || 0)}字符)`
+  1014→    case 'save_parsed_script':
+  1015→      return r.success ? `剧本解析完成：${String((r.data as Record<string, unknown>)?.title || '')}，${String((r.data as Record<string, unknown>)?.totalEpisodes || 0)}集` : '解析失败'
+  1016→    case 'read_episode_script':
+  1017→      return `读取到剧本内容 (${String(r.rawContent || '').length}字原始内容, ${String(r.scriptContent || '').length}字已改写)`
+  1018→    case 'save_script':
+  1019→      return r.success ? '剧本已保存' : '保存失败'
+  1020→    case 'read_script_for_extraction':
+  1021→      return `读取到剧本内容 (${String(r.scriptContent || '').length}字)`
+  1022→    case 'read_existing_characters':
+  1023→      return `已有 ${Array.isArray(r) ? r.length : 0} 个角色`
+  1024→    case 'read_existing_scenes':
+  1025→      return `已有 ${Array.isArray(r) ? r.length : 0} 个场景`
+  1026→    case 'save_characters': {
+  1027→      const results = r.results as Array<{ name: string; action: string }> | undefined
+  1028→      if (results) {
+  1029→        const created = results.filter(x => x.action === 'created').length
+  1030→        const merged = results.filter(x => x.action === 'merged').length
+  1031→        return `处理 ${results.length} 个角色 (新建${created}, 合并${merged})`
+  1032→      }
+  1033→      return '角色保存完成'
+  1034→    }
+  1035→    case 'save_scenes': {
+  1036→      const results = r.results as Array<{ location: string; action: string }> | undefined
+  1037→      if (results) {
+  1038→        const created = results.filter(x => x.action === 'created').length
+  1039→        const merged = results.filter(x => x.action === 'merged').length
+  1040→        return `处理 ${results.length} 个场景 (新建${created}, 合并${merged})`
+  1041→      }
+  1042→      return '场景保存完成'
+  1043→    }
+  1044→    case 'read_storyboard_context':
+  1045→      return `读取到剧本、${String((r as any).characters?.length || 0)}个角色、${String((r as any).scenes?.length || 0)}个场景`
+  1046→    case 'save_storyboards': {
+  1047→      const count = r.count || 0
+  1048→      const append = r.append ? '(追加模式)' : '(替换模式)'
+  1049→      return r.success ? `已保存 ${count} 个分镜镜头${append}` : '保存失败'
+  1050→    }
+  1051→    case 'update_storyboard':
+  1052→      return r.success ? `镜头已更新` : '更新失败'
+  1053→    case 'get_characters':
+  1054→      return `获取到 ${Array.isArray(r) ? r.length : 0} 个角色`
+  1055→    case 'list_available_voices':
+  1056→      return `可用音色 ${Array.isArray(r) ? r.length : 0} 个`
+  1057→    case 'assign_voice':
+  1058→      return r.success ? `已为"${r.character}"分配音色"${r.voiceName}"` : '分配失败'
+  1059→    case 'read_characters':
+  1060→      return `读取到 ${Array.isArray(r) ? r.length : 0} 个角色`
+  1061→    case 'read_scenes':
+  1062→      return `读取到 ${Array.isArray(r) ? r.length : 0} 个场景`
+  1063→    case 'read_shots':
+  1064→      return `读取到 ${Array.isArray(r) ? r.length : 0} 个分镜`
+  1065→    case 'generate_character_prompt':
+  1066→      return r.success ? `角色"${r.characterName}"提示词已生成` : '生成失败'
+  1067→    case 'generate_scene_prompt':
+  1068→      return r.success ? `场景"${r.sceneLocation}"提示词已生成` : '生成失败'
+  1069→    case 'generate_grid_prompt':
+  1070→      return r.success ? `镜头 ${r.shotNumber} 宫格提示词已生成` : '生成失败'
+  1071→    default:
+  1072→      return r.success ? '执行成功' : String(r.message || r.error || '完成')
+  1073→  }
+  1074→}
+  1075→

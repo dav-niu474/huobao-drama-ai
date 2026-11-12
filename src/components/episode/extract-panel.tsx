@@ -333,19 +333,40 @@ export function ExtractPanel({
     )
   }
 
-  // ── Loading state — show Agent Execution Panel ──────────
-  if (isExtracting || aiLoading) {
+  // ── Loading / failed state — Agent Execution Panel ──────
+  // Keep the panel mounted after a failure so the error timeline stays
+  // visible with an in-place retry (previously it unmounted instantly
+  // and the error only survived as a transient toast).
+  const extractorError = agentExec.errors['extractor'] ?? null
+  const extractorRunning = agentExec.isRunning('extractor')
+  if (isExtracting || aiLoading || extractorRunning || extractorError) {
+    const extractorFailed = !!extractorError && !extractorRunning && !aiLoading
     return (
       <div className="flex-1 p-6 overflow-y-auto">
         <AgentExecutionPanel
           agentType="extractor"
           agentName="角色场景提取器"
-          isRunning={agentExec.isRunning('extractor')}
+          isRunning={extractorRunning}
           logs={(agentExec.logs['extractor'] as AgentLogEntry[]) || []}
           resultText={agentExec.resultTexts['extractor']}
           duration={agentExec.durations['extractor']}
-          error={agentExec.errors['extractor']}
+          error={extractorError}
         />
+        {extractorFailed && (
+          <div className="mt-4 flex items-center justify-center gap-3">
+            <Button onClick={handleExtract} disabled={aiLoading} variant="outline" className="min-h-9">
+              <RefreshCw className="size-4" />
+              重新提取
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => agentExec.clearAgent('extractor')}
+              className="min-h-9 text-muted-foreground"
+            >
+              清空并返回
+            </Button>
+          </div>
+        )}
       </div>
     )
   }

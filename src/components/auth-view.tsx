@@ -189,7 +189,7 @@ export function AuthView() {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="flex-col gap-3 pb-6 px-6">
+                <CardFooter className="flex-col gap-3 pt-4 pb-6 px-6">
                   <Button
                     type="submit"
                     className="w-full"
@@ -274,7 +274,7 @@ export function AuthView() {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="flex-col gap-3 pb-6 px-6">
+                <CardFooter className="flex-col gap-3 pt-4 pb-6 px-6">
                   <Button
                     type="submit"
                     className="w-full"

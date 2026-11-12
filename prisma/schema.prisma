@@ -54,6 +54,10 @@ model Drama {
   novelParsed         Boolean  @default(false) // Whether novel has been parsed
   artStyle            String? // Selected art style key (e.g., "realpeople_ancient_chinese")
   assetStatus         String   @default("pending") // pending | extracting | ready | partial
+  // 整剧成片 — FFmpeg concat of all episode final cuts (drama-level deliverable)
+  finalVideoUrl       String?
+  finalVideoDuration  Int      @default(0) // seconds
+  dramaMergedAt       DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

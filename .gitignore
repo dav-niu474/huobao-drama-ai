@@ -103,8 +103,8 @@ test-mimo-*.mjs
 # Roadmap generator (local dev tool)
 generate-roadmap.js
 
-# Data skills directory (local AI skill prompts, not part of the web app)
-data/skills/
+# (data/skills removed from ignore — runtime loadAgentSkill() reads SKILL.md
+#  files from this directory, so all skill files must be tracked in the repo)
 
 # Caddyfile (local dev reverse proxy, not needed in repo)
 Caddyfile
