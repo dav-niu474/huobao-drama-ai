@@ -156,7 +156,19 @@
     "platformWechat": "WeChat",
     "platformLongvideo": "Long Video",
     "createProject": "Create Project",
-    "firstEpisodeTitle": "Episode 1"
+    "firstEpisodeTitle": "Episode 1",
+    "searchPlaceholder": "Search projects…",
+    "allGenres": "All genres",
+    "sortBy": "Sort",
+    "sortUpdatedAt": "Recently updated",
+    "sortCreatedAt": "Newest first",
+    "sortProgress": "Progress",
+    "sortCost": "Most spent",
+    "scriptDone": "Scripts {done}/{total}",
+    "creditsUnit": "credits",
+    "noResults": "No matching projects",
+    "shotsUnit": "shots",
+    "episodesWithVideo": "{count} eps with final video"
   },
   "projectDetail": {
     "loadDetailFailed": "Failed to load project details",
