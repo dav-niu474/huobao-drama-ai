@@ -76,7 +76,30 @@ export async function POST(request: NextRequest) {
       const pollParsed = adapter.parsePollResponse(pollData)
 
       if (pollParsed.status === 'completed') {
-        return NextResponse.json({ status: 'completed', videoUrl: pollParsed.videoUrl })
+        if (!pollParsed.videoUrl) {
+          return NextResponse.json({ status: 'completed', error: 'No video data' })
+        }
+        // Persist the provider's temporary URL into file storage so the URL
+        // stays servable after the provider expires it. The client (or the
+        // batch pipeline) writes the returned URL back to storyboard.videoUrl.
+        let videoUrl = pollParsed.videoUrl
+        try {
+          const videoRes = await fetch(pollParsed.videoUrl)
+          if (!videoRes.ok) throw new Error(`provider fetch ${videoRes.status}`)
+          const buffer = Buffer.from(await videoRes.arrayBuffer())
+          const saveResult = await saveMediaFile(buffer, {
+            mimeType: 'video/mp4',
+            category: 'storyboards',
+            dramaId,
+            filename: `async_video_${Date.now()}`,
+          })
+          videoUrl = saveResult.url
+        } catch (err) {
+          // Persist failed — fall back to the provider URL rather than failing
+          // the whole task (client can still try again later)
+          console.warn('[poll-status] Failed to persist async video:', err)
+        }
+        return NextResponse.json({ status: 'completed', videoUrl })
       }
       return NextResponse.json({ status: pollParsed.status, error: pollParsed.error })
     }

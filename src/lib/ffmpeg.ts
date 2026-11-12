@@ -397,7 +397,7 @@ export async function getVideoDuration(videoPath: string): Promise<number> {
 
 /**
  * Download a file from a URL to a local path.
- * Handles both regular URLs and data URLs.
+ * Handles data URLs, file-storage paths (/api/files/...), and regular URLs.
  */
 export async function downloadFile(url: string, localPath: string): Promise<string> {
   await ensureStorageDirs()
@@ -411,6 +411,19 @@ export async function downloadFile(url: string, localPath: string): Promise<stri
       return localPath
     }
     throw new Error('Invalid data URL format')
+  }
+
+  // Handle file-storage paths (/api/files/...) — read directly from
+  // local storage instead of HTTP-fetching our own API (works even
+  // when the base URL is unknown during server-side execution)
+  if (url.startsWith('/api/files/')) {
+    const { readMediaFile } = await import('@/lib/file-storage')
+    const buffer = await readMediaFile(url)
+    if (!buffer) {
+      throw new Error(`File not found in storage: ${url}`)
+    }
+    await fs.writeFile(localPath, buffer)
+    return localPath
   }
 
   // Regular HTTP/HTTPS URL

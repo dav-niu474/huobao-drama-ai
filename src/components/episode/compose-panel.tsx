@@ -37,11 +37,16 @@ export function ComposePanel({
   previewVideoRef,
   previewAudioRef,
   perms,
+  episodeVideoUrl,
+  episodeDuration,
+  merging,
+  ffmpegAvailable,
   handleComposeShot,
   handleComposeAll,
   handleStartPreview,
   handlePreviewEnded,
   handleExport,
+  handleServerMerge,
   setPreviewMode,
   setCurrentPreviewShot,
 }: ComposePanelProps) {
@@ -184,12 +189,89 @@ export function ComposePanel({
             </Card>
           </div>
 
+          {/* ── Final episode video (server FFmpeg merge) ── */}
+          {episodeVideoUrl ? (
+            <div className="border border-emerald-500/30 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/20 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Clapperboard className="size-3.5 text-emerald-500" />
+                  <span className="text-xs font-semibold">本集成片</span>
+                  <Badge className="status-completed text-[9px] px-1.5 py-0 gap-0.5">
+                    <Check className="size-2.5" /> MP4 · 含配音与字幕
+                  </Badge>
+                  {episodeDuration > 0 && (
+                    <span className="text-[10px] text-muted-foreground">时长 {Math.round(episodeDuration)} 秒</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {perms.canExport && (
+                    <a
+                      href={episodeVideoUrl}
+                      download={`${String(episodeVideoUrl.split('/').pop() || 'episode')}.mp4`}
+                      className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                    >
+                      <Download className="size-3" />
+                      下载成片 MP4
+                    </a>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    disabled={merging || !!composing || aiLoading}
+                    onClick={handleServerMerge}
+                    title="重新用 FFmpeg 合并所有镜头"
+                  >
+                    {merging ? <Loader2 className="size-3 animate-spin" /> : <Clapperboard className="size-3" />}
+                    重新合成成片
+                  </Button>
+                </div>
+              </div>
+              <div className="bg-black">
+                <video
+                  key={episodeVideoUrl}
+                  src={episodeVideoUrl}
+                  controls
+                  playsInline
+                  className="w-full aspect-video max-h-[60vh]"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border border-dashed border-border/60 rounded-lg flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <Clapperboard className="size-4 text-muted-foreground/60 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">整集成片</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {ffmpegAvailable
+                      ? '将所有已合成镜头用 FFmpeg 拼接为带配音字幕的 MP4 成片'
+                      : shotsWithVideo === 0
+                        ? '先生成镜头视频，再逐镜合成后即可拼接成片'
+                        : '服务端 FFmpeg 不可用：可逐镜合成（含字幕）后使用「预览完整视频」'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={merging || !ffmpegAvailable || shotsWithVideo === 0 || !!composing || aiLoading}
+                onClick={handleServerMerge}
+                className="amber-glow flex-shrink-0"
+                title={ffmpegAvailable ? '合并所有镜头视频为整集成片' : '服务端 FFmpeg 不可用'}
+              >
+                {merging ? <Loader2 className="size-3.5 animate-spin" /> : <Clapperboard className="size-3.5" />}
+                合并成片（FFmpeg）
+              </Button>
+            </div>
+          )}
+
           {/* Toolbar actions */}
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
               variant="outline"
-              onClick={handleComposeAll}
+              onClick={() => handleComposeAll()}
               disabled={composingAll || !!composing || aiLoading || shotsWithVideo === 0}
               className="amber-glow"
             >

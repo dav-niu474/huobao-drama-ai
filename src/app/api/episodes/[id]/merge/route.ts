@@ -9,6 +9,7 @@ import {
   PATHS,
   ensureStorageDirs,
 } from '@/lib/ffmpeg'
+import { saveMediaFile } from '@/lib/file-storage'
 import path from 'path'
 
 // POST /api/episodes/[id]/merge
@@ -119,8 +120,16 @@ export async function POST(
       // Get duration of merged video
       const duration = await getVideoDuration(mergedPath)
 
-      // Store the merged video path as episode videoUrl
-      const mergedFileUrl = `/tmp/drama-storage/merged/${path.basename(mergedPath)}`
+      // Persist merged MP4 to file storage → servable URL (/api/files/...)
+      // (previously stored a bare /tmp path which the files API could not serve)
+      const mergedBuffer = await import('fs/promises').then((m) => m.readFile(mergedPath))
+      const saveResult = await saveMediaFile(mergedBuffer, {
+        mimeType: 'video/mp4',
+        category: 'merged',
+        dramaId: episode.dramaId,
+        filename: `episode_${episodeId.slice(-8)}`,
+      })
+      const mergedFileUrl = saveResult.url
 
       // Update episode and merge record
       const [updatedEpisode] = await Promise.all([
@@ -142,9 +151,9 @@ export async function POST(
         }),
       ])
 
-      // Clean up temporary downloaded files (keep the merged output)
+      // Clean up temporary downloaded files (merged output already saved to storage)
       const { unlink } = await import('fs/promises')
-      for (const tmpPath of localPaths) {
+      for (const tmpPath of [...localPaths, mergedPath]) {
         try { await unlink(tmpPath) } catch { /* ignore */ }
       }
 

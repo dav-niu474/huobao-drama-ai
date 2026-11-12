@@ -806,16 +806,61 @@ class BatchPipelineManager {
     // Generate videos for each storyboard
     for (const sb of withoutVideos) {
       try {
-        await this.internalApi(dramaId, '/api/ai/generate-video', {
+        const data = await this.internalApi(dramaId, '/api/ai/generate-video', {
           storyboardId: sb.id,
           prompt: sb.videoPrompt || undefined,
           firstFrameUrl: sb.firstFrameUrl || undefined,
         })
+
+        // Async providers return { status: 'processing', taskId } — poll until
+        // completion, then persist the resulting videoUrl. Without this the
+        // batch pipeline marked async video tasks as done while nothing was
+        // ever written to the storyboard.
+        if (data.status === 'processing' && typeof data.taskId === 'string' && data.taskId) {
+          const videoUrl = await this.pollAsyncVideo(dramaId, data.taskId)
+          if (videoUrl) {
+            await db.storyboard.update({
+              where: { id: sb.id },
+              data: { videoUrl },
+            })
+          }
+        }
       } catch (err) {
         console.warn(`[BatchPipeline] Video failed for shot ${sb.shotNumber}:`, err)
         throw err
       }
     }
+  }
+
+  /**
+   * Poll an async video generation task until completion.
+   * Returns the persisted video URL (file-storage path), or null on timeout.
+   */
+  private async pollAsyncVideo(
+    dramaId: string,
+    taskId: string,
+    intervalMs = 10000,
+    maxPolls = 60
+  ): Promise<string | null> {
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((r) => setTimeout(r, intervalMs))
+      try {
+        const res = await this.internalApi(dramaId, '/api/ai/poll-status', {
+          category: 'video',
+          taskId,
+          dramaId,
+        })
+        if (res.status === 'completed') {
+          return typeof res.videoUrl === 'string' ? res.videoUrl : null
+        }
+        if (res.status === 'failed' || res.status === 'unsupported') {
+          throw new Error(String(res.error || '视频生成失败'))
+        }
+      } catch (err) {
+        if (i === maxPolls - 1) throw err
+      }
+    }
+    return null
   }
 
   private async executeCompose(

@@ -885,7 +885,7 @@ export function EpisodeWorkspace() {
       await new Promise((r) => setTimeout(r, interval))
       if (signal?.aborted) return null
       try {
-        const pollResult = await api.ai.pollStatus(category, taskId)
+        const pollResult = await api.ai.pollStatus(category, taskId, selectedDramaId ?? undefined)
         if (pollResult.status === 'completed') {
           return { imageBase64: pollResult.imageBase64, videoUrl: pollResult.videoUrl }
         }
@@ -1207,7 +1207,13 @@ export function EpisodeWorkspace() {
         pollAbortRef.current?.abort()
         const controller = new AbortController()
         pollAbortRef.current = controller
-        await pollAsyncTask('video', result.taskId as string, 10000, 60, controller.signal)
+        // 持久化轮询结果：poll-status 返回的 videoUrl 已转存至文件存储，
+        // 必须写回 storyboard.videoUrl，否则异步供应商的结果会丢失
+        const polled = await pollAsyncTask('video', result.taskId as string, 10000, 60, controller.signal)
+        if (controller.signal.aborted) return
+        if (polled?.videoUrl) {
+          await api.storyboards.update(storyboard.id, { videoUrl: polled.videoUrl })
+        }
       }
       toast({ title: `镜头 ${storyboard.shotNumber} 视频已生成` })
       await fetchEpisode()
@@ -1268,8 +1274,12 @@ export function EpisodeWorkspace() {
             const prompt = sb.videoPrompt ?? sb.imagePrompt ?? ''
             const r = await api.ai.generateVideo(sb.id, prompt, sb.firstFrameUrl ?? undefined) as Record<string, unknown>
             if (r.status === 'processing' && r.taskId) {
-              await pollAsyncTask('video', r.taskId as string, 10000, 60, controller.signal)
+              const polled = await pollAsyncTask('video', r.taskId as string, 10000, 60, controller.signal)
               if (controller.signal.aborted) throw new Error('已取消')
+              // 持久化异步供应商的视频结果（poll-status 已转存至文件存储）
+              if (polled?.videoUrl) {
+                await api.storyboards.update(sb.id, { videoUrl: polled.videoUrl })
+              }
             }
           } finally {
             setGeneratingVideo(null)
@@ -1883,6 +1893,27 @@ export function EpisodeWorkspace() {
       toast({ title: '导出功能需要专业版', description: '免费用户无法导出成片，请升级专业版。', variant: 'destructive' })
       return
     }
+    // 优先：服务端 FFmpeg 已合成整集成片 → 直接下载 MP4（含配音与字幕）
+    if (episode?.videoUrl) {
+      try {
+        setExporting(true)
+        const res = await fetch(episode.videoUrl)
+        if (!res.ok) throw new Error(`下载失败 (${res.status})`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${currentEpisode?.title || 'episode'}_${currentEpisode?.episodeNumber ?? ''}成片.mp4`
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        toast({ title: '成片已导出（MP4）' })
+        return
+      } catch (err) {
+        toast({ title: '成片下载失败，将回退到逐镜导出', description: String(err), variant: 'destructive' })
+      } finally {
+        setExporting(false)
+      }
+    }
     const videoShots = storyboards.filter((s) => s.composedUrl || s.videoUrl)
     if (videoShots.length === 0) {
       toast({ title: '没有可导出的镜头视频', variant: 'destructive' })
@@ -2182,11 +2213,16 @@ export function EpisodeWorkspace() {
               previewVideoRef={previewVideoRef}
               previewAudioRef={previewAudioRef}
               perms={perms}
+              episodeVideoUrl={episode?.videoUrl ?? null}
+              episodeDuration={episode?.duration ?? 0}
+              merging={merging}
+              ffmpegAvailable={ffmpegAvailable}
               handleComposeShot={handleComposeShot}
               handleComposeAll={handleComposeAll}
               handleStartPreview={handleStartPreview}
               handlePreviewEnded={handlePreviewEnded}
               handleExport={handleExport}
+              handleServerMerge={handleServerMerge}
               setPreviewMode={setPreviewMode}
               setCurrentPreviewShot={setCurrentPreviewShot}
             />
